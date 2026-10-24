@@ -18,6 +18,8 @@ export const END_GRACE_MS = 30000;
 export const NAME_MAX = 24;
 export const LOBBY_NAME_MAX = 32;
 export const MAX_PER_TEAM = 8;
+/** Most AI ships the host can add to one fleet. */
+export const MAX_AI = 8;
 /** Path of the lobby WebSocket on the game's own server. */
 export const LAN_PATH = '/lan';
 
@@ -36,10 +38,13 @@ export interface Edge {
   /** Submarine depth up / down. */
   du?: 1;
   dd?: 1;
+  /** Free play: the ship to sail from the next respawn, and leave the fight now to change into it. */
+  sp?: string;
+  rd?: 1;
 }
 
-/** Something every peer applies at the start of a turn. */
-export type TurnEvent = { ai: number } | { human: number };
+/** Something every peer applies at the start of a turn: a captain handed to the AI or back, or the host ending Free play. */
+export type TurnEvent = { ai: number } | { human: number } | { end: 1 };
 
 /** One lockstep turn: changed continuous orders, edges by tick, and events. */
 export interface Turn {
@@ -54,7 +59,8 @@ export interface Turn {
 export interface LobbySettings {
   type: Exclude<BattleType, 'bossrush' | 'survival'>;
   mapId: string;
-  teamSize: number;
+  /** AI ships in each fleet, besides its captains (0..MAX_AI). */
+  ai: [number, number];
   difficulty: DifficultyId;
   /** Convoy: the fleet that escorts the transports. */
   escortTeam: Team;
@@ -109,6 +115,7 @@ export type ClientMsg =
   | { t: 'in'; c?: Continuous; e?: Edge }
   | { t: 'hash'; k: number; h: number }
   | { t: 'over' }
+  | { t: 'end' }
   | { t: 'resync' };
 
 export type ServerMsg =
@@ -125,7 +132,7 @@ export type ServerMsg =
 export const DEFAULT_SETTINGS: LobbySettings = {
   type: 'domination',
   mapId: 'strait',
-  teamSize: 6,
+  ai: [5, 5],
   difficulty: 'normal',
   escortTeam: 0,
   titans: true,

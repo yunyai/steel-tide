@@ -28,8 +28,10 @@ export interface GameEventMap {
   detonation: { ship: Ship; killer: Ship | null };
   /** Convoy: a cargo ship reached port or went down. */
   convoy: { ship: Ship; kind: 'arrived' | 'sunk' };
-  /** A sunk ship sails again (Domination). */
+  /** A sunk ship sails again (Domination, Free play). */
   respawn: { ship: Ship };
+  /** Free play: a captain's next ship replaced `old` in the fleet (it then respawns). */
+  shipChanged: { old: Ship; ship: Ship };
   fire: { ship: Ship; site: number };
   flood: { ship: Ship };
   /** Skill `index` (0 Q, 1 E, 2 R) triggered / ran out. */

@@ -4,7 +4,7 @@ import { Game } from '../src/core/Game';
 import { makeRng } from '../src/core/math';
 import { stateHash } from '../src/net/hash';
 import { TurnApplier } from '../src/net/Lockstep';
-import { type Continuous, type Turn, TURN_TICKS } from '../src/net/protocol';
+import { type Continuous, type Edge, type Turn, TURN_TICKS } from '../src/net/protocol';
 
 // Lockstep only works if two peers fed the same turns step the same battle, bit for bit.
 
@@ -108,6 +108,33 @@ describe('lockstep determinism', () => {
     const a = play(config, turns);
     const b = play(structuredClone(config), JSON.parse(JSON.stringify(turns)) as Turn[]);
     expect(b).toEqual(a);
+  }, 120000);
+
+  it('two peers of a Free play battle stay identical through ship changes and the host ending it', () => {
+    const config: BattleConfig = { ...lanConfig('freeplay', 41), ai: [2, 1] };
+    const turns = script(new Game(config), 120);
+    const add = (k: number, e: [number, number, Edge]) => (turns[k].e = [...(turns[k].e ?? []), e]);
+    // Ana switches at once, Ben picks for his next respawn, Cy switches twice.
+    add(30, [0, 0, { sp: 'fletcher', rd: 1 }]);
+    add(60, [1, 1, { sp: 'iowa' }]);
+    add(90, [2, 0, { sp: 'gato', rd: 1 }]);
+    add(900, [2, 1, { sp: 'desmoines', rd: 1 }]);
+    turns[3300].ev = [{ end: 1 }];
+    const a = play(config, turns);
+    const b = play(structuredClone(config), JSON.parse(JSON.stringify(turns)) as Turn[]);
+    expect(b).toEqual(a);
+
+    const g = new Game(config);
+    const ap = new TurnApplier(g);
+    for (const t of turns) for (let i = 0; i < TURN_TICKS; i++) ap.applyTick(t, i);
+    expect(ap.ship(0)!.spec.id).toBe('fletcher');
+    expect(ap.ship(2)!.spec.id).toBe('desmoines');
+    expect(g.humans().map((s) => s.humanIndex)).toEqual([0, 1, 2]);
+    expect(g.over).toBe(true);
+    expect(g.reason).toBe('The host ended free play');
+    // The turns still steer the captain in the new hull.
+    const last = [...turns].reverse().find((t) => t.p)!.p!.find(([p]) => p === 0)![1];
+    expect(ap.ship(0)!.control.rudder).toBe(last[0]);
   }, 120000);
 
   it('an earlier battle in the same tab changes nothing (ids count per battle)', () => {

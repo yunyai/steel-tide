@@ -19,13 +19,15 @@ function button(label: string, cls: string, onClick: () => void): HTMLButtonElem
   return b;
 }
 
+const respawning = (game: Game) => game.config.type === 'domination' || game.config.type === 'freeplay';
+
 function teamTable(game: Game, team: Team, ally: boolean, me: Ship | null, limit = Infinity): HTMLElement {
   const wrap = el('div');
   wrap.append(el('h4', ally ? 'a' : 'e', ally ? 'Your fleet' : 'Enemy fleet'));
   const t = el('table');
   const head = el('tr');
-  // Only Domination brings ships back, so only there is a death count worth a column.
-  const deaths = game.config.type === 'domination';
+  // Only Domination and Free play bring ships back, so only there is a death count worth a column.
+  const deaths = respawning(game);
   head.append(el('th', '', 'Ship'), el('th', '', 'Class'), el('th', 'r', 'Damage'), el('th', 'r', 'Kills'));
   if (deaths) head.append(el('th', 'r', 'Deaths'));
   t.append(head);
@@ -87,7 +89,7 @@ function personal(s: Ship): HTMLElement {
   stat('Damage dealt', s.stats.damage, int, true);
   stat('Skill damage', s.stats.skill, int, true);
   stat('Ships sunk', s.stats.kills);
-  if (s.game.config.type === 'domination') stat('Times sunk', s.stats.deaths);
+  if (respawning(s.game)) stat('Times sunk', s.stats.deaths);
   stat('Citadel hits', s.stats.citadels);
   stat('Fires set', s.stats.fires);
   stat('Accuracy', acc, (n) => `${Math.round(n)}%`);
@@ -122,6 +124,8 @@ export function buildReport(game: Game, humans: Ship[], newBest: boolean, action
     verdict.textContent = rush.cleared ? `${rush.wave} waves survived` : `Wave ${rush.wave}`;
     verdict.classList.add(rush.cleared ? 'win' : 'rush');
     if (newBest) verdict.append(el('span', 'badge', 'New best'));
+  } else if (game.config.type === 'freeplay') {
+    verdict.textContent = 'Free play over';
   } else if (game.winner === -1) {
     verdict.textContent = 'Draw';
   } else {
@@ -130,6 +134,11 @@ export function buildReport(game: Game, humans: Ship[], newBest: boolean, action
     verdict.classList.add(won ? 'win' : 'loss');
   }
   sheet.append(verdict, el('p', 'reason', game.reason));
+  if (game.config.type === 'freeplay') {
+    const enemy: Team = viewTeam === 0 ? 1 : 0;
+    const n = (k: number) => `${k} ${k === 1 ? 'ship' : 'ships'}`;
+    sheet.append(el('p', 'reason', `Your fleet sank ${n(game.score[viewTeam])}; the enemy sank ${n(game.score[enemy])}.`));
+  }
   if (rush) {
     const row = el('div', 'personal');
     const score = el('div', 'hi', 'Run score');
@@ -176,8 +185,14 @@ export interface PauseActions {
   quit(): void;
 }
 
+/** More buttons for the Esc sheet, between Resume and Leave (Free play: change ship, end battle). */
+export interface PauseExtra {
+  label: string;
+  run(): void;
+}
+
 /** The Esc sheet. Solo it freezes the battle; in a LAN battle (`title` "Battle menu") it does not. */
-export function buildPause(actions: PauseActions, hint: string, title = 'Paused'): HTMLElement {
+export function buildPause(actions: PauseActions, hint: string, title = 'Paused', extra: PauseExtra[] = []): HTMLElement {
   const overlay = el('div', 'overlay');
   const sheet = el('div', 'sheet panel pause');
   sheet.setAttribute('role', 'dialog');
@@ -185,7 +200,7 @@ export function buildPause(actions: PauseActions, hint: string, title = 'Paused'
   sheet.append(el('h2', '', title), el('p', 'lede', hint));
   const row = el('div', 'row');
   const resume = button('Resume battle', 'btn-primary', actions.resume);
-  row.append(resume, button('Leave battle', 'btn-quiet', actions.quit));
+  row.append(resume, ...extra.map((x) => button(x.label, '', x.run)), button('Leave battle', 'btn-quiet', actions.quit));
   sheet.append(row);
   overlay.append(sheet);
   queueMicrotask(() => resume.focus({ preventScroll: true }));

@@ -5,7 +5,8 @@ import type { BattleEra, ShipClass, ShipSpec, Team } from './types';
 
 /** One captain at this screen, or several on a LAN (each peer runs the same battle in lockstep). */
 export type BattleMode = 'solo' | 'lan';
-export type BattleType = 'domination' | 'annihilation' | 'convoy' | 'bossrush' | 'survival';
+/** Free play: no score to win and no clock; every ship comes back, and captains may change ship. */
+export type BattleType = 'domination' | 'annihilation' | 'convoy' | 'freeplay' | 'bossrush' | 'survival';
 /** Convoy: your team guards the cargo ships, or hunts them. */
 export type ConvoySide = 'escort' | 'raid';
 export type DifficultyId = 'easy' | 'normal' | 'hard';
@@ -40,6 +41,10 @@ export interface BattleConfig {
   convoySide?: ConvoySide;
   /** Which era's ships the bots sail (historic by default). */
   era?: BattleEra;
+  /** AI ships per fleet, besides its captains (0..8). When set it replaces `teamSize`. */
+  ai?: [number, number];
+  /** Free play: whether captains may change into a titan (allowed unless false). */
+  titans?: boolean;
 }
 
 export interface RosterEntry {
@@ -87,7 +92,15 @@ export function buildRoster(config: BattleConfig, rng: () => number): RosterEntr
   });
   // Every titan a human brings is answered by two extra ships in the other fleet.
   const titans = (t: Team) => humansByTeam[t].filter((i) => SHIP_BY_ID[config.players[i].shipId]?.cls === 'TT').length;
-  const sizes: [number, number] = [Math.max(size, humansByTeam[0].length) + titans(1) * 2, Math.max(size, humansByTeam[1].length) + titans(0) * 2];
+  const sizes: [number, number] = [0, 0];
+  for (const t of [0, 1] as Team[]) {
+    const other: Team = t === 0 ? 1 : 0;
+    if (config.ai) {
+      // Set AI counts: a fleet with no AI ships has only its captains, titans or not.
+      const bots = Math.max(0, Math.min(8, Math.floor(config.ai[t] || 0)));
+      sizes[t] = humansByTeam[t].length + bots + (bots > 0 ? titans(other) * 2 : 0);
+    } else sizes[t] = Math.max(size, humansByTeam[t].length) + titans(other) * 2;
+  }
   const names = [...CAPTAINS];
   const takeName = () => names.splice(Math.floor(rng() * names.length), 1)[0] ?? 'Bot';
 

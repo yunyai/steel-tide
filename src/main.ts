@@ -17,8 +17,10 @@ import { HUD } from './ui/HUD';
 import { Lobby } from './ui/Lobby';
 import { Menu } from './ui/Menu';
 import { saveBest } from './modes/BossRush';
-import { buildPause, buildReport, buildScoreboard } from './ui/Results';
+import { buildPause, buildReport, buildScoreboard, type PauseExtra } from './ui/Results';
+import { buildShipPicker } from './ui/ShipPicker';
 import { emptyControl, type Ship } from './ships/Ship';
+import type { ShipSpec } from './core/types';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ui = document.getElementById('ui')!;
@@ -136,6 +138,38 @@ function startBattle(config: BattleConfig): void {
   presentBattle(config, new Game(config), null);
 }
 
+/** The view a captain's controller drives. */
+function captainView(pc: PlayerController): Viewport {
+  return {
+    camera: pc.camera,
+    team: pc.ship.team,
+    rect: { x: 0, y: 0, w: 1, h: 1 },
+    focus: { x: pc.ship.pos.x, z: pc.ship.pos.z },
+    get hide() {
+      return pc.zoom && pc.focus === pc.ship ? pc.ship : null;
+    },
+    // Optics cut through the haze as the scope opens.
+    get fogScale() {
+      return 1 - 0.45 * Math.min(1, (pc.mag - 1) / 2);
+    },
+  };
+}
+
+/** Free play: captain `i` changed ship. Controls, camera and HUD start over on the new hull. */
+function changeCaptain(b: Battle, i: number, ship: Ship): void {
+  const old = b.pcs[i];
+  const pc = new PlayerController(ship, old.device, old.index, b.game, old.assistOn);
+  if (b.net) pc.draft = emptyControl();
+  b.pcs[i] = pc;
+  b.viewports[i] = captainView(pc);
+  b.huds[i].dispose();
+  b.huds[i] = new HUD(b.game, pc, input);
+  hudLayer.append(b.huds[i].root);
+  const locals = b.pcs.map((p) => p.ship);
+  renderer.effects!.locals = locals;
+  renderer.skillFx!.locals = locals;
+}
+
 /** Put a built battle on screen: renderer, controllers, HUD. LAN battles get one captain, the local one. */
 function presentBattle(config: BattleConfig, game: Game, nb: LanBattle | null): void {
   menu.hide();
@@ -152,26 +186,15 @@ function presentBattle(config: BattleConfig, game: Game, nb: LanBattle | null): 
     if (nb) pc.draft = emptyControl();
     return pc;
   });
-  const viewports: Viewport[] = pcs.map((pc) => ({
-    camera: pc.camera,
-    team: pc.ship.team,
-    rect: { x: 0, y: 0, w: 1, h: 1 },
-    focus: { x: pc.ship.pos.x, z: pc.ship.pos.z },
-    get hide() {
-      return pc.zoom && pc.focus === pc.ship ? pc.ship : null;
-    },
-    // Optics cut through the haze as the scope opens.
-    get fogScale() {
-      return 1 - 0.45 * Math.min(1, (pc.mag - 1) / 2);
-    },
-  }));
+  const viewports = pcs.map(captainView);
   const huds = pcs.map((pc) => {
     const h = new HUD(game, pc, input);
     hudLayer.append(h.root);
     return h;
   });
   const b: Battle = { config, game, pcs, huds, viewports, paused: false, pausedAt: 0, ended: false, reportIn: 0, scoreboard: null, overlay: null, off: [], slow: 0, newBest: false, net: nb };
-  const me = humans[0];
+  // The local captain's ship (Free play swaps it on a change of ship).
+  const mine = (): Ship | undefined => b.pcs[0]?.ship;
   battle = b;
 
   const fx = renderer.effects!;
@@ -189,9 +212,10 @@ function presentBattle(config: BattleConfig, game: Game, nb: LanBattle | null): 
       b.ended = true;
       b.reportIn = 3.5;
       const rush = game.rush;
+      const me = mine();
       if (rush && me) b.newBest = saveBest(me.spec.id, rush.wave, rush.total, rush.survival);
       const win = g.winner !== -1 && g.winner === me?.team;
-      audio.ui(win ? 'victory' : 'defeat');
+      audio.ui(win || config.type === 'freeplay' ? 'victory' : 'defeat');
       if (nb && !nb.sentOver) {
         nb.sentOver = true;
         net?.send({ t: 'over' });
@@ -213,7 +237,13 @@ function presentBattle(config: BattleConfig, game: Game, nb: LanBattle | null): 
     }),
     game.events.on('shipSunk', (s) => {
       const k = s.killer;
+      const me = mine();
       if (me && k && s.ship.team !== me.team && (k === me || k.summonOwner === me)) b.slow = SLOW_HOLD + SLOW_EASE;
+    }),
+    // Free play: the captain's orders and view follow them into their next ship.
+    game.events.on('shipChanged', ({ old, ship }) => {
+      const i = b.pcs.findIndex((p) => p.ship === old);
+      if (i >= 0) changeCaptain(b, i, ship);
     }),
     // Light guns still nudge your own camera; heavy ones already shake it through the effects.
     game.events.on('gunFired', (e) => {
@@ -260,31 +290,105 @@ function setPaused(b: Battle, paused: boolean): void {
   if (paused) {
     b.pausedAt = performance.now();
     input.releaseLock();
-    const resume = usesMouse(b) ? 'Resume to take the helm again.' : 'Press Start to resume.';
-    const hint = b.net ? `The battle carries on while this menu is open, and your ship holds its course. ${resume}` : `The battle is frozen. ${resume}`;
-    setOverlay(
-      b,
-      buildPause(
-        {
-          resume: () => {
-            audio.ui('click');
-            setPaused(b, false);
-          },
-          quit: () => {
-            audio.ui('click');
-            if (b.net) return leaveLanBattle();
-            endBattle();
-            menu.showTitle();
-          },
-        },
-        hint,
-        b.net ? 'Battle menu' : 'Paused',
-      ),
-    );
+    showPauseMenu(b);
   } else {
     setOverlay(b, null);
     if (usesMouse(b)) input.requestLock();
   }
+}
+
+/** The Esc sheet; Free play adds changing ship and (solo, or for the LAN host) ending the battle. */
+function showPauseMenu(b: Battle): void {
+  const resume = usesMouse(b) ? 'Resume to take the helm again.' : 'Press Start to resume.';
+  const hint = b.net ? `The battle carries on while this menu is open, and your ship holds its course. ${resume}` : `The battle is frozen. ${resume}`;
+  const extra: PauseExtra[] = [];
+  if (b.config.type === 'freeplay' && b.pcs.length) {
+    extra.push({
+      label: 'Change ship',
+      run: () => {
+        audio.ui('click');
+        openShipPicker(b);
+      },
+    });
+    if (!b.net || net?.isHost) {
+      extra.push({
+        label: 'End battle',
+        run: () => {
+          audio.ui('click');
+          endFreePlay(b);
+        },
+      });
+    }
+  }
+  setOverlay(
+    b,
+    buildPause(
+      {
+        resume: () => {
+          audio.ui('click');
+          setPaused(b, false);
+        },
+        quit: () => {
+          audio.ui('click');
+          if (b.net) return leaveLanBattle();
+          endBattle();
+          menu.showTitle();
+        },
+      },
+      hint,
+      b.net ? 'Battle menu' : 'Paused',
+      extra,
+    ),
+  );
+}
+
+function openShipPicker(b: Battle): void {
+  const pc = b.pcs[0];
+  if (!pc) return;
+  setOverlay(
+    b,
+    buildShipPicker({
+      ship: pc.ship,
+      era: b.config.era ?? 'historic',
+      titans: b.config.titans !== false,
+      click: () => audio.ui('click'),
+      back: () => showPauseMenu(b),
+      pick: (spec, now) => {
+        orderShip(b, spec, now);
+        setPaused(b, false);
+      },
+    }),
+  );
+}
+
+/** Free play: sail `spec` from the next respawn, and with `now` leave the fight at once to change into it. */
+function orderShip(b: Battle, spec: ShipSpec, now: boolean): void {
+  const pc = b.pcs[0];
+  if (!pc) return;
+  const ship = pc.ship;
+  // LAN: like every other order, the pick reaches the ship through the turns.
+  if (b.net) b.net.lockstep.sendEdge(now ? { sp: spec.id, rd: 1 } : { sp: spec.id });
+  else {
+    b.game.pickShip(ship, spec.id);
+    if (now) b.game.redeploy(ship);
+  }
+  if (!now && ship.alive && spec !== ship.spec) {
+    pc.notice = `${spec.name} sails from your next respawn`;
+    pc.noticeTime = 4;
+  }
+}
+
+/** Free play has no result to wait for: the solo captain or the LAN host calls it. */
+function endFreePlay(b: Battle): void {
+  if (b.net) {
+    net?.send({ t: 'end' });
+    setPaused(b, false);
+    return;
+  }
+  b.paused = false;
+  setOverlay(b, null);
+  b.game.finish(-1, 'You ended free play');
+  b.reportIn = 0.4;
 }
 
 function showReport(b: Battle): void {

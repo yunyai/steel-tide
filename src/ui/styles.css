@@ -827,6 +827,7 @@ select {
 }
 
 .pause .row {
+  flex-wrap: wrap;
   display: flex;
   justify-content: center;
   gap: 8px;
@@ -834,6 +835,60 @@ select {
 
 .report {
   width: min(980px, 96vw);
+}
+
+/* Free play: change ship from the battle menu. */
+.picker {
+  width: min(860px, 96vw);
+}
+
+.picker-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.1fr);
+  gap: 22px;
+  margin-top: 14px;
+}
+
+.picker-roster {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(52vh, 460px);
+  padding-top: 4px;
+  background: rgba(4, 10, 18, 0.45);
+}
+
+.picker-detail h3 {
+  margin: 0 0 4px;
+  font-family: var(--display);
+  font-size: 1.7rem;
+}
+
+.picker-detail h3.tt {
+  color: var(--gold);
+}
+
+.picker-detail .meta {
+  margin: 0 0 12px;
+  color: var(--mute);
+}
+
+.picker-detail .specialty {
+  margin: 0 0 18px;
+  line-height: 1.45;
+}
+
+.picker-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .picker-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 .report .verdict {
@@ -3140,6 +3195,29 @@ select {
   padding-left: 0.8em;
   font-size: 0.92rem;
   color: var(--mute);
+}
+
+.lan-ai-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lan-ai-step .num {
+  min-width: 1.4em;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 1.1rem;
+  color: var(--ice);
+}
+
+.lan-ai-step .step {
+  width: 2em;
+  height: 2em;
+  padding: 0;
+  font-size: 1.05rem;
+  line-height: 1;
 }
 
 .report tr.friend td:first-child {

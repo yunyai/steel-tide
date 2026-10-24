@@ -188,6 +188,11 @@ export class HUD {
       e.scoreE = el('div', 'score enemy num', top);
       e.timer = el('div', 'timer num', top);
       if (!game.caps.length) bar.style.display = 'none';
+      if (game.config.type === 'freeplay') {
+        e.scoreA.title = 'Enemy ships your fleet has sunk';
+        e.scoreE.title = 'Your ships the enemy has sunk';
+        e.timer.title = 'Time in free play';
+      }
       if (game.convoy) {
         e.convoy = el('div', 'convoy', mid);
         e.goal = el('div', 'goal', mid);
@@ -549,8 +554,11 @@ export class HUD {
     if (!me.alive) {
       e.dead.style.display = '';
       const back = g.respawnIn(me);
-      const title = back >= 0 ? `Back in ${Math.ceil(back)}…` : 'Ship lost';
-      const sp = pc.focus !== me && pc.focus.alive ? `Watching ${captainName(pc.focus)}. Fire to switch ship.` : back >= 0 ? 'A fresh hull is fitting out.' : 'Your crew abandons ship.';
+      // Free play: the ship you come back in, and where to change it (never opened for you).
+      const free = g.config.type === 'freeplay';
+      const title = back >= 0 ? `Back in ${Math.ceil(back)}…${free ? ` as ${(me.nextSpec ?? me.spec).name}` : ''}` : 'Ship lost';
+      let sp = pc.focus !== me && pc.focus.alive ? `Watching ${captainName(pc.focus)}. Fire to switch ship.` : back >= 0 ? 'A fresh hull is fitting out.' : 'Your crew abandons ship.';
+      if (free && back >= 0) sp += ` ${pc.padIndex >= 0 ? 'Start' : 'Esc'}: change ship.`;
       if (e.dead.dataset.k !== title + sp) {
         e.dead.dataset.k = title + sp;
         e.dead.replaceChildren();
@@ -571,6 +579,7 @@ export class HUD {
   private updateScore(team: Team, enemy: Team): void {
     const g = this.game;
     const e = this.e;
+    const free = g.config.type === 'freeplay';
     if (g.caps.length) {
       setText(e.scoreA, String(Math.max(0, Math.round(g.score[team]))));
       setText(e.scoreE, String(Math.max(0, Math.round(g.score[enemy]))));
@@ -618,12 +627,17 @@ export class HUD {
           b.title = s.spec.name;
         }
       }
-      if (!g.caps.length) {
+      if (!g.caps.length && !free) {
         setText(e.scoreA, String(alive(team).filter((s) => s.alive).length));
         setText(e.scoreE, String(alive(enemy).filter((s) => s.alive).length));
       }
     }
-    const left = Math.max(0, BATTLE_TIME_LIMIT - g.time);
+    // Free play keeps count of ships sunk by each fleet, and its clock runs up: there is no limit.
+    if (free) {
+      setText(e.scoreA, String(g.score[team]));
+      setText(e.scoreE, String(g.score[enemy]));
+    }
+    const left = free ? g.time : Math.max(0, BATTLE_TIME_LIMIT - g.time);
     setText(e.timer, `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`);
   }
 

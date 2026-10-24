@@ -4,7 +4,7 @@ import type { BattleEra, ShipSpec, Team } from '../core/types';
 import { ERA_LABEL, ERAS } from '../data/factions';
 import { CLASS_LABEL, SHIP_BY_ID, shipsOf } from '../data/ships';
 import type { NetClient } from '../net/NetClient';
-import { type LobbySettings, type LobbyState, MAX_PER_TEAM, type Member, NAME_MAX, type ServerMsg } from '../net/protocol';
+import { type LobbySettings, type LobbyState, MAX_AI, MAX_PER_TEAM, type Member, NAME_MAX, type ServerMsg } from '../net/protocol';
 import { MAPS } from '../world/GameMap';
 import { field, h, seg } from './dom';
 import { classIcon, glyph } from './Icons';
@@ -21,7 +21,8 @@ export interface LobbyHooks {
   chooseShip(shipId: string, titans: boolean, era: BattleEra): void;
 }
 
-const TYPE_LABEL: Record<LobbySettings['type'], string> = { domination: 'Domination', annihilation: 'Annihilation', convoy: 'Convoy' };
+const TYPE_LABEL: Record<LobbySettings['type'], string> = { domination: 'Domination', annihilation: 'Annihilation', convoy: 'Convoy', freeplay: 'Free play' };
+const FREEPLAY_NOTE = 'No score and no clock. Sunk ships come back after 8 s; change ship from the battle menu (Esc). The host ends it.';
 const TEAM_LABEL = ['Team A', 'Team B'];
 /** Eras with ships to sail, then Mixed once there are two. */
 const LIVE_ERAS = ERAS.filter((e) => shipsOf(e).length > 0);
@@ -31,11 +32,15 @@ function eraLabel(e: BattleEra): string {
   return e === 'mixed' ? 'Mixed' : ERA_LABEL[e];
 }
 
-/** Fleet sizes as the battle will build them (see buildRoster): bots fill up to the team size, titans bring two more foes. */
+/** Fleet sizes as the battle will build them (see buildRoster): captains, the host's AI ships, and two more AI ships per enemy titan (only in a fleet that has AI). */
 function fleetSizes(l: LobbyState): [number, number] {
   const humans = (t: Team) => l.members.filter((m) => m.team === t);
   const titans = (t: Team) => (l.settings.titans ? humans(t).filter((m) => SHIP_BY_ID[m.shipId]?.cls === 'TT').length : 0);
-  return [Math.max(l.settings.teamSize, humans(0).length) + titans(1) * 2, Math.max(l.settings.teamSize, humans(1).length) + titans(0) * 2];
+  const size = (t: Team) => {
+    const bots = l.settings.ai[t];
+    return humans(t).length + bots + (bots > 0 ? titans(t === 0 ? 1 : 0) * 2 : 0);
+  };
+  return [size(0), size(1)];
 }
 
 export class Lobby {
@@ -156,22 +161,23 @@ export class Lobby {
     name.onchange = commit;
     name.onkeydown = (e) => {
       if (e.key !== 'Enter') return;
-      // Swallow the key: the re-render after blur must not pass it on to a button.
       e.preventDefault();
       name.blur();
     };
+    const create = this.act('Create lobby', 'btn-primary', () => n.send({ t: 'create', name: `${n.name}'s fleet` }));
+    // Typing holds back full renders (only the lobby rows refresh). Catch up on blur without
+    // replacing the buttons: a click that took focus from the box must land on the one pressed.
     name.onblur = () => {
       commit();
-      this.render();
+      create.disabled = n.status !== 'online';
     };
-    const create = this.act('Create lobby', 'btn-primary', () => n.send({ t: 'create', name: `${n.name}'s fleet` }));
     create.disabled = n.status !== 'online';
     create.dataset.focus = '';
     return h(
       'div',
       { class: 'sheet panel lan' },
       h('h2', {}, 'LAN battle'),
-      h('p', { class: 'lede' }, 'Sail with friends on the same network. Pick sides for a fleet battle, or put everyone on one team against the AI. AI ships fill the empty places.'),
+      h('p', { class: 'lede' }, 'Sail with friends on the same network. Pick sides for a fleet battle, or put everyone on one team against the AI. The host sets how many AI ships sail with each team, from none to eight.'),
       field('Captain name', name, 'Shown on your ship to the other captains.'),
       h('div', { class: 'lan-dynamic' }, ...this.dynamicList()),
       h('div', { class: 'sheet-actions' }, this.act('Back', 'btn-quiet', () => this.hooks.back()), create),
@@ -237,12 +243,15 @@ export class Lobby {
     if (host) {
       const sg = <T extends string | number>(opts: { value: T; label: string }[], get: () => T, put: (v: T) => void) => seg(opts, get, put, () => this.hooks.click());
       settings.append(
-        field('Battle type', sg<LobbySettings['type']>((['domination', 'annihilation', 'convoy'] as const).map((v) => ({ value: v, label: TYPE_LABEL[v] })), () => st.type, (v) => set({ type: v }))),
+        field(
+          'Battle type',
+          sg<LobbySettings['type']>((['domination', 'annihilation', 'convoy', 'freeplay'] as const).map((v) => ({ value: v, label: TYPE_LABEL[v] })), () => st.type, (v) => set({ type: v })),
+          st.type === 'freeplay' ? FREEPLAY_NOTE : undefined,
+        ),
       );
       if (st.type === 'convoy') settings.append(field('Transports sail with', sg<Team>([0, 1].map((t) => ({ value: t as Team, label: TEAM_LABEL[t] })), () => st.escortTeam, (v) => set({ escortTeam: v }))));
       settings.append(
         field('Map', sg(MAPS.map((m) => ({ value: m.id, label: m.name })), () => st.mapId, (v) => set({ mapId: v }))),
-        field('Ships per team', sg([3, 4, 5, 6, 7, 8].map((v) => ({ value: v, label: String(v) })), () => st.teamSize, (v) => set({ teamSize: v }))),
         field('AI skill', sg<DifficultyId>((Object.keys(DIFFICULTIES) as DifficultyId[]).map((k) => ({ value: k, label: DIFFICULTIES[k].label })), () => st.difficulty, (v) => set({ difficulty: v }))),
         field('Titans', sg([{ value: 1, label: 'Allowed' }, { value: 0, label: 'Not allowed' }], () => (st.titans ? 1 : 0), (v) => set({ titans: v === 1 }))),
       );
@@ -251,12 +260,12 @@ export class Lobby {
       const facts: [string, string][] = [
         ['Battle type', TYPE_LABEL[st.type] + (st.type === 'convoy' ? `, transports with ${TEAM_LABEL[st.escortTeam]}` : '')],
         ['Map', mapName],
-        ['Ships per team', String(st.teamSize)],
         ['AI skill', DIFFICULTIES[st.difficulty].label],
         ['Titans', st.titans ? 'Allowed' : 'Not allowed'],
         ['Era', eraLabel(st.era)],
       ];
       settings.append(h('dl', { class: 'lan-facts' }, ...facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));
+      if (st.type === 'freeplay') settings.append(h('p', { class: 'note' }, FREEPLAY_NOTE));
     }
 
     const sizes = fleetSizes(l);
@@ -272,7 +281,19 @@ export class Lobby {
       }
       col.append(head, ...members.map((m) => this.memberRow(l, m, me)));
       const ai = sizes[t] - members.length;
-      col.append(h('p', { class: 'lan-ai' }, ai > 0 ? `+ ${ai} AI ${ai === 1 ? 'ship' : 'ships'}` : 'No AI ships'));
+      // The titan answer: AI ships the host did not set, added against the other side's titans.
+      const extra = ai - st.ai[t];
+      if (host && l.state === 'waiting') {
+        const step = (d: number, label: string, name: string) => {
+          const b = this.act(label, 'step', () => set({ ai: t === 0 ? [st.ai[0] + d, st.ai[1]] : [st.ai[0], st.ai[1] + d] }), `ai-${t}-${d}`);
+          b.setAttribute('aria-label', `${name} AI ships for ${TEAM_LABEL[t]}`);
+          b.disabled = st.ai[t] + d < 0 || st.ai[t] + d > MAX_AI;
+          return b;
+        };
+        const row = h('div', { class: 'lan-ai lan-ai-step' }, h('span', {}, 'AI ships'), step(-1, '−', 'Fewer'), h('b', { class: 'num', 'aria-live': 'polite' }, String(st.ai[t])), step(1, '+', 'More'));
+        if (extra > 0) row.append(h('span', {}, `+ ${extra} against titans`));
+        col.append(row);
+      } else col.append(h('p', { class: 'lan-ai' }, ai > 0 ? `+ ${ai} AI ${ai === 1 ? 'ship' : 'ships'}` : 'No AI ships'));
       return col;
     };
 
@@ -287,10 +308,14 @@ export class Lobby {
         const waiting = l.members.filter((m) => m.id !== me.id && m.connected && !m.ready);
         const start = this.act('Start battle', 'btn-primary', () => n.send({ t: 'start' }));
         start.dataset.focus = '';
+        const empty = st.type === 'freeplay' ? -1 : sizes.findIndex((n) => n === 0);
         if (waiting.length) {
           start.disabled = true;
           const names = waiting.map((m) => m.name);
           notes.push(h('p', { class: 'lan-status' }, `Waiting for ${names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(' and ')} to get ready.`));
+        } else if (empty >= 0) {
+          start.disabled = true;
+          notes.push(h('p', { class: 'lan-status' }, `${TEAM_LABEL[empty]} has no ships: add AI ships or a captain. Free play can start with an empty side.`));
         }
         actions.append(start);
       } else {

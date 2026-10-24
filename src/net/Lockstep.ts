@@ -27,6 +27,10 @@ export class TurnApplier {
 
   constructor(readonly game: Game) {
     for (const s of game.fleet) if (s.humanIndex >= 0) this.byPlayer.set(s.humanIndex, s);
+    // Free play: a captain's orders follow them into their next ship.
+    game.events.on('shipChanged', ({ ship }) => {
+      if (ship.humanIndex >= 0) this.byPlayer.set(ship.humanIndex, ship);
+    });
   }
 
   ship(player: number): Ship | undefined {
@@ -40,6 +44,10 @@ export class TurnApplier {
       if (turn.p) for (const [p, c] of turn.p) this.orders.set(p, c);
       if (turn.ev) {
         for (const ev of turn.ev) {
+          if ('end' in ev) {
+            if (!g.over) g.finish(-1, 'The host ended free play');
+            continue;
+          }
           const s = this.ship('ai' in ev ? ev.ai : ev.human);
           if (!s) continue;
           if ('ai' in ev) g.handToAI(s);
@@ -62,7 +70,10 @@ export class TurnApplier {
       for (const [p, t, e] of turn.e) {
         if (t !== tick) continue;
         const s = this.byPlayer.get(p);
-        if (s && !s.autopilot) applyEdge(s.control, e);
+        if (!s) continue;
+        if (e.sp !== undefined) g.pickShip(s, e.sp);
+        if (e.rd) g.redeploy(s);
+        if (!s.autopilot) applyEdge(s.control, e);
       }
     }
     g.step(SIM_DT);
@@ -203,5 +214,10 @@ export class Lockstep {
     this.lastSent = c;
     this.lastSentAt = now;
     this.send(e ? { t: 'in', c, e } : { t: 'in', c });
+  }
+
+  /** Send a one-off edge order outside the controls (Free play's ship picker). */
+  sendEdge(e: Edge): void {
+    this.send({ t: 'in', e });
   }
 }

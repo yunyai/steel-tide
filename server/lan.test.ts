@@ -149,9 +149,9 @@ describe('LAN lobby server', () => {
     expect(ana.lobby!.settings.type).toBe('domination');
     expect(ben.inbox.some((m) => m.t === 'start')).toBe(false);
 
-    ana.send({ t: 'settings', s: { type: 'convoy', mapId: 'dusk', teamSize: 99, difficulty: 'hard', escortTeam: 1 } });
+    ana.send({ t: 'settings', s: { type: 'convoy', mapId: 'dusk', ai: [99, 2], difficulty: 'hard', escortTeam: 1 } });
     const s = (await ben.next('lobby', (m) => m.lobby!.settings.type === 'convoy')).lobby!.settings;
-    expect(s).toMatchObject({ type: 'convoy', mapId: 'dusk', teamSize: 6, difficulty: 'hard', escortTeam: 1 });
+    expect(s).toMatchObject({ type: 'convoy', mapId: 'dusk', ai: [5, 5], difficulty: 'hard', escortTeam: 1 });
 
     // Not everyone is ready yet.
     ana.send({ t: 'start' });
@@ -326,6 +326,73 @@ describe('LAN lobby server', () => {
     await wait(100);
     expect(cs[0].turns()).toHaveLength(0);
     await cs[0].next('turn', undefined, 1500);
+  });
+});
+
+describe('AI counts and free play', () => {
+  /** Ready the guests (settings changes unready everyone) and wait until the host sees it. */
+  async function ready(cs: Client[]): Promise<void> {
+    for (const c of cs.slice(1)) c.send({ t: 'me', ready: true });
+    await cs[0].next('lobby', (m) => m.lobby!.members.filter((x) => x.ready).length === cs.length - 1);
+  }
+
+  it('lets the host set AI ships per team, and refuses an empty side outside free play', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    const [ana, ben] = cs;
+    ben.send({ t: 'me', team: 0 });
+    await ana.next('lobby', (m) => m.lobby!.members[1].team === 0);
+    for (const bad of [[9, 1], [-1, 2], [1.5, 2], [1], 'x', [1, 2, 3], ['1', 2]]) ana.send({ t: 'settings', s: { ai: bad as never } });
+    ben.send({ t: 'settings', s: { ai: [8, 8] } });
+    ana.send({ t: 'settings', s: { type: 'annihilation', ai: [0, 0] } });
+    const set = (await ana.next('lobby', (m) => m.lobby!.settings.type === 'annihilation')).lobby!.settings;
+    expect(set.ai).toEqual([0, 0]);
+
+    await ready(cs);
+    ana.send({ t: 'start' });
+    expect((await ana.next('error')).text).toBe('Team B has no ships: add AI ships or a captain.');
+    expect(ana.inbox.some((m) => m.t === 'start')).toBe(false);
+
+    // Free play may start with nobody to fight.
+    ana.send({ t: 'settings', s: { type: 'freeplay', ai: [0, 0], titans: false } });
+    await ben.next('lobby', (m) => m.lobby!.settings.type === 'freeplay');
+    const [start] = await battle(cs);
+    expect(start.config).toMatchObject({ type: 'freeplay', ai: [0, 0], titans: false });
+  });
+
+  it('passes the ship picks the lobby allows, in free play only, and lets only the host end it', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    cs[0].send({ t: 'settings', s: { type: 'freeplay', titans: false } });
+    await cs[1].next('lobby', (m) => m.lobby!.settings.type === 'freeplay');
+    await battle(cs);
+    const otherEra = SHIPS.find((x) => x.cls !== 'TT' && eraOf(x) !== 'historic');
+    for (const e of [{ sp: 'leviathan' }, { sp: 'nonsense', rd: 1 }, { sp: 'constructor' }, { sp: otherEra?.id ?? 'x' }, { sp: 'fletcher' }]) cs[1].send({ t: 'in', e });
+    cs[1].send({ t: 'end' });
+    await wait(100);
+    const edges = cs[0].turns().flatMap((t) => (t.e ?? []).map(([p, , e]) => [p, e]));
+    expect(edges).toEqual([[1, { rd: 1 }], [1, { sp: 'fletcher' }]]);
+    expect(cs[0].turns().some((t) => t.ev?.some((e) => 'end' in e))).toBe(false);
+
+    cs[0].send({ t: 'end' });
+    cs[0].send({ t: 'end' });
+    const ended = await cs[1].next('turn', (m) => !!m.turn.ev?.some((e) => 'end' in e));
+    expect(ended.turn.ev).toEqual([{ end: 1 }]);
+    await wait(60);
+    expect(cs[1].turns().flatMap((t) => t.ev ?? []).filter((e) => 'end' in e)).toHaveLength(1);
+  });
+
+  it('ignores ship picks and ending in other battles', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    await battle(cs);
+    cs[1].send({ t: 'in', e: { sp: 'fletcher', rd: 1 } });
+    cs[1].send({ t: 'in', e: { sp: 'fletcher', tu: 1 } });
+    cs[0].send({ t: 'end' });
+    await wait(100);
+    const edges = cs[0].turns().flatMap((t) => (t.e ?? []).map(([, , e]) => e));
+    expect(edges).toEqual([{ tu: 1 }]);
+    expect(cs[0].turns().some((t) => t.ev?.length)).toBe(false);
   });
 });
 

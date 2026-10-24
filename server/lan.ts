@@ -21,6 +21,7 @@ import {
   LAN_PATH,
   LOBBY_NAME_MAX,
   type LobbySettings,
+  MAX_AI,
   type LobbyState,
   type LobbySummary,
   MAX_PER_TEAM,
@@ -109,6 +110,8 @@ interface Battle {
   lastManned: number;
   /** Turn hashes by turn: what each player reported, and the agreed one once decided. */
   hashes: Map<number, { by: Map<number, number>; agreed: number | null }>;
+  /** The host has ended this Free play battle. */
+  ending: boolean;
 }
 
 const DESYNC_COOLDOWN = 10000;
@@ -149,10 +152,15 @@ function cleanContinuous(v: unknown): Continuous | null {
   return [Math.max(-1, Math.min(1, r)), x, z, f ? 1 : 0, Number.isInteger(t) ? t : -1];
 }
 
-function cleanEdge(v: unknown): Edge | null {
+/** Edge orders as the battle allows them: Free play adds the ship picker's. */
+function cleanEdge(v: unknown, st: LobbySettings): Edge | null {
   if (!v || typeof v !== 'object') return null;
   const o = v as Record<string, unknown>;
   const e: Edge = {};
+  if (st.type === 'freeplay') {
+    if (shipAllowed(o.sp, st)) e.sp = o.sp;
+    if (o.rd === 1) e.rd = 1;
+  }
   if (o.tu === 1) e.tu = 1;
   if (o.td === 1) e.td = 1;
   if (smallInt(o.sl, 8)) e.sl = o.sl;
@@ -224,6 +232,8 @@ export class LobbyServer {
         return this.hash(s, m.k, m.h);
       case 'over':
         return this.over(s);
+      case 'end':
+        return this.end(s);
       case 'resync':
         return this.sendLog(s);
     }
@@ -346,7 +356,7 @@ export class LobbyServer {
       id: id(4),
       name: cleanName(name, LOBBY_NAME_MAX, `${s.name}'s fleet`),
       host: s,
-      settings: { ...DEFAULT_SETTINGS },
+      settings: { ...DEFAULT_SETTINGS, ai: [...DEFAULT_SETTINGS.ai] },
       members: [],
       battle: null,
     };
@@ -402,9 +412,9 @@ export class LobbyServer {
     if (!l || l.host !== s || l.battle || !v || typeof v !== 'object') return;
     const o = v as Record<string, unknown>;
     const st = l.settings;
-    if (o.type === 'domination' || o.type === 'annihilation' || o.type === 'convoy') st.type = o.type;
+    if (o.type === 'domination' || o.type === 'annihilation' || o.type === 'convoy' || o.type === 'freeplay') st.type = o.type;
     if (typeof o.mapId === 'string' && MAPS.some((m) => m.id === o.mapId)) st.mapId = o.mapId;
-    if (Number.isInteger(o.teamSize) && (o.teamSize as number) >= 3 && (o.teamSize as number) <= 8) st.teamSize = o.teamSize as number;
+    if (Array.isArray(o.ai) && o.ai.length === 2 && o.ai.every((n) => smallInt(n, MAX_AI))) st.ai = [o.ai[0], o.ai[1]];
     if (o.difficulty === 'easy' || o.difficulty === 'normal' || o.difficulty === 'hard') st.difficulty = o.difficulty;
     if (isTeam(o.escortTeam)) st.escortTeam = o.escortTeam;
     if (typeof o.titans === 'boolean') st.titans = o.titans;
@@ -440,12 +450,20 @@ export class LobbyServer {
     if (waiting.length) return this.send(s, { t: 'error', text: `Waiting for ${waiting.map((m) => m.session.name).join(', ')}.` });
     const sailing = l.members.filter((m) => m.session.peer);
     const st = l.settings;
+    // Every other battle is decided by one fleet running out of ships (or never meeting one).
+    if (st.type !== 'freeplay') {
+      const empty = ([0, 1] as Team[]).find((t) => st.ai[t] === 0 && !sailing.some((m) => m.team === t));
+      if (empty !== undefined) return this.send(s, { t: 'error', text: `Team ${empty === 0 ? 'A' : 'B'} has no ships: add AI ships or a captain.` });
+    }
     const ship = (m: MemberState) => (shipAllowed(m.shipId, st) ? m.shipId : defaultShip(st));
     const config: BattleConfig = {
       mode: 'lan',
       type: st.type,
       mapId: st.mapId,
-      teamSize: st.teamSize,
+      // Unused once `ai` is set.
+      teamSize: 1,
+      ai: [st.ai[0], st.ai[1]],
+      titans: st.titans,
       difficulty: st.difficulty,
       seed: randomBytes(4).readUInt32BE(0) % 1e9,
       convoySide: st.escortTeam === 0 ? 'escort' : 'raid',
@@ -464,6 +482,7 @@ export class LobbyServer {
       startedAt: 0,
       lastManned: 0,
       hashes: new Map(),
+      ending: false,
     };
     l.battle = battle;
     for (const m of l.members) {
@@ -537,7 +556,7 @@ export class LobbyServer {
     p.lastIn = Date.now();
     const c = cleanContinuous(m.c);
     if (c) p.cont = c;
-    const e = cleanEdge(m.e);
+    const e = cleanEdge(m.e, s.lobby!.settings);
     if (e && p.edges.length < 32) p.edges.push(e);
   }
 
@@ -597,6 +616,15 @@ export class LobbyServer {
     p.over = true;
     if (!b.endTimer) b.endTimer = setTimeout(() => this.finish(l), this.endGraceMs);
     if (b.players.every((x) => x.over || !x.present || !x.session.peer)) this.finish(l);
+  }
+
+  /** The host ends a Free play battle: every peer finishes it on the same turn. */
+  private end(s: Session): void {
+    const l = s.lobby;
+    const b = l?.battle;
+    if (!l || !b || l.host !== s || l.settings.type !== 'freeplay' || !b.clock || b.ending) return;
+    b.ending = true;
+    b.events.push({ end: 1 });
   }
 
   /** The battle is over for everyone: back to the waiting room. */

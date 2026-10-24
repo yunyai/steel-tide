@@ -26,8 +26,9 @@ export interface MenuHooks {
 /** Which flow the hangar belongs to: picking a ship for a battle, for Boss Rush, for a LAN lobby, or just browsing. */
 export type HangarFlow = 'battle' | 'rush' | 'lan' | null;
 
-type Tab = 'BB' | 'cruiser' | 'DD' | 'CV' | 'SS' | 'TT';
-const TABS: { id: Tab; label: string; classes: ShipClass[] }[] = [
+export type Tab = 'BB' | 'cruiser' | 'DD' | 'CV' | 'SS' | 'TT';
+/** Hangar tabs (shared with Free play's ship picker). */
+export const TABS: { id: Tab; label: string; classes: ShipClass[] }[] = [
   { id: 'BB', label: 'Battleship', classes: ['BB'] },
   { id: 'cruiser', label: 'Cruiser', classes: ['CB', 'CA', 'CL'] },
   { id: 'DD', label: 'Destroyer', classes: ['DD'] },
@@ -36,12 +37,12 @@ const TABS: { id: Tab; label: string; classes: ShipClass[] }[] = [
   { id: 'TT', label: 'Titan', classes: ['TT'] },
 ];
 
-function tabOf(cls: ShipClass): Tab {
+export function tabOf(cls: ShipClass): Tab {
   return TABS.find((t) => t.classes.includes(cls))!.id;
 }
 
 /** Eras with ships to sail, and the choices a battle offers (Mixed once there are two). */
-const LIVE_ERAS = ERAS.filter((e) => shipsOf(e).length > 0);
+export const LIVE_ERAS = ERAS.filter((e) => shipsOf(e).length > 0);
 const BATTLE_ERAS: BattleEra[] = LIVE_ERAS.length > 1 ? [...LIVE_ERAS, 'mixed'] : LIVE_ERAS;
 
 function eraName(e: BattleEra): string {
@@ -130,6 +131,8 @@ export class Menu {
   };
   /** The fleet-battle type to return to after a Boss Rush. */
   private battleType: BattleType = 'domination';
+  /** Free play: AI allies sailing with you and AI enemies. */
+  private freeAi: [number, number] = [3, 4];
   /** Boss Rush or its endless variant, remembered between visits. */
   private rushType: 'bossrush' | 'survival' = 'bossrush';
   private tab: Tab = 'BB';
@@ -255,6 +258,17 @@ export class Menu {
 
     const typeNote = h('p', { class: 'note' });
     const mapNote = h('p', { class: 'note' });
+    const shipCount: HTMLElement[] = [];
+    const aiCount: HTMLElement[] = [];
+    if (kind === 'battle') {
+      const counts = (max: number) => Array.from({ length: max + 1 }, (_, n) => ({ value: n, label: String(n) }));
+      const fa = this.freeAi;
+      shipCount.push(this.field('Ships per team', this.seg([3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: String(n) })), () => d.teamSize, (v) => (d.teamSize = v)), 'A titan brings two extra enemy ships to keep things fair.'));
+      aiCount.push(
+        this.field('AI allies', this.seg(counts(7), () => fa[0], (v) => (fa[0] = v)), 'AI ships sailing with you.'),
+        this.field('AI enemies', this.seg(counts(8), () => fa[1], (v) => (fa[1] = v)), 'None leaves the sea to you. A titan brings two extra enemy ships when there are any.'),
+      );
+    }
     const notes = () => {
       typeNote.textContent =
         d.type === 'domination'
@@ -263,8 +277,12 @@ export class Menu {
             ? (d.convoySide ?? 'escort') === 'escort'
               ? 'Four transports sail for a port on the far side. Bring two in, or keep two afloat until time runs out. One life each.'
               : 'Four transports sail for a port on the far side. Sink three of them before they make it. One life each.'
-            : 'No zones. The last fleet afloat wins; at the 15 minute mark, remaining hit points decide.';
+            : d.type === 'freeplay'
+              ? 'No score to win and no clock. Every sunk ship comes back after 8 seconds; change ship from the battle menu (Esc), and end the battle there when you are done.'
+              : 'No zones. The last fleet afloat wins; at the 15 minute mark, remaining hit points decide.';
       side.hidden = d.type !== 'convoy';
+      for (const f of shipCount) f.hidden = d.type === 'freeplay';
+      for (const f of aiCount) f.hidden = d.type !== 'freeplay';
       mapNote.textContent = MAPS.find((x) => x.id === d.mapId)!.description;
     };
     notes();
@@ -304,6 +322,7 @@ export class Menu {
               { value: 'domination', label: 'Domination' },
               { value: 'annihilation', label: 'Annihilation' },
               { value: 'convoy', label: 'Convoy' },
+              { value: 'freeplay', label: 'Free play' },
             ],
             () => d.type,
             (v) => {
@@ -331,7 +350,7 @@ export class Menu {
       ),
     );
     if (kind === 'battle') {
-      fields.push(this.field('Ships per team', this.seg([3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: String(n) })), () => d.teamSize, (v) => (d.teamSize = v)), 'A titan brings two extra enemy ships to keep things fair.'));
+      fields.push(...shipCount, ...aiCount);
     } else {
       fields.push(
         this.field(
@@ -526,7 +545,9 @@ export class Menu {
     };
     const start = () => {
       d.seed = Math.floor(Math.random() * 1e9);
-      this.hooks.start(structuredClone(d));
+      const config = structuredClone(d);
+      if (config.type === 'freeplay') config.ai = [this.freeAi[0], this.freeAi[1]];
+      this.hooks.start(config);
     };
     const foot = h(
       'div',

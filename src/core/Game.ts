@@ -103,7 +103,7 @@ export class Game {
   winner: Team | -1 = -1;
   reason = '';
   ai = new Map<Ship, AIController>();
-  /** Domination: sunk ships waiting to sail again, and the sim time they do. */
+  /** Domination and Free play: sunk ships waiting to sail again, and the sim time they do. */
   respawns: { ship: Ship; at: number }[] = [];
 
   /** Ship ids count per battle (AI lanes and convoy slots read them), so every LAN peer agrees. */
@@ -175,10 +175,49 @@ export class Game {
     return r ? Math.max(0, r.at - this.time) : -1;
   }
 
+  /** Free play: the captain's next ship, sailed from their next respawn. */
+  pickShip(ship: Ship, specId: string): void {
+    if (this.config.type !== 'freeplay' || ship.isSummon || !Object.hasOwn(SHIP_BY_ID, specId)) return;
+    const spec = SHIP_BY_ID[specId];
+    if (spec.hidden) return;
+    ship.nextSpec = spec === ship.spec ? null : spec;
+  }
+
+  /** Free play: leave the fight now and come back after the respawn delay, not counted as sunk. */
+  redeploy(ship: Ship): void {
+    if (this.config.type !== 'freeplay' || ship.isSummon || !ship.alive || this.over) return;
+    ship.withdraw();
+    this.respawns.push({ ship, at: this.time + RESPAWN_DELAY });
+  }
+
+  /**
+   * Free play: a new hull for a ship's captain (or bot). It takes the old one's place in the
+   * fleet, with the same captain and the same stats; the old hull leaves the sea.
+   */
+  private changeShip(old: Ship, spec: ShipSpec): Ship {
+    const ship = new Ship(this, spec, old.team, old.name);
+    ship.humanIndex = old.humanIndex;
+    ship.autopilot = old.autopilot;
+    ship.stats = old.stats;
+    old.humanIndex = -1;
+    old.nextSpec = null;
+    old.withdrawn = true;
+    this.ai.delete(old);
+    const i = this.fleet.indexOf(old);
+    if (i >= 0) this.fleet[i] = ship;
+    this.ships.push(ship);
+    this.events.emit('shipChanged', { old, ship });
+    return ship;
+  }
+
   private updateRespawns(): void {
-    for (const r of this.respawns) {
-      if (this.time < r.at) continue;
-      const ship = r.ship;
+    const due = this.respawns.filter((r) => this.time >= r.at);
+    if (!due.length) return;
+    this.respawns = this.respawns.filter((r) => this.time < r.at);
+    for (const r of due) {
+      let ship = r.ship;
+      if (ship.alive) continue;
+      if (ship.nextSpec) ship = this.changeShip(ship, ship.nextSpec);
       // A random lane of the spawn line with open water around it.
       let p = this.spawnPoint(ship.team, ship.spec, 0);
       for (let k = 0; k < 12; k++) {
@@ -191,7 +230,6 @@ export class Game {
       ship.respawn(p.x, p.z, p.heading);
       if (ship.humanIndex < 0 || ship.autopilot) this.ai.set(ship, new AIController(ship, this));
     }
-    this.respawns = this.respawns.filter((r) => !r.ship.alive);
   }
 
   addShip(spec: ShipSpec, team: Team, name: string, x: number, z: number, heading: number): Ship {
@@ -460,10 +498,14 @@ export class Game {
     this.rush?.onSunk(ship, credit ?? null);
     this.convoy?.onSunk(ship);
     // Fleets fight on after the result, but the score stands as it was when the battle was decided.
-    if (this.config.type === 'domination' && !ship.isSummon && !this.over) {
+    const type = this.config.type;
+    if ((type === 'domination' || type === 'freeplay') && !ship.isSummon && !this.over) {
       const other: Team = ship.team === 0 ? 1 : 0;
-      this.score[other] += DOMINATION_KILL_POINTS;
-      this.score[ship.team] = Math.max(0, this.score[ship.team] - DOMINATION_KILL_POINTS);
+      if (type === 'freeplay') this.score[other]++;
+      else {
+        this.score[other] += DOMINATION_KILL_POINTS;
+        this.score[ship.team] = Math.max(0, this.score[ship.team] - DOMINATION_KILL_POINTS);
+      }
       this.respawns.push({ ship, at: this.time + RESPAWN_DELAY });
     }
   }
@@ -471,6 +513,8 @@ export class Game {
   private checkVictory(): void {
     if (this.rush) return this.rush.checkVictory();
     if (this.convoy) return this.convoy.checkVictory();
+    // Free play runs until the host (or the solo captain) ends it.
+    if (this.config.type === 'freeplay') return;
     const alive: [number, number] = [0, 0];
     for (const s of this.ships) if (s.alive && !s.isSummon) alive[s.team]++;
     // Domination fleets come back, so only score and the clock decide it.

@@ -447,7 +447,7 @@ export interface ShipStats {
   shotsFired: number;
   /** Part of `damage` dealt by skills. */
   skill: number;
-  /** Times sunk (Domination respawns). */
+  /** Times sunk (Domination and Free play respawns). */
   deaths: number;
 }
 
@@ -460,6 +460,8 @@ export class Ship {
   humanIndex = -1;
   /** A human captain's ship that the AI is sailing while they are disconnected (LAN). */
   autopilot = false;
+  /** Free play: the ship this one's captain sails from the next respawn. */
+  nextSpec: ShipSpec | null = null;
   isSummon = false;
   summonOwner: Ship | null = null;
   /** Titan passive (see COLOSSUS); Boss Rush bosses go without it. */
