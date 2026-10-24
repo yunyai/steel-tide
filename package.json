@@ -1,0 +1,28 @@
+{
+  "name": "steel-tide",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Realistic 3D naval battle game inspired by World of Warships and War Thunder",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && tsc -p tsconfig.node.json && vite build",
+    "preview": "vite preview",
+    "lan": "vite build && vite preview --host 0.0.0.0 --port 4173",
+    "lan:dev": "vite --host 0.0.0.0",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/three": "^0.186.0",
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
+    "ws": "^8.22.0"
+  }
+}
