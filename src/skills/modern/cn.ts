@@ -279,7 +279,7 @@ export const CN_SKILLS: SkillDef[] = [
       id: 'j35Sweep',
       name: 'J-35 Sweep',
       short: 'J-35 SWEEP',
-      description: 'Stealth fighters sweep 1.2 km round the reticle for 6 s: every enemy plane inside falls, and enemy ships inside are strafed for 3k a second.',
+      description: 'Stealth fighters sweep 1.2 km round the reticle for 6 s: every enemy plane inside falls, and enemy ships inside are strafed for 2.4k a second.',
       cooldown: 22,
       duration: 6,
       accent: 0xff7060,
@@ -290,7 +290,7 @@ export const CN_SKILLS: SkillDef[] = [
         const p = aimPoint(ship, ship.spec.air?.range ?? 6000);
         st.data.x = p.x;
         st.data.z = p.z;
-        game.fields.add(ship, { x: p.x, z: p.z, r: 1200, life: st.spec.duration, skill: st.spec, look: 'swarm', color: st.spec.accent, dps: 3000 });
+        game.fields.add(ship, { x: p.x, z: p.z, r: 1200, life: st.spec.duration, skill: st.spec, look: 'swarm', color: st.spec.accent, dps: 2400 });
       },
       update(ship, game, dt, st) {
         intercept(ship, game, st.data.x as number, st.data.z as number, 1200, dt, { planes: 15000 });

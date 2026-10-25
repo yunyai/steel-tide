@@ -97,7 +97,7 @@ export const BATTLESHIP_SKILLS: SkillDef[] = [
       id: 'tomahawkVolley',
       name: 'Tomahawk Volley',
       short: 'TOMAHAWK',
-      description: 'Six cruise missiles lock onto the ship under the reticle (6k each).',
+      description: 'Six cruise missiles lock onto the ship under the reticle (5k each).',
       cooldown: 16,
       duration: 0,
       accent: 0xffaa44,
@@ -108,7 +108,7 @@ export const BATTLESHIP_SKILLS: SkillDef[] = [
         const p = aimPoint(ship, 6000);
         const lock = enemyNear(ship, game, p.x, p.z, 500);
         for (let i = 0; i < 6; i++) {
-          const m = game.missiles.launch(ship, p.x + (game.rng() - 0.5) * 120, p.z + (game.rng() - 0.5) * 120, i * 0.22, 6000);
+          const m = game.missiles.launch(ship, p.x + (game.rng() - 0.5) * 120, p.z + (game.rng() - 0.5) * 120, i * 0.22, 5000);
           m.target = lock;
           m.skill = st.spec;
         }
@@ -145,7 +145,7 @@ export const BATTLESHIP_SKILLS: SkillDef[] = [
       id: 'rodsFromGod',
       name: 'Rods from God',
       short: 'RODS FROM GOD',
-      description: 'Five tungsten rods fall on the reticle: 14k each, 70 m blast, 1.5 s EMP stun.',
+      description: 'Five tungsten rods fall on the reticle: 12k each, 70 m blast, 1.5 s EMP stun.',
       ult: true,
       cooldown: 85,
       duration: 3,
@@ -170,7 +170,7 @@ export const BATTLESHIP_SKILLS: SkillDef[] = [
             z: (lock ? lock.pos.z + lz : p.z) + Math.sin(a) * r,
             radius: 70,
             delay: 2 + i * 0.18,
-            damage: 14000,
+            damage: 12000,
             stun: 1.5,
             knock: 30,
             fire: 0.5,

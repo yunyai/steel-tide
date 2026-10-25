@@ -27,6 +27,9 @@ export class AIController {
   private reverseTime = 0;
   /** Seconds before backing off may start again (a few tries ahead come between). */
   private reverseRest = 0;
+  /** After backing off: seconds left sailing for open water, and the heading to it. */
+  private escapeTime = 0;
+  private escapeHeading = 0;
   /** Convoy escort: strayed too far and heading back to station. */
   private closingUp = false;
 
@@ -52,9 +55,14 @@ export class AIController {
     // few seconds, then try ahead again for a few before backing off once more (so a stern on the
     // rocks cannot keep it reversing).
     if (this.reverseRest > 0) this.reverseRest -= dt;
+    if (this.escapeTime > 0) this.escapeTime -= dt;
     if ((ship.grounded > 0.4 || ship.stalled > 3) && this.reverseRest <= 0) {
       this.reverseTime = 6;
       this.reverseRest = 9;
+      // Then make for clear water roughly astern before chasing the fight again, or the next
+      // turn toward the enemy runs it straight back onto the same rocks.
+      this.escapeHeading = avoid(this.game, ship, wrapAngle(ship.heading + Math.PI));
+      this.escapeTime = 14;
     }
     if (this.reverseTime > 0) {
       this.reverseTime -= dt;
@@ -164,7 +172,9 @@ export class AIController {
     const station = this.convoyStation();
     const dodge = this.evasion();
 
-    if (dodge !== null) {
+    if (this.escapeTime > 0) {
+      heading = this.escapeHeading;
+    } else if (dodge !== null) {
       heading = dodge;
     } else if (station) {
       heading = bearingTo(ship.pos.x, ship.pos.z, station.x, station.z);

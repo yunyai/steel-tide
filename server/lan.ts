@@ -7,21 +7,17 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import type { BattleConfig } from '../src/core/BattleSetup';
 import type { Team } from '../src/core/types';
-import { ERAS, eraOf } from '../src/data/factions';
-import { SHIP_BY_ID, shipsIn } from '../src/data/ships';
-import { MAPS } from '../src/world/GameMap';
 import {
   AI_TAKEOVER_MS,
   type ClientMsg,
   type Continuous,
-  DEFAULT_SETTINGS,
   type Edge,
   END_GRACE_MS,
   IDLE_MS,
+  LAN_BATTLE_LIMIT_S,
   LAN_PATH,
   LOBBY_NAME_MAX,
   type LobbySettings,
-  MAX_AI,
   type LobbyState,
   type LobbySummary,
   MAX_PER_TEAM,
@@ -32,10 +28,12 @@ import {
   type Turn,
   type TurnEvent,
 } from '../src/net/protocol';
+import { type BattleRules, navalRules } from './rules';
 
 // LAN lobby server. It holds the lobbies and, once a battle starts, clocks lockstep turns:
 // every TURN_MS it bundles each captain's latest orders and sends the bundle to all of them.
-// It never simulates; every browser runs the battle itself from the same seed and turns.
+// It never simulates; every browser runs the battle itself from the same seed and turns. What
+// the battle itself allows (settings, picks, orders, its config) comes from its rules (rules.ts).
 
 export interface LanOptions {
   /** Addresses friends can open, shown in the lobby. */
@@ -46,6 +44,9 @@ export interface LanOptions {
   endGraceMs?: number;
   /** How long a starting battle waits for slow loaders. */
   loadTimeoutMs?: number;
+  /** Longest a battle is clocked. */
+  maxBattleMs?: number;
+  rules?: BattleRules;
 }
 
 /** One browser tab's link to the server. */
@@ -110,14 +111,12 @@ interface Battle {
   lastManned: number;
   /** Turn hashes by turn: what each player reported, and the agreed one once decided. */
   hashes: Map<number, { by: Map<number, number>; agreed: number | null }>;
-  /** The host has ended this Free play battle. */
+  /** This Free play battle is ending: the host ended it, or it ran out of time. */
   ending: boolean;
 }
 
 const DESYNC_COOLDOWN = 10000;
 const ABANDON_MS = 60000;
-const MAX_BATTLE_MS = 60 * 60 * 1000;
-const SHIP_ID = /^[a-z0-9_-]{1,32}$/;
 
 function id(bytes = 6): string {
   return randomBytes(bytes).toString('hex');
@@ -129,47 +128,7 @@ function cleanName(v: unknown, max: number, fallback: string): string {
   return s || fallback;
 }
 
-/** A ship captains may pick under these settings: of the lobby's era, and a titan only if allowed. */
-function shipAllowed(id: unknown, st: LobbySettings): id is string {
-  if (typeof id !== 'string' || !SHIP_ID.test(id) || !Object.hasOwn(SHIP_BY_ID, id)) return false;
-  const spec = SHIP_BY_ID[id];
-  if (spec.hidden || (st.era !== 'mixed' && eraOf(spec) !== st.era)) return false;
-  return st.titans || spec.cls !== 'TT';
-}
-
-/** The ship a captain is put in when theirs is not allowed: the era's first line ship. */
-function defaultShip(st: LobbySettings): string {
-  return shipsIn(st.era).find((s) => s.cls !== 'TT')!.id;
-}
-
 const isTeam = (v: unknown): v is Team => v === 0 || v === 1;
-const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const smallInt = (v: unknown, max: number): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
-
-function cleanContinuous(v: unknown): Continuous | null {
-  if (!Array.isArray(v) || v.length !== 5 || !v.every(finite)) return null;
-  const [r, x, z, f, t] = v as number[];
-  return [Math.max(-1, Math.min(1, r)), x, z, f ? 1 : 0, Number.isInteger(t) ? t : -1];
-}
-
-/** Edge orders as the battle allows them: Free play adds the ship picker's. */
-function cleanEdge(v: unknown, st: LobbySettings): Edge | null {
-  if (!v || typeof v !== 'object') return null;
-  const o = v as Record<string, unknown>;
-  const e: Edge = {};
-  if (st.type === 'freeplay') {
-    if (shipAllowed(o.sp, st)) e.sp = o.sp;
-    if (o.rd === 1) e.rd = 1;
-  }
-  if (o.tu === 1) e.tu = 1;
-  if (o.td === 1) e.td = 1;
-  if (smallInt(o.sl, 8)) e.sl = o.sl;
-  if (smallInt(o.sk, 16)) e.sk = o.sk;
-  if (smallInt(o.co, 8)) e.co = o.co;
-  if (o.du === 1) e.du = 1;
-  if (o.dd === 1) e.dd = 1;
-  return Object.keys(e).length ? e : null;
-}
 
 export class LobbyServer {
   private sessions = new Map<string, Session>();
@@ -179,6 +138,8 @@ export class LobbyServer {
   private readonly idleMs: number;
   private readonly endGraceMs: number;
   private readonly loadTimeoutMs: number;
+  private readonly maxBattleMs: number;
+  private readonly rules: BattleRules;
 
   constructor(private opts: LanOptions = {}) {
     this.turnMs = opts.turnMs ?? TURN_MS;
@@ -186,6 +147,8 @@ export class LobbyServer {
     this.idleMs = opts.idleMs ?? IDLE_MS;
     this.endGraceMs = opts.endGraceMs ?? END_GRACE_MS;
     this.loadTimeoutMs = opts.loadTimeoutMs ?? 15000;
+    this.maxBattleMs = opts.maxBattleMs ?? LAN_BATTLE_LIMIT_S * 1000;
+    this.rules = opts.rules ?? navalRules;
   }
 
   connect(send: (m: ServerMsg) => void): Peer {
@@ -356,7 +319,7 @@ export class LobbyServer {
       id: id(4),
       name: cleanName(name, LOBBY_NAME_MAX, `${s.name}'s fleet`),
       host: s,
-      settings: { ...DEFAULT_SETTINGS, ai: [...DEFAULT_SETTINGS.ai] },
+      settings: this.rules.defaults(),
       members: [],
       battle: null,
     };
@@ -376,7 +339,7 @@ export class LobbyServer {
   private addMember(l: Lobby, s: Session): void {
     const count = (t: Team) => l.members.filter((m) => m.team === t).length;
     const team: Team = count(0) <= count(1) ? 0 : 1;
-    l.members.push({ session: s, team, shipId: defaultShip(l.settings), ready: false, player: -1 });
+    l.members.push({ session: s, team, shipId: this.rules.defaultPick(l.settings), ready: false, player: -1 });
     s.lobby = l;
     this.pushLobby(l);
   }
@@ -410,18 +373,11 @@ export class LobbyServer {
   private settings(s: Session, v: unknown): void {
     const l = s.lobby;
     if (!l || l.host !== s || l.battle || !v || typeof v !== 'object') return;
-    const o = v as Record<string, unknown>;
     const st = l.settings;
-    if (o.type === 'domination' || o.type === 'annihilation' || o.type === 'convoy' || o.type === 'freeplay') st.type = o.type;
-    if (typeof o.mapId === 'string' && MAPS.some((m) => m.id === o.mapId)) st.mapId = o.mapId;
-    if (Array.isArray(o.ai) && o.ai.length === 2 && o.ai.every((n) => smallInt(n, MAX_AI))) st.ai = [o.ai[0], o.ai[1]];
-    if (o.difficulty === 'easy' || o.difficulty === 'normal' || o.difficulty === 'hard') st.difficulty = o.difficulty;
-    if (isTeam(o.escortTeam)) st.escortTeam = o.escortTeam;
-    if (typeof o.titans === 'boolean') st.titans = o.titans;
-    if (o.era === 'mixed' || ERAS.includes(o.era as never)) st.era = o.era as LobbySettings['era'];
+    this.rules.applySettings(st, v as Record<string, unknown>);
     for (const m of l.members) {
       m.ready = false;
-      if (!shipAllowed(m.shipId, st)) m.shipId = defaultShip(st);
+      if (!this.rules.pickAllowed(m.shipId, st)) m.shipId = this.rules.defaultPick(st);
     }
     this.pushLobby(l);
   }
@@ -435,7 +391,7 @@ export class LobbyServer {
         if (l.members.filter((x) => x.team === m.team).length >= MAX_PER_TEAM) return this.send(s, { t: 'error', text: 'That fleet is full.' });
         mem.team = m.team;
       }
-      if (shipAllowed(m.shipId, l.settings)) mem.shipId = m.shipId;
+      if (this.rules.pickAllowed(m.shipId, l.settings)) mem.shipId = m.shipId;
     }
     if (typeof m.ready === 'boolean') mem.ready = m.ready;
     this.pushLobby(l);
@@ -450,26 +406,11 @@ export class LobbyServer {
     if (waiting.length) return this.send(s, { t: 'error', text: `Waiting for ${waiting.map((m) => m.session.name).join(', ')}.` });
     const sailing = l.members.filter((m) => m.session.peer);
     const st = l.settings;
-    // Every other battle is decided by one fleet running out of ships (or never meeting one).
-    if (st.type !== 'freeplay') {
-      const empty = ([0, 1] as Team[]).find((t) => st.ai[t] === 0 && !sailing.some((m) => m.team === t));
-      if (empty !== undefined) return this.send(s, { t: 'error', text: `Team ${empty === 0 ? 'A' : 'B'} has no ships: add AI ships or a captain.` });
-    }
-    const ship = (m: MemberState) => (shipAllowed(m.shipId, st) ? m.shipId : defaultShip(st));
-    const config: BattleConfig = {
-      mode: 'lan',
-      type: st.type,
-      mapId: st.mapId,
-      // Unused once `ai` is set.
-      teamSize: 1,
-      ai: [st.ai[0], st.ai[1]],
-      titans: st.titans,
-      difficulty: st.difficulty,
-      seed: randomBytes(4).readUInt32BE(0) % 1e9,
-      convoySide: st.escortTeam === 0 ? 'escort' : 'raid',
-      era: st.era,
-      players: sailing.map((m) => ({ shipId: ship(m), device: 'mouse', team: m.team, name: m.session.name })),
-    };
+    const rules = this.rules;
+    const captains = sailing.map((m) => ({ pick: rules.pickAllowed(m.shipId, st) ? m.shipId : rules.defaultPick(st), team: m.team, name: m.session.name }));
+    const refused = rules.startError(st, captains);
+    if (refused) return this.send(s, { t: 'error', text: refused });
+    const config: BattleConfig = rules.config(st, captains, randomBytes(4).readUInt32BE(0) % 1e9);
     const now = Date.now();
     const battle: Battle = {
       config,
@@ -517,8 +458,16 @@ export class LobbyServer {
       const now = Date.now();
       // Catch up after a stall, but never burst more than a few turns at once.
       for (let i = 0; i < 6 && b.startedAt + b.turns.length * this.turnMs <= now; i++) this.emitTurn(b, now);
+      const ran = b.turns.length * this.turnMs;
+      // Out of time: a battle the host ends is ended on a turn like the host's End battle, so every
+      // captain gets the report; past the grace for that (or for any other battle) the clock stops.
+      const hostEnds = this.rules.hostEnds(l.settings);
+      if (ran > this.maxBattleMs && hostEnds && !b.ending) {
+        b.ending = true;
+        b.events.push({ end: 2 });
+      }
       // Everyone has gone, or it has run for far too long: stop rather than clock turns for nobody.
-      if (now - b.lastManned > ABANDON_MS || b.turns.length * this.turnMs > MAX_BATTLE_MS) return this.finish(l);
+      if (now - b.lastManned > ABANDON_MS || ran > this.maxBattleMs + (hostEnds ? this.endGraceMs : 0)) return this.finish(l);
       b.clock = setTimeout(loop, Math.max(0, b.startedAt + b.turns.length * this.turnMs - Date.now()));
     };
     b.clock = setTimeout(loop, 0);
@@ -534,7 +483,7 @@ export class LobbyServer {
     const turn: Turn = { k: b.turns.length };
     b.players.forEach((p, i) => {
       // Gone quiet (hidden tab, dropped link): stop shooting until they are back.
-      if (p.cont && p.cont[3] && now - p.lastIn > this.idleMs) p.cont = [p.cont[0], p.cont[1], p.cont[2], 0, p.cont[4]];
+      if (p.cont && now - p.lastIn > this.idleMs) p.cont = this.rules.holdFire(p.cont);
       if (p.cont && (!p.sent || p.cont.some((v, j) => v !== p.sent![j]))) {
         (turn.p ??= []).push([i, p.cont]);
         p.sent = p.cont;
@@ -554,9 +503,9 @@ export class LobbyServer {
     const p = this.playerOf(s);
     if (!p) return;
     p.lastIn = Date.now();
-    const c = cleanContinuous(m.c);
+    const c = this.rules.cleanContinuous(m.c);
     if (c) p.cont = c;
-    const e = cleanEdge(m.e, s.lobby!.settings);
+    const e = this.rules.cleanEdge(m.e, s.lobby!.settings);
     if (e && p.edges.length < 32) p.edges.push(e);
   }
 
@@ -622,7 +571,7 @@ export class LobbyServer {
   private end(s: Session): void {
     const l = s.lobby;
     const b = l?.battle;
-    if (!l || !b || l.host !== s || l.settings.type !== 'freeplay' || !b.clock || b.ending) return;
+    if (!l || !b || l.host !== s || !this.rules.hostEnds(l.settings) || !b.clock || b.ending) return;
     b.ending = true;
     b.events.push({ end: 1 });
   }

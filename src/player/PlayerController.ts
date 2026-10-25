@@ -1,10 +1,11 @@
 import { PerspectiveCamera, Quaternion, Vector3 } from 'three';
-import { type InputDeviceId, type KeyLayout, layoutFor } from '../config';
+import type { InputDeviceId, KeyLayout } from '../config';
 import type { Game } from '../core/Game';
 import { bearingTo, clamp, dist2D, wrapAngle } from '../core/math';
 import type { ControlState, Ship } from '../ships/Ship';
 import { waveHeight } from '../world/Waves';
 import type { Input } from '../input/Input';
+import { type Bindings, bindings, layoutFor } from '../input/Keybinds';
 import { controls } from '../input/Settings';
 import { type AimHit, assistAim, flightTimeFn, leadPoint, raycast } from './FireControl';
 import { ShellCam } from './ShellCam';
@@ -96,7 +97,7 @@ export class PlayerController {
   /** Short message for the HUD (e.g. a lock with nothing to lock onto) and how long it stays up. */
   notice = '';
   noticeTime = 0;
-  readonly layout: KeyLayout | null;
+  private keys: { b: Bindings; layout: KeyLayout } | null = null;
   readonly aim = new Vector3();
   readonly shellCam: ShellCam;
   /** Set for a LAN battle (see `out`). */
@@ -114,9 +115,16 @@ export class PlayerController {
     this.assistOn = assist;
     this.holdRange = this.range = ship.maxAimRange() * 0.6;
     this.aim.set(ship.pos.x + Math.sin(this.yaw) * this.range, 0, ship.pos.z - Math.cos(this.yaw) * this.range);
-    this.layout = device === 'mouse' ? layoutFor(ship.spec) : null;
     this.camPos.copy(ship.pos);
     this.shellCam = new ShellCam(game, ship);
+  }
+
+  /** The keyboard layout (keyboard + mouse captains), following the bindings as they change. */
+  get layout(): KeyLayout | null {
+    if (this.device !== 'mouse') return null;
+    const b = bindings();
+    if (this.keys?.b !== b) this.keys = { b, layout: layoutFor(this.ship.spec, b) };
+    return this.keys.layout;
   }
 
   /**
@@ -141,7 +149,7 @@ export class PlayerController {
   }
 
   shake(amount: number): void {
-    this.shakeAmt = Math.min(3, this.shakeAmt + amount);
+    this.shakeAmt = Math.min(3, this.shakeAmt + amount * controls().shake);
   }
 
   private maxRange(): number {

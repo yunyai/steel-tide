@@ -1,3 +1,5 @@
+import { boundKeys, onBindings } from './Keybinds';
+
 // Global keyboard / mouse / gamepad state with per-frame edge detection.
 
 export class Input {
@@ -21,8 +23,10 @@ export class Input {
   onLockChange: ((locked: boolean) => void) | null = null;
   /** Swallow browser defaults for game keys (on during battle only, so menus stay keyboard-usable). */
   capture = false;
+  private bound = boundKeys();
 
   constructor(private canvas: HTMLElement) {
+    onBindings(() => (this.bound = boundKeys()));
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.down.add(e.code);
@@ -85,7 +89,7 @@ export class Input {
   }
 
   private isGameKey(code: string): boolean {
-    return code === 'Space' || code === 'Tab' || code.startsWith('Arrow') || code === 'Quote' || code === 'Slash';
+    return this.bound.has(code) || code === 'Space' || code === 'Tab' || code === 'F3' || code.startsWith('Arrow') || code === 'Quote' || code === 'Slash';
   }
 
   /** Mouse movement and buttons drive the ship (pointer locked, or lock unavailable). */

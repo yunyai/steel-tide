@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { sound } from '../input/Settings';
 
 // Procedural WebAudio sound: no asset files. Distance attenuation, air
 // absorption (low-pass) and speed-of-sound delay, so far salvos rumble late.
@@ -28,12 +29,15 @@ const SOUND_SPEED = 343 * 1.6;
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  /** World sounds, the sea and the engine. */
+  private effects!: GainNode;
+  /** Interface sounds. */
+  private uiBus!: GainNode;
   private noise!: AudioBuffer;
   private brown!: AudioBuffer;
   private engineGain: GainNode | null = null;
   private engineFilter: BiquadFilterNode | null = null;
   private voices = 0;
-  volume = 0.7;
   muted = false;
   /** Listener positions (one per viewport). */
   listeners: Vector3[] = [];
@@ -57,8 +61,12 @@ export class AudioEngine {
     comp.release.value = 0.25;
     comp.connect(ctx.destination);
     this.master = ctx.createGain();
-    this.master.gain.value = this.volume;
     this.master.connect(comp);
+    this.effects = ctx.createGain();
+    this.effects.connect(this.master);
+    this.uiBus = ctx.createGain();
+    this.uiBus.connect(this.master);
+    this.applySound();
 
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -74,14 +82,18 @@ export class AudioEngine {
     this.startAmbience();
   }
 
-  setVolume(v: number): void {
-    this.volume = v;
-    if (this.ctx) this.master.gain.value = this.muted ? 0 : v;
+  /** Take up the volumes from the sound settings. */
+  applySound(): void {
+    if (!this.ctx) return;
+    const v = sound();
+    this.master.gain.value = this.muted ? 0 : v.master;
+    this.effects.gain.value = v.effects;
+    this.uiBus.gain.value = v.ui;
   }
 
   toggleMute(): void {
     this.muted = !this.muted;
-    this.setVolume(this.volume);
+    this.applySound();
   }
 
   private startAmbience(): void {
@@ -99,7 +111,7 @@ export class AudioEngine {
     const lg = ctx.createGain();
     lg.gain.value = 0.06;
     lfo.connect(lg).connect(g.gain);
-    sea.connect(f).connect(g).connect(this.master);
+    sea.connect(f).connect(g).connect(this.effects);
     sea.start();
     lfo.start();
 
@@ -111,7 +123,7 @@ export class AudioEngine {
     this.engineFilter.frequency.value = 120;
     this.engineGain = ctx.createGain();
     this.engineGain.gain.value = 0;
-    eng.connect(this.engineFilter).connect(this.engineGain).connect(this.master);
+    eng.connect(this.engineFilter).connect(this.engineGain).connect(this.effects);
     eng.start();
   }
 
@@ -157,7 +169,7 @@ export class AudioEngine {
     out.gain.value = vol;
     const panner = ctx.createStereoPanner();
     panner.pan.value = Math.max(-1, Math.min(1, pan * 0.8));
-    air.connect(out).connect(panner).connect(this.master);
+    air.connect(out).connect(panner).connect(this.effects);
     let dur = 1;
     switch (kind) {
       case 'gun':
@@ -296,7 +308,7 @@ export class AudioEngine {
     const t = ctx.currentTime;
     const g = ctx.createGain();
     g.gain.value = 0.5;
-    g.connect(this.master);
+    g.connect(this.uiBus);
     switch (kind) {
       case 'click':
         this.tone(g, t, 'sine', 900, 0.15, 0.06);

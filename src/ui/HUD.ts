@@ -7,8 +7,10 @@ import type { ConsumableType, Era, Team } from '../core/types';
 import { accentCss } from '../data/accents';
 import { audio } from '../fx/Audio';
 import type { Input } from '../input/Input';
+import { keyName, onBindings } from '../input/Keybinds';
 import { RUSH_WAVES } from '../modes/BossRush';
 import { ARRIVE_GOAL, SINK_GOAL } from '../modes/Convoy';
+import { LAN_BATTLE_LIMIT_S } from '../net/protocol';
 import { leadPoint } from '../player/FireControl';
 import type { PlayerController } from '../player/PlayerController';
 import { consumableLabel } from '../ships/Consumables';
@@ -20,6 +22,7 @@ import { classIcon, consumableIcon, glyph, skillIcon } from './Icons';
 import { Intermission } from './Intermission';
 import { Minimap } from './Minimap';
 import { captainName } from './names';
+import { palette } from './palette';
 
 // The heads-up display for the player's viewport, bound to a PlayerController.
 
@@ -77,11 +80,6 @@ const CONS_SHORT: Record<ConsumableType, string> = {
 /** Search goes by another name outside the gunnery eras. */
 const SEARCH_SHORT: Record<Era, string> = { historic: 'RADAR', modern: 'RADAR', fantasy: 'SCRY', scifi: 'SCAN' };
 
-function keyName(code: string | undefined): string {
-  if (!code) return '';
-  return code.replace('Key', '').replace('Digit', '');
-}
-
 interface Ribbon {
   kind: string;
   count: number;
@@ -94,7 +92,7 @@ interface SkillEl {
   t: HTMLElement;
   wasReady: boolean;
   /** Key (or pad buttons) shown on the button. */
-  key?: string;
+  key?: HTMLElement;
 }
 
 /** Edge chevrons shown at most, nearest first. */
@@ -117,6 +115,10 @@ export class HUD {
   private slotEls: { root: HTMLElement; bar: HTMLElement; info: HTMLElement }[] = [];
   private skillEls: SkillEl[] = [];
   private consEls: SkillEl[] = [];
+  /** LAN Free play: the last "minutes left" warning given before the server's time limit. */
+  private limitWarned = Infinity;
+  /** Key labels on the buttons, redrawn when the bindings change. */
+  private keyEls: { el: HTMLElement; text: () => string }[] = [];
   private ribbons: Ribbon[] = [];
   private feed: { el: HTMLElement; time: number }[] = [];
   private bannerUntil = 0;
@@ -186,7 +188,8 @@ export class HUD {
       e.barA = el('i', 'a', bar);
       e.barE = el('i', 'e', bar);
       e.scoreE = el('div', 'score enemy num', top);
-      e.timer = el('div', 'timer num', top);
+      // Inside the panel: anything hung below it is cut off by the panel's clipped corners.
+      e.timer = el('div', 'timer num', mid);
       if (!game.caps.length) bar.style.display = 'none';
       if (game.config.type === 'freeplay') {
         e.scoreA.title = 'Enemy ships your fleet has sunk';
@@ -282,10 +285,9 @@ export class HUD {
       hx.insertAdjacentHTML('beforeend', skillIcon(st.spec.icon));
       el('div', 'sweep', hx);
       const t = el('div', 't', hx);
-      const k = el('kbd', '', root);
-      k.textContent = pc.layout ? keyName(pc.layout.skills[i]) : pad;
+      const k = this.keyLabel(root, () => pc.layout?.skills[i], pad);
       el('div', 'nm', root).textContent = st.spec.short;
-      this.skillEls.push({ root, t, wasReady: me.skillReady(i), key: k.textContent });
+      this.skillEls.push({ root, t, wasReady: me.skillReady(i), key: k });
     });
     el('div', 'gap', sb);
     me.consumables.forEach((c, i) => {
@@ -295,8 +297,7 @@ export class HUD {
       hx.insertAdjacentHTML('beforeend', consumableIcon(c.spec.type));
       el('div', 'sweep', hx);
       const t = el('div', 't', hx);
-      const k = el('kbd', '', root);
-      k.textContent = pc.layout ? keyName(pc.layout.consumables[i]) : PAD_CONS[i];
+      this.keyLabel(root, () => pc.layout?.consumables[i], PAD_CONS[i]);
       el('span', 'ch', root);
       el('div', 'nm', root).textContent = c.spec.type === 'search' ? SEARCH_SHORT[eraOf(me.spec)] : CONS_SHORT[c.spec.type];
       this.consEls.push({ root, t, wasReady: true });
@@ -305,8 +306,7 @@ export class HUD {
     const weapons = el('div', 'weapons', ck);
     me.slots.forEach((s, i) => {
       const root = el('div', 'slot', weapons);
-      const k = el('kbd', '', root);
-      k.textContent = pc.layout ? keyName(pc.layout.slots[i]) : 'LB/RB';
+      this.keyLabel(root, () => pc.layout?.slots[i], 'LB/RB');
       root.append(s.label.replace(' shells', ''));
       const info = el('div', 'num', root);
       const b = el('div', 'bar', root);
@@ -337,6 +337,7 @@ export class HUD {
     const ev = game.events;
     const mine = (s: Ship) => s === pc.ship || s.summonOwner === pc.ship;
     this.off.push(
+      onBindings(() => this.relabel()),
       ev.on('shellHit', (h) => {
         if (!mine(h.attacker) || h.target.team === this.team || (h.secondary && h.damage <= 0)) return;
         const label = OUTCOME_LABEL[h.outcome];
@@ -401,12 +402,12 @@ export class HUD {
       }),
       ev.on('convoy', (c) => {
         const ours = c.ship.team === this.team;
-        if (c.kind === 'arrived') this.callout('Transport in port', ours ? `${c.ship.name} made it through` : `${c.ship.name} slipped past you`, ours ? '#5dff9a' : '#ff3b4e');
-        else this.callout('Transport sunk', ours ? `${c.ship.name} is lost` : `${c.ship.name} goes down`, ours ? '#ff3b4e' : '#ffb547');
+        if (c.kind === 'arrived') this.callout('Transport in port', ours ? `${c.ship.name} made it through` : `${c.ship.name} slipped past you`, ours ? palette().good : palette().enemy);
+        else this.callout('Transport sunk', ours ? `${c.ship.name} is lost` : `${c.ship.name} goes down`, ours ? palette().enemy : '#ffb547');
         audio.ui(ours === (c.kind === 'arrived') ? 'capture' : 'horn');
       }),
       ev.on('waveClear', (w) => {
-        this.callout(w.cleared ? 'Victory' : 'Wave clear', w.cleared ? 'All titans sunk. Endless waves continue.' : 'Choose a refit', '#5dff9a');
+        this.callout(w.cleared ? 'Victory' : 'Wave clear', w.cleared ? 'All titans sunk. Endless waves continue.' : 'Choose a refit', palette().good);
         audio.ui('capture');
       }),
     );
@@ -455,6 +456,19 @@ export class HUD {
   private flashScreen(color: string): void {
     this.e.flashfx.style.setProperty('--c', `${color}66`);
     flash(this.e.flashfx, 'on');
+  }
+
+  /** A key label for a button: the bound key for keyboard captains, else the pad buttons. */
+  private keyLabel(root: HTMLElement, code: () => string | undefined, pad: string): HTMLElement {
+    const k = el('kbd', '', root);
+    const text = () => (this.pc.layout ? keyName(code()) : pad);
+    k.textContent = text();
+    this.keyEls.push({ el: k, text });
+    return k;
+  }
+
+  private relabel(): void {
+    for (const k of this.keyEls) k.el.textContent = k.text();
   }
 
   dispose(): void {
@@ -639,6 +653,19 @@ export class HUD {
     }
     const left = free ? g.time : Math.max(0, BATTLE_TIME_LIMIT - g.time);
     setText(e.timer, `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`);
+    if (free && g.config.mode === 'lan') this.warnLimit(g.time);
+  }
+
+  /** LAN Free play ends at the server's time limit: say so 5 minutes and 1 minute before. */
+  private warnLimit(t: number): void {
+    const left = LAN_BATTLE_LIMIT_S - t;
+    this.e.timer.classList.toggle('late', left <= 300);
+    for (const m of [5, 1]) {
+      // Only near the mark itself: a captain rejoining later is not told about a warning gone by.
+      if (m >= this.limitWarned || left > m * 60 || left < m * 60 - 30) continue;
+      this.limitWarned = m;
+      this.callout(`Free play ends in ${m === 1 ? '1 minute' : `${m} minutes`}`, 'LAN battles stop after an hour', '#ffb547');
+    }
   }
 
   private updateRush(): void {
@@ -774,7 +801,7 @@ export class HUD {
       if (ready && !se.wasReady && me.alive) {
         flash(se.root, 'flash');
         if (st.spec.ult) {
-          this.callout('Ultimate ready', `${st.spec.name}: press ${se.key ?? ''}`, '#ffb547');
+          this.callout('Ultimate ready', `${st.spec.name}: press ${se.key?.textContent ?? ''}`, '#ffb547');
           audio.ui('ultReady');
         }
       }

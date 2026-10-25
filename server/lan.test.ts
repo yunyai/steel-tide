@@ -6,6 +6,7 @@ import type { ClientMsg, LobbyState, ServerMsg, Turn } from '../src/net/protocol
 import { eraOf } from '../src/data/factions';
 import { SHIPS, SHIP_BY_ID } from '../src/data/ships';
 import { attachLan, type LanOptions, LobbyServer } from './lan';
+import { navalRules } from './rules';
 
 // The lobby server over real sockets, with its clocks sped up.
 
@@ -380,6 +381,27 @@ describe('AI counts and free play', () => {
     expect(ended.turn.ev).toEqual([{ end: 1 }]);
     await wait(60);
     expect(cs[1].turns().flatMap((t) => t.ev ?? []).filter((e) => 'end' in e)).toHaveLength(1);
+  });
+
+  it('ends free play for everyone on a turn when it runs out of time, then stops the clock', async () => {
+    await serve({ ...FAST, maxBattleMs: 300, rules: navalRules });
+    const cs = await room('Ana', 'Ben');
+    cs[0].send({ t: 'settings', s: { type: 'freeplay' } });
+    await cs[1].next('lobby', (m) => m.lobby!.settings.type === 'freeplay');
+    await battle(cs);
+    const ended = await cs[1].next('turn', (m) => !!m.turn.ev?.some((e) => 'end' in e), 3000);
+    expect(ended.turn.ev).toEqual([{ end: 2 }]);
+    // Nobody reports the battle over here, so the clock stops after the grace.
+    await Promise.all(cs.map((c) => c.next('ended', undefined, 3000)));
+    expect(cs[0].turns().flatMap((t) => t.ev ?? []).filter((e) => 'end' in e)).toHaveLength(1);
+  });
+
+  it('just stops other battles at the time limit', async () => {
+    await serve({ ...FAST, maxBattleMs: 200 });
+    const cs = await room('Ana', 'Ben');
+    await battle(cs);
+    await Promise.all(cs.map((c) => c.next('ended', undefined, 3000)));
+    expect(cs[0].turns().some((t) => t.ev?.length)).toBe(false);
   });
 
   it('ignores ship picks and ending in other battles', async () => {

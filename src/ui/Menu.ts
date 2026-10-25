@@ -1,19 +1,18 @@
-import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId, LAYOUT_MOUSE, LAYOUT_TITAN, layoutFor } from '../config';
+import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId } from '../config';
 import { type BattleConfig, type BattleType, type DifficultyId, defaultAssist, type PlayerConfig } from '../core/BattleSetup';
 import type { BattleEra, Era, ShipClass, ShipSpec } from '../core/types';
 import { accentCss } from '../data/accents';
 import { ERAS, ERA_BLURB, ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
 import { CLASS_LABEL, SHIPS, SHIP_BY_ID, shipsIn, shipsOf } from '../data/ships';
-import { audio } from '../fx/Audio';
-import { controls, setControls } from '../input/Settings';
+import { keyName, layoutFor } from '../input/Keybinds';
 import { RUSH_WAVES, loadBest } from '../modes/BossRush';
-import { QUALITIES, type QualityId, quality, setQuality } from '../render/Quality';
 import { consumableLabel } from '../ships/Consumables';
 import { MAPS } from '../world/GameMap';
 import { field, h, html, seg } from './dom';
 import { classIcon, glyph, skillIcon } from './Icons';
+import { buildSettings } from './SettingsSheet';
 
-// Title, battle orders, the hangar (ship selection), controls and graphics.
+// Title, battle orders, the hangar (ship selection) and settings.
 
 export interface MenuHooks {
   start(config: BattleConfig): void;
@@ -113,10 +112,6 @@ function loadout(s: ShipSpec): string[] {
   return out;
 }
 
-function keyName(code: string): string {
-  return code.replace('Key', '').replace('Digit', '').replace('ShiftLeft', 'Shift');
-}
-
 export class Menu {
   private draft: BattleConfig = {
     mode: 'solo',
@@ -196,7 +191,7 @@ export class Menu {
     const titans = SHIPS.length - line;
     const eras = LIVE_ERAS.length > 1 ? ` across ${LIVE_ERAS.length} eras` : '';
     const hangar = item('star', 'Hangar', `${line} warships with two skills and an ultimate, ${titans} titans with six and three${eras}`, '', () => this.showHangar(null));
-    const minor = h('div', { class: 'minor' }, this.act('Controls', 'btn-quiet', () => this.showControls()), this.act('Graphics and sound', 'btn-quiet', () => this.showGraphics()));
+    const minor = h('div', { class: 'minor' }, this.act('Settings', 'btn-quiet', () => this.showSettings()));
     const el = h(
       'div',
       { class: 'title-screen' },
@@ -577,110 +572,7 @@ export class Menu {
     primary.focus({ preventScroll: true });
   }
 
-  showGraphics(): void {
-    const levels = [
-      { value: 0, label: 'Off' },
-      { value: 0.35, label: 'Low' },
-      { value: 0.7, label: 'Medium' },
-      { value: 1, label: 'High' },
-    ];
-    const el = h(
-      'div',
-      { class: 'sheet panel' },
-      h('h2', {}, 'Graphics and sound'),
-      this.field(
-        'Graphics',
-        this.seg<QualityId>((Object.keys(QUALITIES) as QualityId[]).map((k) => ({ value: k, label: QUALITIES[k].label })), () => quality().id, (v) => setQuality(v)),
-        'Ultra Low has the lowest detail and the longest view distance, for seeing ships far out through the haze or running on weak machines. Low turns off shadows and post effects. Medium and High add bloom, colour grading and anti-aliasing. Changes apply from the next battle.',
-      ),
-      this.field(
-        'Volume',
-        this.seg(
-          levels,
-          () => levels.reduce((a, b) => (Math.abs(b.value - audio.volume) < Math.abs(a.value - audio.volume) ? b : a)).value,
-          (v) => audio.setVolume(v),
-        ),
-      ),
-      h('div', { class: 'sheet-actions' }, this.act('Done', 'btn-primary', () => this.showTitle())),
-    );
-    this.mount(el);
-  }
-
-  showControls(): void {
-    const L = LAYOUT_MOUSE;
-    const T = LAYOUT_TITAN;
-    const keys = (codes: string[]) => {
-      const span = h('span');
-      codes.forEach((c, i) => {
-        if (i) span.append(' ');
-        span.append(h('kbd', {}, keyName(c)));
-      });
-      return span;
-    };
-    const txt = (t: string) => document.createTextNode(t);
-    const rows: [string, Node, string][] = [
-      ['Engine telegraph', keys([L.throttleUp, L.throttleDown]), 'Left stick up / down'],
-      ['Rudder (steps, stays set)', keys([L.left, L.right]), 'Left stick left / right'],
-      ['Aim', txt('Mouse'), 'Right stick'],
-      ['Fire', txt('Left mouse'), 'RT'],
-      ['Skills', keys([L.skills[0], L.skills[1]]), 'X, B'],
-      ['Ultimate (charges from damage dealt and taken, kills, and time)', keys([L.skills[2]]), 'Y'],
-      ['Titan skills', keys(T.skills.slice(0, 6)), 'X, B; hold LB or RB for the rest'],
-      ['Titan ultimates (each charges on its own)', keys(T.skills.slice(6)), 'Y, LB Y, RB Y'],
-      ['Repair kit: puts out fires and flooding, heals', keys([L.consumables[0]]), 'D-pad up'],
-      ['Class utility (smoke, search, boost)', keys([L.consumables[1]]), 'D-pad right'],
-      ['Weapons (AP, HE, torpedoes / squadrons)', keys(L.slots), 'LB / RB'],
-      ['Lock target (titans: middle mouse only)', h('span', {}, keys([L.lock]), txt(' or middle mouse')), 'A'],
-      ['Gunsight scope', txt('Shift, or wheel past the closest view'), 'LT (hold) or d-pad left'],
-      ['Follow shot: ride your newest shell in (again, or fire, to return)', keys([L.follow]), 'RS click (not submarines)'],
-      ['Fire-control assist on / off (titans: N)', keys([L.assist]), 'D-pad down'],
-      ['Submarine surface / dive', keys([L.diveUp, L.diveDown]), 'RS / LS click'],
-      ['Free look / camera distance', txt('Right mouse drag / wheel'), '—'],
-      ['Boss Rush refit choice', keys(['Digit1', 'Digit2', 'Digit3']), 'X, Y, B'],
-      ['Scoreboard, pause', keys(['Tab', 'Escape']), 'Back, Start'],
-    ];
-    const table = h(
-      'table',
-      {},
-      h('thead', {}, h('tr', {}, h('th', {}, 'Action'), h('th', {}, 'Keyboard + mouse'), h('th', {}, 'Gamepad'))),
-      h('tbody', {}, ...rows.map((r) => h('tr', {}, h('td', {}, r[0]), h('td', {}, r[1]), h('td', {}, r[2])))),
-    );
-    this.mount(
-      h(
-        'div',
-        { class: 'sheet panel controls' },
-        h('h2', {}, 'Controls'),
-        h(
-          'p',
-          { class: 'lede' },
-          'Guns aim at whatever is under the crosshair. The amber diamond shows where to aim so shells meet a moving target. Crates at sea repair you, charge your ultimate, reset your skills or boost your damage: sail over them. Out of combat for 7 seconds, your hull starts repairing itself.',
-        ),
-        h(
-          'div',
-          { class: 'prefs' },
-          this.field(
-            'Mouse sensitivity',
-            this.seg(
-              [0.5, 0.75, 1, 1.25, 1.5, 2].map((v) => ({ value: v, label: `${v}×` })),
-              () => controls().sens,
-              (v) => setControls({ sens: v }),
-            ),
-          ),
-          this.field(
-            'Vertical aim',
-            this.seg(
-              [
-                { value: 0, label: 'Normal' },
-                { value: 1, label: 'Inverted' },
-              ],
-              () => (controls().invertY ? 1 : 0),
-              (v) => setControls({ invertY: v === 1 }),
-            ),
-          ),
-        ),
-        table,
-        h('div', { class: 'sheet-actions' }, this.act('Back', 'btn-quiet', () => this.showTitle())),
-      ),
-    );
+  showSettings(): void {
+    this.mount(buildSettings({ back: () => this.showTitle(), click: () => this.hooks.click() }));
   }
 }

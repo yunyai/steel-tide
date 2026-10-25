@@ -419,7 +419,7 @@ export const RU_SF_SKILLS: SkillDef[] = [
       id: 'underwaterVolcano',
       name: 'Underwater Volcano',
       short: 'VOLCANO',
-      description: 'The seabed erupts under the reticle (4 km) for 8 s: within 600 m enemies take 15k a second, catch fire, and are heaved outward.',
+      description: 'The seabed erupts under the reticle (4 km) for 8 s: within 600 m enemies take 12k a second, catch fire, and are heaved outward.',
       ult: true,
       cooldown: 85,
       duration: 0,
@@ -437,7 +437,7 @@ export const RU_SF_SKILLS: SkillDef[] = [
           skill: st.spec,
           look: 'fire',
           color: st.spec.accent,
-          dps: 15000,
+          dps: 12000,
           onTick: (s: Ship, f) => {
             if (s.team === ship.team) return;
             const dx = s.pos.x - f.x;

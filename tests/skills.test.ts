@@ -31,7 +31,8 @@ describe('skills', () => {
         }
       }
     }
-  });
+    // Every skill of ~100 hulls, 8 s each: well past the default 5 s on a busy machine.
+  }, 60_000);
 
   it('normal skills go on cooldown; the ultimate needs a full meter and empties it', () => {
     const g = emptyGame();

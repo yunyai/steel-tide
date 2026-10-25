@@ -382,7 +382,7 @@ export const US_SF_SKILLS: SkillDef[] = [
       id: 'spaceFleet',
       name: 'Space Fleet',
       short: 'SPACE FLEET',
-      description: 'Gunships hold over the reticle for 10 s: every half second, three of them fire on enemies within 900 m, 3.5k a shot.',
+      description: 'Gunships hold over the reticle for 10 s: every half second, three of them fire on enemies within 900 m, 2.8k a shot.',
       ult: true,
       cooldown: 85,
       duration: 10,
@@ -405,7 +405,7 @@ export const US_SF_SKILLS: SkillDef[] = [
         for (let i = 0; i < 3; i++) {
           const t = prey[Math.floor(game.rng() * prey.length)];
           game.events.emit('lightning', { points: [{ x: x + (game.rng() - 0.5) * 600, y: 380, z: z + (game.rng() - 0.5) * 600 }, { x: t.pos.x, y: t.spec.freeboard, z: t.pos.z }], color: st.spec.accent, straight: true });
-          hurt(ship, t, 3500, st.spec);
+          hurt(ship, t, 2800, st.spec);
         }
       },
       aiShouldUse(ship, game, target) {

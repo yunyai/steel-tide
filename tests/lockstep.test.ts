@@ -3,7 +3,7 @@ import { buildRoster, type BattleConfig } from '../src/core/BattleSetup';
 import { Game } from '../src/core/Game';
 import { makeRng } from '../src/core/math';
 import { stateHash } from '../src/net/hash';
-import { TurnApplier } from '../src/net/Lockstep';
+import { TurnApplier } from '../src/net/navalTurns';
 import { type Continuous, type Edge, type Turn, TURN_TICKS } from '../src/net/protocol';
 
 // Lockstep only works if two peers fed the same turns step the same battle, bit for bit.

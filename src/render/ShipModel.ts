@@ -929,6 +929,13 @@ function geometriesFor(spec: ShipSpec) {
   return g;
 }
 
+/** Build a hull's shared geometry ahead of its first view; true if it was not built yet. */
+export function warmGeometry(spec: ShipSpec): boolean {
+  if (geoCache.has(spec.id)) return false;
+  geometriesFor(spec);
+  return true;
+}
+
 export type ViewMode = 'normal' | 'ally' | 'enemy' | 'cloak' | 'hidden';
 
 /** Heel from flooding and lost buoyancy, at most (destroyers list further). */

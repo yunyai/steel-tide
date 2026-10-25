@@ -1035,7 +1035,7 @@ export const MODERN: ShipSpec[] = [
     rudderTime: 3.3,
     armor: SUB,
     citadel: NO_CITADEL,
-    torpedoes: { ...HEAVY_TORP, name: 'Spearfish', launchers: [{ x: 42, side: 2, tubes: 6 }], tubes: 6, reload: 40, speed: 60, range: 5500, damage: 15000, spread: 4, detect: 850 },
+    torpedoes: { ...HEAVY_TORP, name: 'Spearfish', launchers: [{ x: 42, side: 2, tubes: 6 }], tubes: 6, reload: 34, speed: 60, range: 5500, damage: 17000, spread: 4, detect: 850 },
     aa: { range: 1500, dps: 40 },
     consumables: [REPAIR_KIT, search(9000)],
     skills: kitOf(UK_SKILLS, 'spearfish', 'huntersPatience', 'hunterKiller'),

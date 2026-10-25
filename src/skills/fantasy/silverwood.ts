@@ -252,7 +252,7 @@ export const SILVERWOOD_SKILLS: SkillDef[] = [
       id: 'wildHunt',
       name: 'Wild Hunt',
       short: 'WILD HUNT',
-      description: 'Sixteen spectral hounds run down every enemy within 3 km: 5k a bite, each bite slowing 50% for 4 s. Nothing can shoot them down.',
+      description: 'Sixteen spectral hounds run down every enemy within 3 km: 4k a bite, each bite slowing 50% for 4 s. Nothing can shoot them down.',
       ult: true,
       cooldown: 80,
       duration: 0,
@@ -266,7 +266,7 @@ export const SILVERWOOD_SKILLS: SkillDef[] = [
         if (!prey.length) return false;
         for (let i = 0; i < 16; i++) {
           const t = prey[i % prey.length];
-          game.missiles.launch(ship, t.pos.x, t.pos.z, i * 0.08, 5000, {
+          game.missiles.launch(ship, t.pos.x, t.pos.z, i * 0.08, 4000, {
             profile: 'skim',
             look: 'arrow',
             speed: 380,

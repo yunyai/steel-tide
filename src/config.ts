@@ -128,7 +128,7 @@ export const LAYOUT_MOUSE: KeyLayout = {
   diveDown: 'KeyC',
 };
 
-/** Titans: six skills on Q E Z X C V and three ultimates on R T B; lock moves to middle mouse, assist to N. */
+/** Titans: six skills on Q E Z X C V and three ultimates on R T B; lock moves to middle mouse, assist to N. Defaults: see input/Keybinds. */
 export const LAYOUT_TITAN: KeyLayout = {
   ...LAYOUT_MOUSE,
   label: 'Keyboard + Mouse (titan)',
@@ -136,11 +136,6 @@ export const LAYOUT_TITAN: KeyLayout = {
   lock: '',
   assist: 'KeyN',
 };
-
-/** Keyboard layout for a ship: titans need nine skill keys. */
-export function layoutFor(spec: { cls: string }): KeyLayout {
-  return spec.cls === 'TT' ? LAYOUT_TITAN : LAYOUT_MOUSE;
-}
 
 export type InputDeviceId = 'mouse' | 'pad0';
 

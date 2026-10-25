@@ -1,14 +1,12 @@
 import { SIM_DT } from '../config';
 import { clamp } from '../core/math';
-import type { Game } from '../core/Game';
-import type { ControlState, Ship } from '../ships/Ship';
-import { stateHash } from './hash';
 import { type ClientMsg, type Continuous, type Edge, HASH_EVERY, TURN_TICKS, type Turn } from './protocol';
 
 // Deterministic lockstep over a LAN. Every peer runs the whole battle; the lobby server clocks
 // turns of TURN_TICKS sim steps and hands everyone the same orders for each. A captain's own
 // orders reach their ship only through those turns, never straight from the controls, so all
-// peers step identical battles.
+// peers step identical battles. What a turn does to a battle is the battle's own business
+// (see navalTurns.ts); this file only keeps time.
 
 /** Ticks of backlog the playback aims to keep (absorbs Wi-Fi jitter). */
 const TARGET_TICKS = 4;
@@ -19,100 +17,16 @@ const CATCH_UP_BUDGET = 12;
 /** Continuous orders are resent at least this often (ms), so the server knows the captain is there. */
 const HEARTBEAT_MS = 250;
 
-/** Applies turns to a battle: the part every peer, the tests and a replay share. */
-export class TurnApplier {
-  /** Each captain's latest continuous orders; they hold until changed. */
-  private orders = new Map<number, Continuous>();
-  private byPlayer = new Map<number, Ship>();
-
-  constructor(readonly game: Game) {
-    for (const s of game.fleet) if (s.humanIndex >= 0) this.byPlayer.set(s.humanIndex, s);
-    // Free play: a captain's orders follow them into their next ship.
-    game.events.on('shipChanged', ({ ship }) => {
-      if (ship.humanIndex >= 0) this.byPlayer.set(ship.humanIndex, ship);
-    });
-  }
-
-  ship(player: number): Ship | undefined {
-    return this.byPlayer.get(player);
-  }
-
-  /** Write the orders for one tick of `turn` into the captains' ships, then step the battle. */
-  applyTick(turn: Turn, tick: number): void {
-    const g = this.game;
-    if (tick === 0) {
-      if (turn.p) for (const [p, c] of turn.p) this.orders.set(p, c);
-      if (turn.ev) {
-        for (const ev of turn.ev) {
-          if ('end' in ev) {
-            if (!g.over) g.finish(-1, 'The host ended free play');
-            continue;
-          }
-          const s = this.ship('ai' in ev ? ev.ai : ev.human);
-          if (!s) continue;
-          if ('ai' in ev) g.handToAI(s);
-          else g.takeHelm(s);
-        }
-      }
-    }
-    for (const [p, c] of this.orders) {
-      const s = this.byPlayer.get(p);
-      if (!s || s.autopilot) continue;
-      const ctl = s.control;
-      ctl.rudder = c[0];
-      ctl.aimX = c[1];
-      ctl.aimZ = c[2];
-      ctl.fire = c[3] === 1;
-      ctl.targetId = c[4];
-      ctl.throttleSet = null;
-    }
-    if (turn.e) {
-      for (const [p, t, e] of turn.e) {
-        if (t !== tick) continue;
-        const s = this.byPlayer.get(p);
-        if (!s) continue;
-        if (e.sp !== undefined) g.pickShip(s, e.sp);
-        if (e.rd) g.redeploy(s);
-        if (!s.autopilot) applyEdge(s.control, e);
-      }
-    }
-    g.step(SIM_DT);
-  }
+/** What lockstep needs from a battle: play one tick of a turn, fingerprint the state, and blend poses for drawing. */
+export interface LockstepSim {
+  applyTick(turn: Turn, tick: number): void;
+  hash(): number;
+  /** Draw poses `alpha` of the way from the last tick to the next. */
+  interpolate(alpha: number): void;
 }
-
-function applyEdge(c: ControlState, e: Edge): void {
-  if (e.tu) c.throttleUp = true;
-  if (e.td) c.throttleDown = true;
-  if (e.sl !== undefined) c.slot = e.sl;
-  if (e.sk !== undefined) c.skill = e.sk;
-  if (e.co !== undefined) c.consumable = e.co;
-  if (e.du) c.diveUp = true;
-  if (e.dd) c.diveDown = true;
-}
-
-/** The edge orders a controller left in a draft ControlState, cleared once taken. */
-function takeEdge(c: ControlState): Edge | null {
-  const e: Edge = {};
-  if (c.throttleUp) e.tu = 1;
-  if (c.throttleDown) e.td = 1;
-  if (c.slot !== null) e.sl = c.slot;
-  if (c.skill >= 0) e.sk = c.skill;
-  if (c.consumable >= 0) e.co = c.consumable;
-  if (c.diveUp) e.du = 1;
-  if (c.diveDown) e.dd = 1;
-  c.throttleUp = c.throttleDown = c.diveUp = c.diveDown = false;
-  c.slot = null;
-  c.skill = -1;
-  c.consumable = -1;
-  return Object.keys(e).length ? e : null;
-}
-
-/** Aim points travel at centimetre precision; every peer applies the same rounded numbers. */
-const cm = (v: number) => Math.round(v * 100) / 100;
 
 /** Drives one LAN battle on this peer: buffers turns, plays them in step with the server, sends our orders. */
 export class Lockstep {
-  readonly applier: TurnApplier;
   private queue: Turn[] = [];
   private head = 0;
   /** Tick within the turn at the head of the queue. */
@@ -128,17 +42,9 @@ export class Lockstep {
   private lastSentAt = -Infinity;
 
   constructor(
-    readonly game: Game,
-    readonly you: number,
+    readonly sim: LockstepSim,
     private send: (m: ClientMsg) => void,
-  ) {
-    this.applier = new TurnApplier(game);
-  }
-
-  /** The local captain's ship. */
-  get ship(): Ship | undefined {
-    return this.applier.ship(this.you);
-  }
+  ) {}
 
   /** The first turn has arrived, so the battle is under way. */
   get started(): boolean {
@@ -159,7 +65,6 @@ export class Lockstep {
 
   /** Play buffered turns for a real frame of `frameDt` seconds, then interpolate poses for drawing. */
   advance(frameDt: number): void {
-    const g = this.game;
     if (this.backlog > CATCH_UP_TICKS) {
       this.catchingUp = true;
       this.fastForward(CATCH_UP_BUDGET, TARGET_TICKS);
@@ -173,8 +78,7 @@ export class Lockstep {
     }
     // Starved: hold at the newest pose instead of running ahead of the server.
     if (this.backlog === 0) this.acc = Math.min(this.acc, SIM_DT);
-    g.alpha = Math.min(1, this.acc / SIM_DT);
-    g.interpolate();
+    this.sim.interpolate(Math.min(1, this.acc / SIM_DT));
   }
 
   /** Play turns as fast as possible for up to `budgetMs`, leaving `keep` ticks. Returns ticks left. */
@@ -189,7 +93,7 @@ export class Lockstep {
 
   private stepTick(): void {
     const turn = this.queue[this.head];
-    this.applier.applyTick(turn, this.tick);
+    this.sim.applyTick(turn, this.tick);
     if (++this.tick < TURN_TICKS) return;
     this.tick = 0;
     this.head++;
@@ -198,16 +102,11 @@ export class Lockstep {
       this.queue = this.queue.slice(this.head);
       this.head = 0;
     }
-    if ((turn.k + 1) % HASH_EVERY === 0) this.send({ t: 'hash', k: turn.k, h: stateHash(this.game) });
+    if ((turn.k + 1) % HASH_EVERY === 0) this.send({ t: 'hash', k: turn.k, h: this.sim.hash() });
   }
 
-  /**
-   * Send the local captain's orders from the controller's draft: edges at once, continuous
-   * orders when they change, and a heartbeat now and then.
-   */
-  sendLocal(draft: ControlState, now = performance.now()): void {
-    const e = takeEdge(draft);
-    const c: Continuous = [draft.rudder, cm(draft.aimX), cm(draft.aimZ), draft.fire ? 1 : 0, draft.targetId];
+  /** Send the local captain's orders: edges at once, continuous orders when they change, and a heartbeat now and then. */
+  sendOrders(c: Continuous, e: Edge | null, now = performance.now()): void {
     const last = this.lastSent;
     const changed = !last || c.some((v, i) => v !== last[i]);
     if (!e && !changed && now - this.lastSentAt < HEARTBEAT_MS) return;

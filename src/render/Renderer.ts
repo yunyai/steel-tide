@@ -19,7 +19,8 @@ import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { MAP_HALF } from '../config';
 import type { Game } from '../core/Game';
-import type { Team } from '../core/types';
+import type { ShipSpec, Team } from '../core/types';
+import { ALL, shipsIn } from '../data/ships';
 import { Effects } from '../fx/Effects';
 import { ParticleSystem } from '../fx/Particles';
 import type { Ship } from '../ships/Ship';
@@ -28,7 +29,7 @@ import { Islands, shoreTexture } from './Islands';
 import { Ocean } from './Ocean';
 import { Projectiles } from './Projectiles';
 import { quality } from './Quality';
-import { ShipView } from './ShipModel';
+import { ShipView, warmGeometry } from './ShipModel';
 import { SkillFx } from './SkillFx';
 
 /** Bloom tuned so only real light sources glow: tracers, muzzle flashes, fires, beams, the sun's glint. */
@@ -121,6 +122,12 @@ export class Renderer {
   readonly add = new ParticleSystem(6000, 'add');
   readonly flat = new ParticleSystem(7000, 'flat');
   views = new Map<Ship, ShipView>();
+  /**
+   * Hulls that may sail in later (summons, Boss Rush waves, Free play picks), built a few at a
+   * time in quiet frames: building one on arrival stalls a frame for several milliseconds.
+   */
+  private warm: ShipSpec[] = [];
+  private warmIn = 0;
   private fogScale = 1;
   private off: (() => void)[] = [];
   private posts: Post[] = [];
@@ -133,6 +140,8 @@ export class Renderer {
     this.gl.shadowMap.enabled = true;
     this.gl.shadowMap.type = PCFShadowMap;
     this.gl.autoClear = false;
+    // Post effects render several passes a frame: count them all (the readout shows the total).
+    this.gl.info.autoReset = false;
     this.resize();
   }
 
@@ -215,6 +224,9 @@ export class Renderer {
     }
     this.fogScale = -1;
     this.setFogScale(q.viewFog);
+    // Popped from the end: summons first, as titans call them in at the first clash.
+    this.warm = [...shipsIn(game.config.era ?? 'historic'), ...ALL.filter((s) => s.hidden)];
+    this.warmIn = 1;
     this.effects = new Effects(game, this.alpha, this.add, this.flat);
     this.skillFx = new SkillFx(game, this.scene, this.alpha, this.add, this.flat);
     this.skillFx.onFlash = (k, c) => this.flash(k, c);
@@ -248,6 +260,7 @@ export class Renderer {
     if (!this.game) return;
     for (const f of this.off) f();
     this.off = [];
+    this.warm = [];
     this.disposePosts();
     this.effects?.dispose();
     this.skillFx?.dispose();
@@ -275,10 +288,13 @@ export class Renderer {
     this.aberr = Math.max(this.aberr, Math.min(1, amount * 1.5));
   }
 
-  private syncShips(): void {
+  /** Views for ships new to the battle, and away with those gone; true if any view was built. */
+  private syncShips(): boolean {
     const g = this.game!;
+    let built = false;
     for (const s of g.ships) {
       if (!this.views.has(s)) {
+        built = true;
         const v = new ShipView(s.spec);
         this.views.set(s, v);
         this.scene.add(v.root);
@@ -296,13 +312,15 @@ export class Renderer {
         }
       }
     }
+    return built;
   }
 
   /** Advance visual state by a real frame delta. */
   update(dt: number, cameras: PerspectiveCamera[]): void {
     const g = this.game;
     if (!g) return;
-    this.syncShips();
+    const built = this.syncShips();
+    this.warmUp(dt, built);
     const t = g.renderTime;
     for (const [s, v] of this.views) v.update(s, t);
     for (const w of this.wrecks) {
@@ -329,6 +347,15 @@ export class Renderer {
     this.add.update(dt);
     this.flat.update(dt);
     this.projectiles!.update(g);
+  }
+
+  /** Build the next hull still to come, about one every other frame and never on a frame that built a view. */
+  private warmUp(dt: number, busy: boolean): void {
+    if (!this.warm.length) return;
+    this.warmIn -= dt;
+    if (busy || this.warmIn > 0) return;
+    while (this.warm.length && !warmGeometry(this.warm.pop()!));
+    this.warmIn = 1 / 30;
   }
 
   /** Thin or thicken the haze for everything that draws fog. */
@@ -367,6 +394,7 @@ export class Renderer {
 
   render(viewports: Viewport[]): void {
     const gl = this.gl;
+    gl.info.reset();
     // Viewports and scissors are in CSS pixels; three scales them by the pixel ratio.
     gl.getSize(size);
     const pr = gl.getPixelRatio();

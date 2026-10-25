@@ -22,6 +22,8 @@ export const MAX_PER_TEAM = 8;
 export const MAX_AI = 8;
 /** Path of the lobby WebSocket on the game's own server. */
 export const LAN_PATH = '/lan';
+/** Seconds a LAN battle is clocked at most; Free play ends there for everyone (warned on the HUD before). */
+export const LAN_BATTLE_LIMIT_S = 60 * 60;
 
 /** Continuous orders: [rudder -1..1, aimX, aimZ, fire 0/1, targetId]. */
 export type Continuous = [number, number, number, number, number];
@@ -43,8 +45,11 @@ export interface Edge {
   rd?: 1;
 }
 
-/** Something every peer applies at the start of a turn: a captain handed to the AI or back, or the host ending Free play. */
-export type TurnEvent = { ai: number } | { human: number } | { end: 1 };
+/**
+ * Something every peer applies at the start of a turn: a captain handed to the AI or back, or
+ * Free play ending (1: the host ended it; 2: it reached the server's time limit).
+ */
+export type TurnEvent = { ai: number } | { human: number } | { end: 1 | 2 };
 
 /** One lockstep turn: changed continuous orders, edges by tick, and events. */
 export interface Turn {

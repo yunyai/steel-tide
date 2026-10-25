@@ -5,11 +5,10 @@ import { PICKUP_COLOR } from '../core/Pickups';
 import type { Team } from '../core/types';
 import { GameMap } from '../world/GameMap';
 import type { PlayerController } from '../player/PlayerController';
+import { ALLY, palette } from './palette';
 
 // Tactical minimap: static terrain layer plus live contacts at ~12 Hz.
 
-const ALLY = '#4de8ff';
-const ENEMY = '#ff3b4e';
 const CARGO = '#ffd36b';
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
@@ -99,7 +98,7 @@ export class Minimap {
       const y = this.toPx(cap.z);
       c.beginPath();
       c.arc(x, y, CAP_RADIUS * k, 0, Math.PI * 2);
-      c.strokeStyle = cap.owner === -1 ? 'rgba(234,246,255,0.8)' : cap.owner === this.team ? ALLY : ENEMY;
+      c.strokeStyle = cap.owner === -1 ? 'rgba(234,246,255,0.8)' : cap.owner === this.team ? ALLY : palette().enemy;
       c.lineWidth = 1.5 * (s / 230);
       c.stroke();
       c.fillStyle = c.strokeStyle;
@@ -191,7 +190,7 @@ export class Minimap {
       c.lineTo(sz, sz);
       c.lineTo(-sz, sz);
       c.closePath();
-      c.fillStyle = sh === this.pc.ship ? '#ffffff' : cargo ? CARGO : ally ? ALLY : ENEMY;
+      c.fillStyle = sh === this.pc.ship ? '#ffffff' : cargo ? CARGO : ally ? ALLY : palette().enemy;
       if (sh.submerged) {
         c.strokeStyle = c.fillStyle;
         c.lineWidth = 1.2;
@@ -208,7 +207,7 @@ export class Minimap {
     // Squadrons.
     for (const sq of g.air.squadrons) {
       if (!sq.alive) continue;
-      c.fillStyle = sq.team === this.team ? ALLY : ENEMY;
+      c.fillStyle = sq.team === this.team ? ALLY : palette().enemy;
       c.font = `${Math.round(10 * (s / 230))}px sans-serif`;
       c.fillText('✈', this.toPx(sq.x), this.toPx(sq.z));
     }

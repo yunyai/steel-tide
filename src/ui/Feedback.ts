@@ -6,6 +6,7 @@ import type { Ship } from '../ships/Ship';
 import { accentCss } from '../data/accents';
 import { audio } from '../fx/Audio';
 import { captainName } from './names';
+import { palette } from './palette';
 
 // Combat feedback for one HUD: damage numbers over the ships you hit (skill hits get the big
 // accent-coloured ones), hit and kill marks on the reticle, kill-streak callouts, a red edge and
@@ -194,7 +195,7 @@ export class Feedback {
         this.streak = this.clock - this.lastKill < STREAK ? this.streak + 1 : 1;
         this.lastKill = this.clock;
         if (this.streak > 1) {
-          callout(STREAK_NAME[Math.min(this.streak, STREAK_NAME.length - 1)], `${captainName(s.ship)} destroyed`, '#ff3b4e');
+          callout(STREAK_NAME[Math.min(this.streak, STREAK_NAME.length - 1)], `${captainName(s.ship)} destroyed`, palette().enemy);
           audio.ui('streak');
         } else banner(`${captainName(s.ship)} destroyed`, '', '#ff8a96');
       }),

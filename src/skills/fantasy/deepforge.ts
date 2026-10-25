@@ -334,7 +334,7 @@ export const DEEPFORGE_SKILLS: SkillDef[] = [
       id: 'skyhammerCarpet',
       name: 'Skyhammer Carpet',
       short: 'SKYHAMMER',
-      description: '40 rune bombs walk a 2 km line through the reticle (7 km), along your bearing to it: 9k each, and they start fires.',
+      description: '40 rune bombs walk a 2 km line through the reticle (7 km), along your bearing to it: 11k each, and they start fires.',
       ult: true,
       cooldown: 85,
       duration: 0,
@@ -350,7 +350,7 @@ export const DEEPFORGE_SKILLS: SkillDef[] = [
         for (let i = 0; i < 40; i++) {
           const along = -1000 + (2000 * i) / 39;
           const lat = (game.rng() - 0.5) * 140;
-          game.strikes.spawn(ship, { kind: 'mortar', skill: st.spec, x: p.x + fx * along - fz * lat, z: p.z + fz * along + fx * lat, radius: 80, delay: 1 + i * 0.06, damage: 9000, fire: 0.45, look: 'rune' });
+          game.strikes.spawn(ship, { kind: 'mortar', skill: st.spec, x: p.x + fx * along - fz * lat, z: p.z + fz * along + fx * lat, radius: 80, delay: 1 + i * 0.06, damage: 11000, fire: 0.45, look: 'rune' });
         }
       },
       aiShouldUse(ship, _g, target) {

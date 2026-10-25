@@ -10,8 +10,8 @@ import { LIVE_ERAS, TABS, type Tab, tabOf } from './Menu';
 // respawn or (while afloat) right away. No 3D preview: the battle owns the renderer.
 
 export interface ShipPickerOptions {
-  /** The captain's ship now. */
-  ship: Ship;
+  /** The captain's ship now (a new hull after a change of ship). */
+  ship(): Ship;
   era: BattleEra;
   titans: boolean;
   /** Sail `spec` from the next respawn; `now` also leaves the fight to change into it. */
@@ -20,8 +20,9 @@ export interface ShipPickerOptions {
   click(): void;
 }
 
-export function buildShipPicker(o: ShipPickerOptions): HTMLElement {
-  const me = o.ship;
+/** The picker, and `sync` to run each frame: it redraws when the ship sinks, respawns or changes. */
+export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync(): void } {
+  let me = o.ship();
   const allowed = (s: ShipSpec) => o.titans || s.cls !== 'TT';
   const eras: Era[] = o.era === 'mixed' ? LIVE_ERAS : [o.era];
   // Ships of the battle's era only (a mixed battle offers them all), titans when allowed.
@@ -120,10 +121,13 @@ export function buildShipPicker(o: ShipPickerOptions): HTMLElement {
     );
   };
 
-  const next = me.nextSpec;
-  lede.textContent = me.alive
-    ? `Sailing ${me.spec.name}${next ? `; ${next.name} is next` : ''}. Switch now to leave the fight and come back in the new ship after 8 seconds, or change at your next respawn.`
-    : `Pick the ship you sail when you come back${next ? `: ${next.name} so far` : ''}.`;
+  const renderLede = () => {
+    const next = me.nextSpec;
+    lede.textContent = me.alive
+      ? `Sailing ${me.spec.name}${next ? `; ${next.name} is next` : ''}. Switch now to leave the fight and come back in the new ship after 8 seconds, or change at your next respawn.`
+      : `Pick the ship you sail when you come back${next ? `: ${next.name} so far` : ''}.`;
+  };
+  renderLede();
   renderList();
   renderDetail();
   sheet.append(
@@ -134,5 +138,17 @@ export function buildShipPicker(o: ShipPickerOptions): HTMLElement {
   );
   overlay.append(sheet);
   queueMicrotask(() => list.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true }));
-  return overlay;
+  let seen = { ship: me, alive: me.alive, next: me.nextSpec };
+  const sync = () => {
+    const s = o.ship();
+    if (s === seen.ship && s.alive === seen.alive && s.nextSpec === seen.next) return;
+    me = s;
+    seen = { ship: s, alive: s.alive, next: s.nextSpec };
+    const focused = sheet.contains(document.activeElement);
+    renderLede();
+    renderList();
+    renderDetail();
+    if (focused) list.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
+  };
+  return { el: overlay, sync };
 }

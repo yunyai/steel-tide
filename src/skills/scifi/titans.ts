@@ -391,7 +391,7 @@ export const SCIFI_TITAN_SKILLS: SkillDef[] = [
       id: 'reactorVent',
       name: 'Reactor Vent',
       short: 'REACTOR VENT',
-      description: '5 s: vent the reactor into the sea. Every enemy within 600 m takes 20k a second; the vent costs you 1% of your hull a second.',
+      description: '5 s: vent the reactor into the sea. Every enemy within 600 m takes 16k a second; the vent costs you 1% of your hull a second.',
       cooldown: 20,
       duration: 5,
       accent: 0xff6a20,
@@ -400,7 +400,7 @@ export const SCIFI_TITAN_SKILLS: SkillDef[] = [
     },
     {
       activate(ship, game, st) {
-        game.fields.add(ship, { x: ship.pos.x, z: ship.pos.z, r: 600, life: st.spec.duration, follow: ship, skill: st.spec, look: 'fire', color: st.spec.accent, dps: 20000 });
+        game.fields.add(ship, { x: ship.pos.x, z: ship.pos.z, r: 600, life: st.spec.duration, follow: ship, skill: st.spec, look: 'fire', color: st.spec.accent, dps: 16000 });
       },
       update(ship, _g, dt) {
         spendHull(ship, 0.01 * dt);
@@ -473,7 +473,7 @@ export const SCIFI_TITAN_SKILLS: SkillDef[] = [
       id: 'gravityCollapse',
       name: 'Gravity Collapse',
       short: 'COLLAPSE',
-      description: 'Everything within 3 km is dragged toward you for 2 s, then the well collapses: 80k to every enemy within 1.2 km.',
+      description: 'Everything within 3 km is dragged toward you for 2 s, then the well collapses: 60k to every enemy within 1.2 km.',
       ult: true,
       cooldown: 85,
       duration: 2,
@@ -487,7 +487,7 @@ export const SCIFI_TITAN_SKILLS: SkillDef[] = [
       },
       end(ship, game, st) {
         if (!ship.alive) return;
-        game.strikes.spawn(ship, { kind: 'shock', skill: st.spec, x: ship.pos.x, z: ship.pos.z, radius: 1200, delay: 0, damage: 80000, speed: 1500, hitsSubs: true });
+        game.strikes.spawn(ship, { kind: 'shock', skill: st.spec, x: ship.pos.x, z: ship.pos.z, radius: 1200, delay: 0, damage: 60000, speed: 1500, hitsSubs: true });
       },
       aiShouldUse(ship, game) {
         return enemiesWithin(ship, game, 2500).filter((s) => !s.deep).length >= 2;

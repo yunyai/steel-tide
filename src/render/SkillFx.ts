@@ -28,13 +28,13 @@ import type { Field, Tripwire } from '../weapons/FieldSystem';
 import type { Strike } from '../weapons/StrikeSystem';
 import { waveHeight } from '../world/Waves';
 import { Ribbons } from './Projectiles';
+import { ENEMY_COLOR as ENEMY } from '../ui/palette';
 
 // Skill visuals: energy beams, lightning, strike telegraphs and impacts (orbital rods, rockets,
 // nukes, mines, shock rings), shield bubbles, blink trails, the crates' beacon pillars, and the
 // titans' set pieces (ice walls, thunder drums, bombers, blizzards, the maelstrom).
 // Everything reads the simulation; nothing here feeds back into it.
 
-const ENEMY = new Color(0xff3b4e);
 const WHITE = new Color(0xffffff);
 /** The orbital pillar and rod streaks start this high. */
 const SKY = 2400;
@@ -338,7 +338,7 @@ export class SkillFx {
   /** A fresh hull arrives: a column of light and a ring on the water in its side's colour. */
   private spawnFlash(s: Ship): void {
     const L = s.spec.length;
-    const c = this.friendly(s) ? 0x5de0ff : 0xff3b4e;
+    const c = this.friendly(s) ? 0x5de0ff : ENEMY.getHex();
     const { x, z } = s.pos;
     audio.play('zap', x, 10, z, 100, 0.8);
     this.flat.spawn({ x, y: 1, z, life: 1.2, size: L * 0.3, size1: L * 3, color: c, alpha: 1, kind: PK.Ring, fadeOut: 0.5 });

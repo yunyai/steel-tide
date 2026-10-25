@@ -324,7 +324,8 @@ select {
 
 .record {
   position: absolute;
-  left: 7vw;
+  /* Bottom right: on short screens the bottom left is where the menu ends. */
+  right: 5vw;
   bottom: 5vh;
   display: flex;
   align-items: center;
@@ -783,36 +784,6 @@ select {
   font-size: 1.15rem;
 }
 
-/* ------------------------------------------------------------------ controls */
-.controls {
-  width: min(880px, 96vw);
-}
-
-.controls table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.95rem;
-}
-
-.controls th {
-  text-align: left;
-  font-family: var(--display);
-  font-weight: 600;
-  color: var(--cyan);
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--edge);
-}
-
-.controls td {
-  padding: 7px 10px;
-  border-bottom: 1px solid rgba(110, 210, 255, 0.07);
-  color: #c6d8e6;
-}
-
-.controls td:first-child {
-  color: var(--ice);
-}
-
 /* ------------------------------------------------------------------- overlays */
 .overlay {
   position: absolute;
@@ -835,6 +806,17 @@ select {
 
 .report {
   width: min(980px, 96vw);
+}
+
+/* A big fleet pushes the report past the screen: keep the way out in view while it scrolls. */
+.report .sheet-actions {
+  position: sticky;
+  /* Sticky insets count from inside the sheet's padding; reach its bottom edge. */
+  bottom: -26px;
+  margin: 18px -36px -26px;
+  padding: 12px 36px 22px;
+  background: #0b1826;
+  border-top: 1px solid rgba(110, 210, 255, 0.12);
 }
 
 /* Free play: change ship from the battle menu. */
@@ -1132,18 +1114,19 @@ select {
 }
 
 .timer {
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 4px);
-  transform: translateX(-50%);
-  font-size: 0.95rem;
-  color: var(--mute);
+  font-size: 0.9rem;
+  line-height: 1.1;
+  color: var(--ice);
+}
+
+.timer.late {
+  color: var(--amber);
 }
 
 .fleet {
   position: absolute;
   left: 50%;
-  top: 92px;
+  top: 98px;
   transform: translateX(-50%);
   display: flex;
   gap: 26px;
@@ -1264,7 +1247,7 @@ select {
   left: 50%;
   top: 92px;
   transform: translateX(-50%);
-  width: min(720px, 64vw);
+  width: min(720px, 60vw);
 }
 
 .bossbar .nm {
@@ -2889,6 +2872,26 @@ select {
   .hangar {
     grid-template-columns: 240px 1fr 340px;
   }
+  /* A titan's eleven buttons, narrowed to clear the helm in the bottom-left corner. */
+  .cockpit.titan {
+    width: clamp(600px, 100vw - 420px, 860px);
+  }
+  .skillbar.titan .sk {
+    width: 50px;
+  }
+  .skillbar.titan .sk .hx {
+    width: 44px;
+    height: 49px;
+    font-size: 1.25rem;
+  }
+  .skillbar.titan .sk.ult {
+    width: 70px;
+  }
+  .skillbar.titan .sk.ult .hx {
+    width: 56px;
+    height: 63px;
+    font-size: 1.6rem;
+  }
 }
 
 @media (max-width: 900px) {
@@ -3230,11 +3233,26 @@ select {
     grid-template-columns: 1fr;
   }
 
+  /* Narrow: type, map and captains drop under the lobby name instead of disappearing. */
   .lan-row {
     grid-template-columns: 1fr auto;
+    grid-template-areas: 'who state' 'what what';
+    row-gap: 2px;
   }
 
-  .lan-row .what,
+  .lan-row .who {
+    grid-area: who;
+  }
+
+  .lan-row .state {
+    grid-area: state;
+  }
+
+  .lan-row .what {
+    grid-area: what;
+    font-size: 0.86rem;
+  }
+
   .lan-row .count {
     display: none;
   }
@@ -3279,4 +3297,155 @@ select {
   background: rgba(4, 10, 18, 0.82);
   box-shadow: none;
   clip-path: none;
+}
+
+/* ------------------------------------------------------------------ settings */
+/* Colour-blind palette: enemy red turns vermilion, green cues turn sky blue (see ui/palette.ts). */
+:root[data-colour-blind] {
+  --red: #ff7424;
+  --red-dim: rgba(255, 116, 36, 0.35);
+  --green: #5cb8ff;
+}
+
+.settings {
+  width: min(880px, 96vw);
+  /* The tabs and buttons stay put; only the tab's content scrolls. */
+  display: flex;
+  flex-direction: column;
+  height: min(720px, 92vh);
+  overflow: hidden;
+}
+
+.settings > h2,
+.settings > .tabs,
+.settings > .sheet-actions {
+  flex: none;
+}
+
+.settings .tabs button {
+  text-align: center;
+  font-size: 1.02rem;
+  padding: 0.7em 0.6em;
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.settings .sheet-actions {
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.settings .sheet-actions .btn-primary {
+  margin-left: auto;
+}
+
+.keys {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.keys th {
+  text-align: left;
+  font-family: var(--display);
+  font-weight: 600;
+  color: var(--cyan);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--edge);
+}
+
+.keys tr.section th {
+  padding-top: 18px;
+  color: var(--ice);
+  font-size: 1.02rem;
+}
+
+.keys td {
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(110, 210, 255, 0.07);
+  color: #c6d8e6;
+}
+
+.keys td:first-child {
+  color: var(--ice);
+}
+
+.keys td:nth-child(2) {
+  width: 9.5em;
+}
+
+.keys td:nth-child(3) {
+  width: 12em;
+}
+
+.keys .fixed td {
+  color: var(--mute);
+}
+
+.keycap {
+  border: 0;
+  min-width: 6.5em;
+  padding: 0.3em 0.6em;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: left;
+  color: var(--ice);
+  background: rgba(77, 232, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(110, 210, 255, 0.14);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+.keycap:hover {
+  background: rgba(77, 232, 255, 0.14);
+}
+
+.keycap.unbound {
+  color: var(--red);
+  box-shadow: inset 0 0 0 1px var(--red-dim);
+}
+
+.keycap.listening {
+  color: var(--abyss);
+  background: var(--amber);
+  box-shadow: none;
+}
+
+.keys-status {
+  min-height: 1.4em;
+  margin: 0 0 6px;
+}
+
+.keys-status.warn {
+  color: var(--amber);
+}
+
+@media (max-width: 760px) {
+  .keys td:nth-child(3),
+  .keys th:nth-child(3) {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------- performance readout */
+.perf-panel {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 8px 10px;
+  font-family: var(--display);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+  color: var(--ice);
+  background: rgba(4, 10, 18, 0.72);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  pointer-events: none;
+  z-index: 5;
 }
