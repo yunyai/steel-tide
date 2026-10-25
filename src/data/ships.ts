@@ -1,9 +1,11 @@
 import { HP_SCALE, RANGE_SCALE, RELOAD_SCALE } from '../config';
 import type { BattleEra, Era, ShipSpec } from '../core/types';
+import { ANIME, ANIME_FORMS, ANIME_SUMMONS } from './anime';
 import { REPAIR_KIT } from './common';
-import { FACTIONS, eraOf } from './factions';
+import { ERAS, FACTIONS, eraOf } from './factions';
 import { FANTASY, FANTASY_TITANS } from './fantasy';
 import { HISTORIC } from './historic';
+import { MISC } from './misc';
 import { MODERN, MODERN_TITANS } from './modern';
 import { SCIFI, SCIFI_TITANS } from './scifi';
 import { SUMMONS } from './summons';
@@ -53,7 +55,7 @@ function toBattleScale(s: ShipSpec): ShipSpec {
 }
 
 /** Every spec, summon-only ones included. */
-export const ALL: ShipSpec[] = [...HISTORIC, ...TITANS, ...FANTASY, ...FANTASY_TITANS, ...MODERN, ...MODERN_TITANS, ...SCIFI, ...SCIFI_TITANS, ...SUMMONS].map(toBattleScale);
+export const ALL: ShipSpec[] = [...HISTORIC, ...TITANS, ...FANTASY, ...FANTASY_TITANS, ...MODERN, ...MODERN_TITANS, ...SCIFI, ...SCIFI_TITANS, ...ANIME, ...ANIME_FORMS, ...MISC, ...SUMMONS, ...ANIME_SUMMONS].map(toBattleScale);
 
 /** Every ship a captain can sail, in every era (summon-only hulls are left out). */
 export const SHIPS: ShipSpec[] = ALL.filter((s) => !s.hidden);
@@ -75,6 +77,14 @@ export function shipsIn(era: BattleEra): ShipSpec[] {
 export function titansOf(era: BattleEra): ShipSpec[] {
   return shipsIn(era).filter((s) => s.cls === 'TT');
 }
+
+/** Boss Rush bosses of a battle's era: its titans, then the Titan Shift forms of its ships (anime has no others). */
+export function bossesOf(era: BattleEra): ShipSpec[] {
+  return [...titansOf(era), ...ALL.filter((s) => s.formOf && (era === 'mixed' || eraOf(s) === era))];
+}
+
+/** Eras with line ships to fill a battle with. Misc holds only a titan, so it sails in Mixed battles alone. */
+export const LINE_ERAS: Era[] = ERAS.filter((e) => shipsOf(e).some((s) => s.cls !== 'TT'));
 
 /** Convoy cargo ships: in battles, never in the hangar. */
 export const TRANSPORTS: ShipSpec[] = (

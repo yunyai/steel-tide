@@ -49,6 +49,10 @@ export interface Trait {
   ambush?: number;
   /** Allies within 1.5 km (and the ship) shoot planes and missiles down this much faster. */
   aaAura?: number;
+  /** Black Flash: this share of the ship's hits strike this many times harder. */
+  crit?: { chance: number; mul: number };
+  /** Titan Shift forms last this much longer. */
+  shiftTimeMul?: number;
 }
 
 export interface Faction {
@@ -62,13 +66,15 @@ export interface Faction {
   trait?: Trait;
 }
 
-export const ERAS: Era[] = ['historic', 'fantasy', 'modern', 'scifi'];
+export const ERAS: Era[] = ['historic', 'fantasy', 'modern', 'scifi', 'anime', 'misc'];
 
 export const ERA_LABEL: Record<Era, string> = {
   historic: 'Historic',
   fantasy: 'Fantasy',
   modern: 'Modern',
   scifi: 'Sci-fi',
+  anime: 'Anime',
+  misc: 'Misc',
 };
 
 export const ERA_BLURB: Record<Era, string> = {
@@ -76,6 +82,8 @@ export const ERA_BLURB: Record<Era, string> = {
   fantasy: 'Elves, dwarves, the drowned dead and archmages: magic circles, spells and beasts.',
   modern: 'Missile cruisers, stealth hulls and jets: vertical launch cells and electronic warfare.',
   scifi: 'Railguns, lasers, plasma and orbital strikes: four powers of the next century.',
+  anime: 'Heroes and villains of anime at sea. Every ultimate is a Titan Shift: a short, overwhelming titan form.',
+  misc: 'Oddities from outside every era. For now, one thing from the deep.',
 };
 
 export const FACTIONS: Record<Nation, Faction> = {
@@ -249,6 +257,124 @@ export const FACTIONS: Record<Nation, Faction> = {
       name: 'Nanite Hull',
       description: 'Repairs 0.4% of the hull every second, even in combat. Summons last 50% longer.',
       regenAlways: 0.004,
+      summonTimeMul: 1.5,
+    },
+  },
+
+  jjk: {
+    id: 'jjk',
+    era: 'anime',
+    label: 'Jujutsu Kaisen',
+    short: 'JJK',
+    focus: 'Cursed techniques: space bent around the hull, slashes from nowhere and domain expansions.',
+    trait: {
+      name: 'Black Flash',
+      description: '8% of your hits land as a Black Flash, for 2.5 times the damage.',
+      crit: { chance: 0.08, mul: 2.5 },
+    },
+  },
+  naruto: {
+    id: 'naruto',
+    era: 'anime',
+    label: 'Naruto',
+    short: 'Naruto',
+    focus: 'Ninjutsu: shadow clones, chakra spheres and the tailed beasts.',
+    trait: {
+      name: 'Will of Fire',
+      description: 'Skills cool down 15% faster. Clones and summons last 50% longer.',
+      cooldownMul: 0.85,
+      summonTimeMul: 1.5,
+    },
+  },
+  onepiece: {
+    id: 'onepiece',
+    era: 'anime',
+    label: 'One Piece',
+    short: 'One Piece',
+    focus: 'Devil fruits and Haki: rubber fists, storms and the will to be free.',
+    trait: {
+      name: 'Haki',
+      description: '15% less damage taken. Stuns on you last 30% shorter.',
+      damageTakenMul: 0.85,
+      stunTakenMul: 0.7,
+    },
+  },
+  dragonball: {
+    id: 'dragonball',
+    era: 'anime',
+    label: 'Dragon Ball',
+    short: 'Dragon Ball',
+    focus: 'Ki: beams that split the sea, instant transmission and ever higher forms.',
+    trait: {
+      name: 'Limit Breaker',
+      description: 'Ultimates charge 25% faster. Titan forms last 20% longer.',
+      ultChargeMul: 1.25,
+      shiftTimeMul: 1.2,
+    },
+  },
+  bleach: {
+    id: 'bleach',
+    era: 'anime',
+    label: 'Bleach',
+    short: 'Bleach',
+    focus: 'Soul Reapers and Bankai: flash steps, crescent slashes and swords that scatter into petals.',
+    trait: {
+      name: 'Shunpo',
+      description: '10% faster. Reticle-aimed skills reach 25% farther.',
+      speedMul: 1.1,
+      reachMul: 1.25,
+    },
+  },
+  aot: {
+    id: 'aot',
+    era: 'anime',
+    label: 'Attack on Titan',
+    short: 'AoT',
+    focus: 'Titans and the Survey Corps: hardened fists, steam, thunder spears and the Rumbling.',
+    trait: {
+      name: 'Titan Regeneration',
+      description: 'Repairs 0.4% of the hull every second, even in combat. 10% more hit points.',
+      regenAlways: 0.004,
+      hpMul: 1.1,
+    },
+  },
+  demonslayer: {
+    id: 'demonslayer',
+    era: 'anime',
+    label: 'Demon Slayer',
+    short: 'Demon Slayer',
+    focus: 'Breathing styles and blood demon arts: water and flame forms, whips of flesh, an endless castle.',
+    trait: {
+      name: 'Total Concentration',
+      description: '10% more damage. Ultimates charge 15% faster.',
+      damageMul: 1.1,
+      ultChargeMul: 1.15,
+    },
+  },
+  mha: {
+    id: 'mha',
+    era: 'anime',
+    label: 'My Hero Academia',
+    short: 'MHA',
+    focus: 'Quirks: smashes that move the weather, explosions, and the Symbol of Peace.',
+    trait: {
+      name: 'Plus Ultra',
+      description: 'Sinking an enemy within 2 km repairs 15% of your hull. 8% more damage.',
+      killHeal: 0.15,
+      damageMul: 1.08,
+    },
+  },
+
+  abyss: {
+    id: 'abyss',
+    era: 'misc',
+    label: 'The Abyss',
+    short: 'Abyss',
+    focus: 'Things from the hadal deep: drone swarms, whirlpools and jaws.',
+    trait: {
+      name: 'Hadal Pressure',
+      description: 'Torpedo damage taken -25%. Summons and drones last 50% longer.',
+      torpTakenMul: 0.75,
       summonTimeMul: 1.5,
     },
   },

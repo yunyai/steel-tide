@@ -186,7 +186,7 @@ const q = new Quaternion();
 const e = new Euler(0, 0, 0, 'YZX');
 const v = new Vector3();
 const one = new Vector3(1, 1, 1);
-const PLANE_LOOKS: PlaneLook[] = ['plane', 'griffon', 'gyro', 'bat', 'dragon', 'jet', 'heli', 'drone'];
+const PLANE_LOOKS: PlaneLook[] = ['plane', 'griffon', 'gyro', 'bat', 'dragon', 'jet', 'heli', 'drone', 'petal'];
 
 export class Projectiles {
   readonly tracers = new Ribbons(3000, true);
@@ -249,7 +249,8 @@ export class Projectiles {
     for (const m of this.planes) m.count = 0;
     for (const sq of game.air.squadrons) {
       if (!sq.alive) continue;
-      const look = sq.owner.spec.air?.look ?? 'plane';
+      // A wing still out when its carrier shifted into a form without one keeps the base look.
+      const look = (sq.owner.spec.air ?? sq.owner.base.air)?.look ?? 'plane';
       const mesh = this.flyers.get(look)![sq.team];
       // Beasts bank and sway harder than machines.
       const sway = look === 'plane' || look === 'jet' || look === 'drone' ? 0.08 : 0.22;

@@ -1,6 +1,14 @@
 import type { Game } from '../core/Game';
 import type { SkillSpec } from '../core/types';
 import type { Ship } from '../ships/Ship';
+import { AOT_SKILLS } from './anime/aot';
+import { BLEACH_SKILLS } from './anime/bleach';
+import { DEMONSLAYER_SKILLS } from './anime/demonslayer';
+import { DRAGONBALL_SKILLS } from './anime/dragonball';
+import { JJK_SKILLS } from './anime/jjk';
+import { MHA_SKILLS } from './anime/mha';
+import { NARUTO_SKILLS } from './anime/naruto';
+import { ONEPIECE_SKILLS } from './anime/onepiece';
 import { BATTLESHIP_SKILLS } from './historic/battleships';
 import { CRUISER_SKILLS } from './historic/cruisers';
 import { LIGHT_SKILLS } from './historic/light';
@@ -10,6 +18,7 @@ import { DEEPFORGE_SKILLS } from './fantasy/deepforge';
 import { DROWNED_SKILLS } from './fantasy/drowned';
 import { SILVERWOOD_SKILLS } from './fantasy/silverwood';
 import { FANTASY_TITAN_SKILLS } from './fantasy/titans';
+import { HADAL_SKILLS } from './misc/hadal';
 import { CN_SKILLS } from './modern/cn';
 import { RU_SKILLS } from './modern/ru';
 import { MODERN_TITAN_SKILLS } from './modern/titans';
@@ -25,7 +34,7 @@ import type { SkillDef, SkillImpl } from './types';
 export type { SkillDef, SkillImpl, SkillState } from './types';
 
 /** Every titan's skill pool (none of them is carried by a line ship). */
-export const TITAN_POOLS: SkillDef[] = [...TITAN_SKILLS, ...FANTASY_TITAN_SKILLS, ...MODERN_TITAN_SKILLS, ...SCIFI_TITAN_SKILLS];
+export const TITAN_POOLS: SkillDef[] = [...TITAN_SKILLS, ...FANTASY_TITAN_SKILLS, ...MODERN_TITAN_SKILLS, ...SCIFI_TITAN_SKILLS, ...HADAL_SKILLS];
 
 const ALL: SkillDef[] = [
   ...BATTLESHIP_SKILLS,
@@ -43,6 +52,15 @@ const ALL: SkillDef[] = [
   ...US_SF_SKILLS,
   ...RU_SF_SKILLS,
   ...CN_SF_SKILLS,
+  // Anime kits hold both the line ships' skills and their Titan Shift forms'.
+  ...JJK_SKILLS,
+  ...NARUTO_SKILLS,
+  ...ONEPIECE_SKILLS,
+  ...DRAGONBALL_SKILLS,
+  ...BLEACH_SKILLS,
+  ...AOT_SKILLS,
+  ...DEMONSLAYER_SKILLS,
+  ...MHA_SKILLS,
   ...TITAN_POOLS,
 ];
 

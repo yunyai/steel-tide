@@ -86,10 +86,10 @@ export function aimPoint(ship: Ship, max: number): { x: number; z: number } {
   return { x: ship.pos.x + (aimX - ship.pos.x) * k, z: ship.pos.z + (aimZ - ship.pos.z) * k };
 }
 
-/** Skill damage to one hull, scaled by the attacker's damage (and ultimate) modifiers. */
-export function hurt(attacker: Ship, target: Ship, amount: number, skill: SkillSpec): number {
-  const mul = attacker.mods.damageMul * (skill.ult ? attacker.mods.ultDamageMul : 1);
-  return target.takeDamage(amount * mul, attacker, skill);
+/** Skill damage to one hull, scaled by the attacker's damage (and ultimate) modifiers; `pierce` cuts through every defence (see takeDamage). */
+export function hurt(attacker: Ship, target: Ship, amount: number, skill: SkillSpec, pierce = false): number {
+  const mul = attacker.mods.damageMul * (skill.ult ? attacker.mods.ultDamageMul : 1) * attacker.critMul(target);
+  return target.takeDamage(amount * mul, attacker, skill, false, pierce);
 }
 
 /** Timed buff; ids starting with `debuff:` are removed by a cleanse. */

@@ -20,6 +20,7 @@ import { PICKUP_COLOR } from '../core/Pickups';
 import { audio } from '../fx/Audio';
 import { PK, type ParticleSystem } from '../fx/Particles';
 import { eraOf } from '../data/factions';
+import { SHIP_BY_ID } from '../data/ships';
 import type { Ship } from '../ships/Ship';
 import type { SkillState } from '../skills/types';
 import { drumPos, swordfishDrop } from '../skills/historic/titans';
@@ -165,6 +166,9 @@ export class SkillFx {
         this.casts.push({ ship: e.ship, color: new Color(st.spec.accent).multiplyScalar(2.4), age: 0, spin: Math.random() * 6 });
       }),
       ev.on('respawn', (e) => this.spawnFlash(e.ship)),
+      ev.on('shift', (e) => {
+        if (!e.quiet) this.shiftFlash(e.ship, e.on);
+      }),
       ev.on('shieldHit', (e) => {
         const b = this.bubbles.get(e.ship);
         if (b) b.hit = 1;
@@ -346,6 +350,31 @@ export class SkillFx {
     for (let i = 0; i < 30; i++) {
       const a = (i / 30) * Math.PI * 2;
       this.add.spawn({ x: x + Math.cos(a) * L * 0.5, y: 6, z: z + Math.sin(a) * L * 0.5, vx: Math.cos(a) * 50, vy: rnd(10, 30), vz: Math.sin(a) * 50, life: 1.1, size: 7, size1: 1, color: c, kind: PK.Glow, drag: 1.3 });
+    }
+  }
+
+  /**
+   * Titan Shift: a pillar of light in the form's colour, a shock ring and a flash as the hull
+   * breaks out; the revert plays the same, smaller and dimmer.
+   */
+  private shiftFlash(s: Ship, on: boolean): void {
+    const form = on ? s.spec : SHIP_BY_ID[s.base.shift?.form ?? ''];
+    const c = form?.model.formAura ?? s.spec.skills.find((k) => k.ult)?.accent ?? 0xffd36b;
+    const L = s.spec.length;
+    const k = on ? 1 : 0.45;
+    const { x, z } = s.pos;
+    if (this.locals.includes(s)) audio.ui(on ? 'shift' : 'unshift');
+    audio.play(on ? 'nuke' : 'thunder', x, 10, z, 100, on ? 0.7 : 0.5);
+    if (on) this.flash(x, z, 0.55, c);
+    this.flat.spawn({ x, y: 1, z, life: 1.4, size: L * 0.4, size1: L * 5 * k, color: c, alpha: 1, kind: PK.Ring, fadeOut: 0.6 });
+    this.flat.spawn({ x, y: 1.5, z, life: 0.9, size: L * 0.2, size1: L * 3 * k, color: 0xffffff, alpha: 0.8, kind: PK.Ring, fadeOut: 0.5 });
+    const rise = on ? 28 : 12;
+    for (let i = 0; i < rise; i++) this.add.spawn({ x, y: 10 + i * 40, z, vy: on ? 120 : 50, life: on ? 1.6 : 0.9, size: L * 0.5 * k, size1: L * 0.08, color: 0xffffff, color1: c, kind: PK.Glow, fadeIn: 0.1 });
+    const sparks = on ? 80 : 30;
+    for (let i = 0; i < sparks; i++) {
+      const a = (i / sparks) * Math.PI * 2;
+      const v = rnd(60, 160) * k;
+      this.add.spawn({ x: x + Math.cos(a) * L * 0.4, y: 8, z: z + Math.sin(a) * L * 0.4, vx: Math.cos(a) * v, vy: rnd(20, 90) * k, vz: Math.sin(a) * v, gravity: 9.81, life: rnd(0.9, 1.6), size: 9, size1: 1, color: c, kind: PK.Glow, drag: 1.1 });
     }
   }
 

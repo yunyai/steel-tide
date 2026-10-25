@@ -11,6 +11,7 @@ import {
   KILL_HEAL_TITAN,
   MAP_HALF,
   RESPAWN_DELAY,
+  SHIFT_TEMPOS,
   SIM_DT,
   SMOKE_LIFETIME,
   SMOKE_RADIUS,
@@ -181,6 +182,20 @@ export class Game {
     const spec = SHIP_BY_ID[specId];
     if (spec.hidden) return;
     ship.nextSpec = spec === ship.spec ? null : spec;
+  }
+
+  /**
+   * Titan Shift: the ship takes its titan form, for as long as the battle's tempo (and its
+   * faction) allows. False if the hull has no form to take.
+   */
+  shiftShip(ship: Ship): boolean {
+    const shift = ship.base.shift;
+    const form = shift && SHIP_BY_ID[shift.form];
+    // Summons (Squad Levi) carry the full kit but never shift.
+    if (!form || ship.isSummon) return false;
+    const tempo = SHIFT_TEMPOS[this.config.shiftTempo ?? 'staggered'] ?? SHIFT_TEMPOS.staggered;
+    const time = shift.time * tempo.timeMul * (ship.trait?.shiftTimeMul ?? 1);
+    return ship.queueShift(form, time, tempo.unlock.map((u) => u * time));
   }
 
   /** Free play: leave the fight now and come back after the respawn delay, not counted as sunk. */

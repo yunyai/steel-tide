@@ -1,4 +1,4 @@
-import type { InputDeviceId } from '../config';
+import type { InputDeviceId, ShiftTempo } from '../config';
 import { SHIPS, SHIP_BY_ID, shipsIn } from '../data/ships';
 import { pick } from './math';
 import type { BattleEra, ShipClass, ShipSpec, Team } from './types';
@@ -47,6 +47,8 @@ export interface BattleConfig {
   ai?: [number, number];
   /** Free play: whether captains may change into a titan (allowed unless false). */
   titans?: boolean;
+  /** How Titan Shift forms run (staggered by default; see SHIFT_TEMPOS). */
+  shiftTempo?: ShiftTempo;
 }
 
 export interface RosterEntry {
@@ -71,7 +73,10 @@ export function groupOf(cls: ShipClass): Group {
 export function randomOf(g: Group, rng: () => number, era: BattleEra = 'historic'): ShipSpec {
   const fits = (s: ShipSpec) => s.cls !== 'TT' && groupOf(s.cls) === g;
   const pool = shipsIn(era).filter(fits);
-  return pick(pool.length ? pool : SHIPS.filter(fits), rng);
+  if (pool.length) return pick(pool, rng);
+  // An era short of a class (Misc, say) fills the slot from its own line first; anime now fields every class.
+  const line = shipsIn(era).filter((s) => s.cls !== 'TT');
+  return pick(line.length ? line : SHIPS.filter(fits), rng);
 }
 
 const CAPTAINS = [

@@ -293,7 +293,7 @@ function hullGeometry(spec: ShipSpec): BufferGeometry[] {
   const n = Math.round(clamp(L / 3, 40, 110));
   const rakeFrac = spec.model.hullStyle === 'block' ? 0 : spec.model.bow === 'straight' ? 0.015 : 0.045;
 
-  if (spec.cls === 'SS') {
+  if (spec.sub) {
     const rings: Vector3[][] = [];
     const colors: Color[][] = [];
     const hb = spec.beam / 2;
@@ -594,6 +594,14 @@ export function flyerGeometry(look: PlaneLook, color: number): BufferGeometry {
       p.box(5, 0.8, 1.6, 0.4, -0.4, 0, dark, { taper: 0.3 });
       p.sphere(0.4, 2.6, 0.1, 0, 0x80f0ff);
       break;
+    case 'petal':
+      // A drift of cherry-blossom blades: five pink petals fanned round a glowing hilt-guard.
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        p.box(4.2, 0.18, 1.6, Math.cos(a) * 3.2, 0.2 * (i % 2), Math.sin(a) * 3.2, i % 2 ? 0xffc8dc : 0xff9ec4, { ry: -a, taper: 0.7 });
+      }
+      p.sphere(0.9, 0, 0, 0, color);
+      break;
   }
   return p.merge();
 }
@@ -635,7 +643,7 @@ function staticGeometry(spec: ShipSpec): BufferGeometry {
   const L = spec.length;
   const upperPaint = m.camo === 'dazzle' || m.camo === 'baltic' ? camoFn(spec, pal.upper) : pal.upper;
 
-  if (spec.cls === 'SS') {
+  if (spec.sub) {
     p.box(L * 0.8, 0.6, spec.beam * 0.32, L * 0.02, fb - 0.5, 0, pal.deck);
     const ct = m.conningTower!;
     p.box(ct.len, ct.h, spec.beam * 0.34, ct.x, fb - 0.2, 0, pal.upper, { taper: 0.18, slope: 1.2 });
@@ -915,7 +923,7 @@ function geometriesFor(spec: ShipSpec) {
   }
   let launcher: BufferGeometry | null = null;
   const tspec = spec.torpedoes;
-  if (tspec && spec.cls !== 'SS') {
+  if (tspec && !spec.sub) {
     const lp = new Parts();
     lp.cyl(1.3, 1.5, 0.6, 0, 0, 0, pal.upper);
     const n = tspec.tubes;
@@ -976,6 +984,8 @@ export class ShipView {
   /** Glow around the hull while a skill runs (in that skill's accent), faded by `auraK`. */
   private aura: Mesh<BufferGeometry, ShaderMaterial>;
   private auraK = 0;
+  /** A Titan Shift form's standing glow: a wider shell than the skill aura, always lit. */
+  private formShell: Mesh<BufferGeometry, ShaderMaterial> | null = null;
   /** Reach of a zone skill (Flak Curtain, Mirror Dome...), drawn as a dome at sea level (added to the scene by the Renderer). */
   readonly dome: Mesh<SphereGeometry, ShaderMaterial> | null = null;
   private domeK = 0;
@@ -1021,6 +1031,11 @@ export class ShipView {
     this.aura.scale.set(1.02, 1.12, 1.25);
     this.aura.visible = false;
     this.body.add(this.aura);
+    if (spec.model.formAura !== undefined) {
+      this.formShell = new Mesh(geo.hull, auraMaterial(spec.model.formAura, 0.12, 0, FrontSide));
+      this.formShell.scale.set(1.05, 1.3, 1.5);
+      this.body.add(this.formShell);
+    }
     const zone = spec.skills.find((k) => k.zone);
     if (zone) {
       domeGeo ??= new SphereGeometry(1, 48, 12, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -1029,7 +1044,7 @@ export class ShipView {
     }
     this.body.add(hull);
 
-    const top = spec.cls === 'SS' ? null : mastTop(spec);
+    const top = spec.sub ? null : mastTop(spec);
     if (top) {
       radarGeo ??= radarGeometry();
       this.radar = new Group();
@@ -1229,7 +1244,7 @@ export class ShipView {
     stern.add(sternHull);
     const moved: Object3D[] = [];
     for (const c of [...this.body.children]) {
-      if (c === this.hullMesh || c === this.aura || c.position.x >= cut) continue;
+      if (c === this.hullMesh || c === this.aura || c === this.formShell || c.position.x >= cut) continue;
       stern.add(c);
       moved.push(c);
       c.traverse((o) => {
@@ -1240,6 +1255,7 @@ export class ShipView {
       });
     }
     this.aura.visible = false;
+    if (this.formShell) this.formShell.visible = false;
     for (const e of this.emitters) e.mesh.visible = false;
     this.split = { stern, sternHull, sternMat, sternU, moved };
   }
@@ -1372,6 +1388,7 @@ export class ShipView {
     this.root.rotation.x = Math.sin(time * 0.45) * 0.015;
     if (this.radar) this.radar.rotation.y = time * 1.6;
     if (this.pennant) this.wave(time);
+    if (this.formShell) this.formShell.material.uniforms.uAlpha.value = 0.32 + 0.12 * Math.sin(time * 3.2);
   }
 
   update(ship: Ship, time: number): void {
@@ -1435,6 +1452,10 @@ export class ShipView {
     this.auraK = clamp(this.auraK + (active ? dt * 3 : -dt * 2), 0, 1);
     this.aura.visible = this.auraK > 0.01;
     this.aura.material.uniforms.uAlpha.value = this.auraK * (0.45 + 0.2 * Math.sin(time * 5)) * (ship.spec.cls === 'TT' ? 0.6 : 1);
+    if (this.formShell) {
+      this.formShell.visible = ship.alive && this.mode === 'normal' && !this.split;
+      this.formShell.material.uniforms.uAlpha.value = 0.32 + 0.12 * Math.sin(time * 3.2);
+    }
     if (this.dome) {
       this.domeK = clamp(this.domeK + (zone ? dt * 3 : -dt * 2), 0, 1);
       if (zone) {
@@ -1538,6 +1559,7 @@ export class ShipView {
   /** Free what this view owns (hull and turret geometry is shared and cached). */
   dispose(): void {
     this.aura.material.dispose();
+    this.formShell?.material.dispose();
     this.material.dispose();
     this.split?.sternMat.dispose();
     for (const e of this.emitters) {

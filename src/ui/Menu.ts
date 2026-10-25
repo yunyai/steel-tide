@@ -1,9 +1,9 @@
-import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId } from '../config';
+import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId, SHIFT_SURGE, SHIFT_TEMPOS, type ShiftTempo } from '../config';
 import { type BattleConfig, type BattleType, type DifficultyId, defaultAssist, type PlayerConfig } from '../core/BattleSetup';
 import type { BattleEra, Era, ShipClass, ShipSpec } from '../core/types';
 import { accentCss } from '../data/accents';
 import { ERAS, ERA_BLURB, ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
-import { CLASS_LABEL, SHIPS, SHIP_BY_ID, shipsIn, shipsOf } from '../data/ships';
+import { CLASS_LABEL, LINE_ERAS, SHIPS, SHIP_BY_ID, shipsIn, shipsOf } from '../data/ships';
 import { keyName, layoutFor } from '../input/Keybinds';
 import { RUSH_WAVES, loadBest } from '../modes/BossRush';
 import { consumableLabel } from '../ships/Consumables';
@@ -45,9 +45,24 @@ export function tabOf(cls: ShipClass): Tab {
   return TABS.find((t) => t.classes.includes(cls))!.id;
 }
 
-/** Eras with ships to sail, and the choices a battle offers (Mixed once there are two). */
+/**
+ * Eras with ships to sail, and the choices a battle offers (Mixed once there are two). Only eras
+ * with line ships can fill a battle; Misc's lone titan sails in Mixed.
+ */
 export const LIVE_ERAS = ERAS.filter((e) => shipsOf(e).length > 0);
-const BATTLE_ERAS: BattleEra[] = LIVE_ERAS.length > 1 ? [...LIVE_ERAS, 'mixed'] : LIVE_ERAS;
+const BATTLE_ERAS: BattleEra[] = LINE_ERAS.length > 1 ? [...LINE_ERAS, 'mixed'] : LINE_ERAS;
+
+/** Eras whose ships can take a Titan Shift (the tempo switch shows for them). */
+const shifting = (e: BattleEra) => e === 'mixed' || shipsOf(e).some((s) => s.shift);
+
+/** What a Titan Shift tempo means for a form written at 40 s. */
+function tempoBlurb(k: ShiftTempo): string {
+  const t = SHIFT_TEMPOS[k];
+  const time = 40 * t.timeMul;
+  const at = t.unlock.map((u) => Math.round(u * time));
+  const ready = at.every((a) => a === 0) ? 'all three of its ultimates are ready at once' : `its ultimates come ready ${at.map((a) => (a === 0 ? 'at once' : `after ${a} s`)).join(', ').replace(/, ([^,]*)$/, ' and $1')}`;
+  return `A Titan Shift lasts about ${time} s, and ${ready}. Each fires once per shift.`;
+}
 
 function eraName(e: BattleEra): string {
   return e === 'mixed' ? 'Mixed' : ERA_LABEL[e];
@@ -328,6 +343,20 @@ export class Menu {
         : `Every wave scales up. Titans arrive on waves 5, 10 and 15; after wave ${RUSH_WAVES} the waves never stop. Between waves you repair and pick one of three refits.`;
     const runNote = h('p', { class: 'note' }, rushNote());
     const fields: HTMLElement[] = [];
+    const tempoNote = h('p', { class: 'note' }, tempoBlurb(d.shiftTempo ?? 'staggered'));
+    const tempo = this.field(
+      'Titan Shift',
+      this.seg<ShiftTempo>(
+        (Object.keys(SHIFT_TEMPOS) as ShiftTempo[]).map((k) => ({ value: k, label: SHIFT_TEMPOS[k].label })),
+        () => d.shiftTempo ?? 'staggered',
+        (v) => {
+          d.shiftTempo = v;
+          tempoNote.textContent = tempoBlurb(v);
+        },
+      ),
+      tempoNote,
+    );
+    tempo.hidden = !shifting(d.era ?? 'historic');
     if (BATTLE_ERAS.length > 1) {
       const eraNote = h('p', { class: 'note' }, eraBlurb(d.era ?? 'historic'));
       fields.push(
@@ -339,6 +368,7 @@ export class Menu {
             (v) => {
               d.era = v;
               eraNote.textContent = eraBlurb(v);
+              tempo.hidden = !shifting(v);
               // The captain's ship has to come from the era too.
               const pc = d.players[0];
               const cur = SHIP_BY_ID[pc.shipId];
@@ -349,6 +379,7 @@ export class Menu {
         ),
       );
     }
+    fields.push(tempo);
     if (kind === 'battle') {
       fields.push(
         this.field(
@@ -454,6 +485,8 @@ export class Menu {
     const dossier = h('section', { class: 'dossier panel' });
     const survival = d.type === 'survival';
     const bests = loadBest(survival);
+    /** The preview shows the selected ship's Titan Shift form instead of the ship. */
+    let formLook = false;
 
     const renderDossier = () => {
       const s = spec;
@@ -472,18 +505,38 @@ export class Menu {
         ...stat('Agility', 0.1 + 0.9 * agility, `${Math.round(s.turnRadius)} m turn`),
         ...stat('Range', reach(s) / MAX.range, `${(reach(s) / 1000).toFixed(1)} km`),
       ];
-      const keys = layoutFor(s).skills.map(keyName);
-      const cards = s.skills.map((sk, i) => {
-        const c = h('div', { class: `skill-card${sk.ult ? ' ult' : ''}` });
-        c.style.setProperty('--accent', accentCss(sk.accent));
-        const hexi = html(`<div class="hexi">${skillIcon(sk.icon)}<kbd>${keys[i]}</kbd></div>`);
-        c.append(
-          hexi,
-          h('div', { class: 'top' }, h('b', {}, sk.name), h('span', { class: 'cd' }, sk.ult ? 'Ultimate' : `${sk.cooldown} s cooldown`)),
-          h('p', {}, sk.description),
+      const cardsOf = (of: ShipSpec) => {
+        const keys = layoutFor(of).skills.map(keyName);
+        return of.skills.map((sk, i) => {
+          const c = h('div', { class: `skill-card${sk.ult ? ' ult' : ''}${sk.icon === 'shift' ? ' shift' : ''}` });
+          c.style.setProperty('--accent', accentCss(sk.accent));
+          const hexi = html(`<div class="hexi">${skillIcon(sk.icon)}<kbd>${keys[i]}</kbd></div>`);
+          const cd = sk.icon === 'shift' ? 'Titan Shift' : sk.ult ? (of.formOf ? 'Once per shift' : 'Ultimate') : `${sk.cooldown} s cooldown`;
+          c.append(hexi, h('div', { class: 'top' }, h('b', {}, sk.name), h('span', { class: 'cd' }, cd)), h('p', {}, sk.description));
+          return c;
+        });
+      };
+      const cards = cardsOf(s);
+      const form = s.shift ? SHIP_BY_ID[s.shift.form] : undefined;
+      const shiftPart: HTMLElement[] = [];
+      if (form && s.shift) {
+        const fc = cardsOf(form);
+        const look = h('button', { class: 'btn btn-quiet form-look', 'aria-pressed': String(formLook) }, formLook ? 'Show the ship' : 'Show the titan form');
+        look.onclick = () => {
+          this.hooks.click();
+          formLook = !formLook;
+          this.hooks.preview(formLook ? form : s, 0);
+          renderDossier();
+        };
+        shiftPart.push(
+          h('h4', { class: 'kit-head shift' }, `Titan Shift: ${form.name}`),
+          h('p', { class: 'shift-note' }, `For about ${Math.round(s.shift.time * (FACTIONS[s.nation].trait?.shiftTimeMul ?? 1))} s: ${form.hp.toLocaleString()} HP titan scale, ${+form.maxSpeed.toFixed(1)} knots, the hull's share of damage carried over plus a ${Math.round(SHIFT_SURGE * 100)}% surge. ${form.description}`),
+          look,
+          h('div', { class: 'skill-cards titan' }, ...fc.filter((_, i) => !form.skills[i].ult)),
+          h('h4', { class: 'kit-head ult' }, 'Form ultimates'),
+          h('div', { class: 'skill-cards titan' }, ...fc.filter((_, i) => form.skills[i].ult)),
         );
-        return c;
-      });
+      }
       const name = h('h2', { class: 'ship-name' }, s.name);
       const meta = h('div', { class: 'ship-meta' });
       if (titan) meta.append(h('span', { class: 'chip titan' }, 'TITAN'));
@@ -507,6 +560,7 @@ export class Menu {
               h('div', { class: 'skill-cards titan' }, ...cards.filter((_, i) => s.skills[i].ult)),
             ]
           : [h('div', { class: 'skill-cards' }, ...cards)]),
+        ...shiftPart,
         h('ul', { class: 'loadout' }, ...loadout(s).map((l) => h('li', {}, l)), ...(best ? [h('li', {}, `Best ${survival ? 'Survival' : 'Boss Rush'}: wave ${best.wave}, ${best.score.toLocaleString()} points`)] : [])),
       );
     };
@@ -551,6 +605,7 @@ export class Menu {
             this.hooks.click();
             spec = s;
             pc.shipId = s.id;
+            formLook = false;
             this.hooks.preview(s, 0);
             renderRoster();
             renderDossier();

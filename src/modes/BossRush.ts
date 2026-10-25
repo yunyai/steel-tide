@@ -5,7 +5,7 @@ import type { Game } from '../core/Game';
 import { bearingTo, pick } from '../core/math';
 import type { PickupKind } from '../core/Pickups';
 import type { ShipSpec, Team } from '../core/types';
-import { SHIP_BY_ID, titansOf } from '../data/ships';
+import { SHIP_BY_ID, bossesOf } from '../data/ships';
 import type { Ship } from '../ships/Ship';
 
 // Boss Rush: the player holds the middle of the map against escalating waves, with a titan
@@ -230,12 +230,12 @@ export class BossRush {
 
   /**
    * Titan `i` of the battle's era. Historic sends its three in order; the newer eras shuffle their
-   * four once per battle, so the three boss waves bring three different titans; Mixed draws from
-   * every era.
+   * four once per battle, so the three boss waves bring three different titans (anime sends its
+   * Titan Shift forms); Mixed draws from every era.
    */
   private titan(i: number): ShipSpec {
     const era = this.game.config.era ?? 'historic';
-    const list = titansOf(era);
+    const list = bossesOf(era);
     if (era === 'mixed') return pick(list, this.game.rng);
     if (!this.titanOrder) {
       const order = [...list];
@@ -266,7 +266,7 @@ export class BossRush {
     const count = Math.min(9, 5 + Math.floor((n - RUSH_WAVES) / 2));
     const pool: Group[] = ['BB', 'BB', 'cruiser', 'cruiser', 'DD', 'DD', 'SS', 'CV'];
     const out: Slot[] = [];
-    if (n % 5 === 0) out.push(`titan:${Math.floor(rng() * titansOf(this.game.config.era ?? 'historic').length)}`);
+    if (n % 5 === 0) out.push(`titan:${Math.floor(rng() * bossesOf(this.game.config.era ?? 'historic').length)}`);
     while (out.length < count) out.push(pick(pool, rng));
     return out;
   }

@@ -25,10 +25,11 @@ async function main() {
   await runnerImport(`${root}src/core/installDetMath.ts`);
   const { module: ships } = await runnerImport(`${root}src/data/ships.ts`);
   const { module: factions } = await runnerImport(`${root}src/data/factions.ts`);
-  const titans = ships.SHIPS.filter((s) => s.cls === 'TT').map((s) => ({ id: s.id, era: factions.eraOf(s) }));
+  // A titan leads a fleet of its own era; Misc has no line ships, so its titans lead a mixed one.
+  const titans = ships.SHIPS.filter((s) => s.cls === 'TT').map((s) => ({ id: s.id, era: ships.LINE_ERAS.includes(factions.eraOf(s)) ? factions.eraOf(s) : 'mixed' }));
 
   const jobs = [];
-  for (const era of ['historic', 'modern', 'scifi', 'fantasy', 'mixed']) {
+  for (const era of [...ships.LINE_ERAS, 'mixed']) {
     for (let i = 0; i < perEra; i++) jobs.push({ kind: 'line', era, type: i % 2 ? 'annihilation' : 'domination', seed: i });
   }
   for (const t of titans) {
@@ -39,7 +40,7 @@ async function main() {
   const results = await runPool(jobs, Math.max(1, Math.min(7, cpus().length - 1)));
   const secs = ((Date.now() - started) / 1000).toFixed(0);
 
-  report(results, ships.SHIP_BY_ID);
+  report(results, ships.SHIP_BY_ID, ships.LINE_ERAS);
   process.stdout.write(`\n${results.length} battles in ${secs} s\n`);
   if (jsonOut) writeFileSync(jsonOut, JSON.stringify(results));
 }
@@ -114,7 +115,7 @@ function skillSplit(results, id) {
   return list.length ? list.map(([s, v]) => `${s} ${k(v / Math.max(1, sailed))}`).join(', ') : 'none';
 }
 
-function report(results, byId) {
+function report(results, byId, eras) {
   const out = (s = '') => process.stdout.write(`${s}\n`);
   const line = results.filter((r) => r.job.kind === 'line');
   const titan = results.filter((r) => r.job.kind === 'titan');
@@ -132,7 +133,7 @@ function report(results, byId) {
   const ratio = (t) => t.damage / Math.max(1, groupMedian.get(`${t.era}|${t.group}|${t.type}`)) - 1;
   const ids = [...new Set(table.map((t) => t.id))].sort((a, b) => (byId[a].cls + a).localeCompare(byId[b].cls + b));
   const flagged = [];
-  for (const era of ['historic', 'modern', 'scifi', 'fantasy']) {
+  for (const era of eras) {
     out();
     out(`${era}`);
     out(`  ${pad('ship', 16)}${pad('group', 9)}${lpad('dom dmg', 9)}${lpad('vs med', 8)}${lpad('ann dmg', 9)}${lpad('vs med', 8)}${lpad('skill', 7)}${lpad('kills', 7)}${lpad('deaths', 7)}${lpad('alive', 7)}${lpad('n', 5)}`);
@@ -166,7 +167,7 @@ function report(results, byId) {
   const mixed = line.filter((r) => r.job.era === 'mixed').flatMap((r) => r.ships);
   const groups = ['BB', 'cruiser', 'DD', 'CV', 'SS'];
   out(`  ${pad('era', 10)}${groups.map((g) => lpad(g, 9)).join('')}${lpad('all', 9)}${lpad('alive', 8)}${lpad('n', 6)}`);
-  for (const era of ['historic', 'modern', 'scifi', 'fantasy']) {
+  for (const era of eras) {
     const cells = groups.map((g) => {
       const mine = mixed.filter((s) => s.era === era && s.group === g);
       const every = mixed.filter((s) => s.group === g);

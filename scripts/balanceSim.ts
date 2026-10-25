@@ -69,7 +69,7 @@ export function runBattle(job: BalanceJob): BalanceResult {
     for (const s of g.fleet) if (s.humanIndex >= 0) g.handToAI(s);
     g.events.on('skillHit', (e) => {
       const owner = e.attacker.summonOwner ?? e.attacker;
-      const key = `${owner.spec.id}:${e.skill.id}`;
+      const key = `${owner.base.id}:${e.skill.id}`;
       out.skills[key] = (out.skills[key] ?? 0) + e.damage;
     });
     // Where each ship was at the last check, and for how long it has stayed near there.
@@ -100,7 +100,8 @@ export function runBattle(job: BalanceJob): BalanceResult {
   out.minutes = g.time / 60;
   for (const s of g.fleet) {
     if (s.isSummon) continue;
-    const spec = SHIP_BY_ID[s.spec.id] ?? s.spec;
+    // A ship that ended in its Titan Shift form is counted as itself.
+    const spec = SHIP_BY_ID[s.base.id] ?? s.base;
     out.ships.push({
       id: spec.id,
       era: eraOf(spec),

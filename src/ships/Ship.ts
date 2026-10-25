@@ -11,6 +11,8 @@ import {
   REGEN_DELAY,
   REGEN_RATE,
   RESPAWN_SHIELD,
+  SHIFT_CHARGE,
+  SHIFT_SURGE,
   SMOKE_DISPERSION,
   SPEED_SCALE,
   ULT_DAMAGE_CHARGE,
@@ -183,6 +185,8 @@ export interface Mods {
   batteryFree: boolean;
   /** Stuns and slows do not take hold (Juggernaut). */
   unstoppable: boolean;
+  /** Shoves and knockbacks do not move the hull (Hardening, Rampage). */
+  knockImmune: boolean;
   /** Every main-battery hit calls down a bolt of this much damage (Lightning Rod), and its skill. */
   boltOnHit: number;
   boltSkill: SkillSpec | null;
@@ -243,6 +247,8 @@ export interface Mods {
   overShield: number;
   /** Stuns, roots, silences and fear do not take hold (Hearts of Oak). */
   ccImmune: boolean;
+  /** Chance that a hostile hit misses outright (Autonomous Dodge). */
+  dodge: number;
 }
 
 function baseMods(): Mods {
@@ -281,6 +287,7 @@ function baseMods(): Mods {
     regenMul: 1,
     batteryFree: false,
     unstoppable: false,
+    knockImmune: false,
     boltOnHit: 0,
     boltSkill: null,
     silenced: false,
@@ -315,6 +322,7 @@ function baseMods(): Mods {
     spellMirror: false,
     overShield: 0,
     ccImmune: false,
+    dodge: 0,
   };
 }
 
@@ -451,9 +459,23 @@ export interface ShipStats {
   deaths: number;
 }
 
+/** A Titan Shift under way: when it started and ends, when each form ultimate comes ready, and the base hull's state to come back to. */
+export interface FormState {
+  start: number;
+  until: number;
+  /** Seconds after the shift that each form ultimate is ready (each fires once). */
+  unlock: number[];
+  /** Form ultimates already fired, by skill index. */
+  used: Set<number>;
+  saved: { cooldowns: number[]; consumables: ConsumableState[]; slot: number; hpRatio: number };
+}
+
 export class Ship {
   readonly id: number;
-  readonly spec: ShipSpec;
+  /** The hull as it sails now: the base hull, or its titan form during a Titan Shift. */
+  spec: ShipSpec;
+  /** The hull this ship was built as (names, pickers and the report use it). */
+  readonly base: ShipSpec;
   readonly team: Team;
   name: string;
   /** Index of the human player controlling this ship, or -1 for AI. */
@@ -497,7 +519,7 @@ export class Ship {
   turrets: TurretState[] = [];
   secondaries: SecondaryMount[] = [];
   launchers: LauncherState[] = [];
-  consumables: ConsumableState[];
+  consumables: ConsumableState[] = [];
   mods: Mods = baseMods();
   effects: Effect[] = [];
 
@@ -518,12 +540,16 @@ export class Ship {
    */
   stalled = 0;
   private lastSpeed = 0;
-  zonePools: Record<ArmorZone, number>;
+  zonePools!: Record<ArmorZone, number>;
 
   /** Normal skills, then ultimates (each ultimate charges its own meter). */
-  skills: SkillState[];
+  skills: SkillState[] = [];
   /** Positions of the ultimates in `skills`. */
-  readonly ultIndices: number[];
+  ultIndices: number[] = [];
+  /** The Titan Shift under way, if any. */
+  form: FormState | null = null;
+  /** A Titan Shift ordered this tick, taken once the skill has fired. */
+  private shiftQueued: { form: ShipSpec; time: number; unlock: number[] } | null = null;
   /** Shield hit points (absorbed before the hull) and seconds until the shield lapses. */
   shield = 0;
   shieldMax = 0;
@@ -579,7 +605,7 @@ export class Ship {
 
   stats: ShipStats = { damage: 0, kills: 0, citadels: 0, hits: 0, fires: 0, torpHits: 0, received: 0, shotsFired: 0, skill: 0, deaths: 0 };
 
-  readonly superBox: ReturnType<typeof superstructureBounds>;
+  superBox!: ReturnType<typeof superstructureBounds>;
   private tables: Partial<Record<AmmoType, RangeTable>> = {};
   private secTables = new Map<SecondarySpec, RangeTable>();
 
@@ -590,12 +616,28 @@ export class Ship {
     name?: string,
   ) {
     this.id = game.nextShipId++;
-    this.spec = spec;
+    this.spec = this.base = spec;
     this.team = team;
     this.name = name ?? spec.name;
     this.hp = this.maxHp = spec.hp;
     this.colossus = spec.cls === 'TT';
     this.trait = traitOf(spec);
+    this.build(spec);
+    // A titan's three ultimates start staggered, so they come online one after another.
+    let u = 0;
+    for (const st of this.skills) if (st.spec.ult) st.meter = spec.shift ? 0 : (ULT_START[u++] ?? 0);
+    if (spec.sub) this.battery = spec.sub.battery;
+  }
+
+  /**
+   * Everything that follows from the hull: guns, launchers, weapon slots, the air wing, skills
+   * (fresh, meters empty), consumables and armour pools. The constructor and both ways of a Titan
+   * Shift go through here; hit points, effects and the pose are the caller's.
+   */
+  private build(spec: ShipSpec): void {
+    const game = this.game;
+    this.spec = spec;
+    this.colossus = spec.cls === 'TT';
     this.zonePools = {
       bow: spec.hp * 0.12,
       stern: spec.hp * 0.12,
@@ -606,11 +648,20 @@ export class Ship {
     };
     this.superBox = superstructureBounds(spec);
     this.consumables = createConsumables(spec);
-    // A titan's three ultimates start staggered, so they come online one after another.
-    let u = 0;
-    this.skills = spec.skills.map((sp, index) => ({ spec: sp, index, cooldown: 0, active: false, time: 0, meter: sp.ult ? ULT_START[u++] ?? 0 : 0, data: {} }));
+    this.skills = spec.skills.map((sp, index) => ({ spec: sp, index, cooldown: 0, active: false, time: 0, meter: 0, data: {} }));
     this.ultIndices = this.skills.filter((st) => st.spec.ult).map((st) => st.index);
-    if (spec.sub) this.battery = spec.sub.battery;
+    this.turrets = [];
+    this.secondaries = [];
+    this.launchers = [];
+    this.slots = [];
+    this.tables = {};
+    this.secTables = new Map();
+    this.salvo = this.torpBuff = this.airBuff = this.vlsBuff = null;
+    this.history.length = 0;
+    if (!spec.sub) {
+      this.depthState = 0;
+      this.pos.y = 0;
+    }
 
     if (spec.main) {
       for (const t of spec.main.turrets) {
@@ -644,23 +695,108 @@ export class Ship {
       if (spec.main?.he) this.slots.push({ kind: 'gun', ammo: 'HE', label: names[1] });
       if (spec.torpedoes) this.slots.push({ kind: 'torp', label: TORP_LABEL[spec.torpedoes.look ?? 'torpedo'] });
     }
-    if (spec.missiles) {
-      this.vls = { reload: 0, lock: null };
-      this.slots.push({ kind: 'vls', label: spec.missiles.name });
-    }
+    this.vls = spec.missiles ? { reload: 0, lock: null } : null;
+    if (spec.missiles) this.slots.push({ kind: 'vls', label: spec.missiles.name });
     // Carriers fly squadrons; the Habakkuk titan carries guns and an air wing.
+    this.air = spec.air
+      ? {
+          hangar: { torpedo: spec.air.torpedo.hangar, dive: spec.air.dive.hangar, fighter: spec.air.fighter.hangar },
+          restore: { torpedo: 0, dive: 0, fighter: 0 },
+          cooldown: 0,
+        }
+      : null;
     if (spec.air) {
-      this.air = {
-        hangar: { torpedo: spec.air.torpedo.hangar, dive: spec.air.dive.hangar, fighter: spec.air.fighter.hangar },
-        restore: { torpedo: 0, dive: 0, fighter: 0 },
-        cooldown: 0,
-      };
       this.slots.push(
         { kind: 'air', sq: 'torpedo', label: spec.air.torpedo.name },
         { kind: 'air', sq: 'dive', label: spec.air.dive.name },
         { kind: 'air', sq: 'fighter', label: spec.air.fighter.name },
       );
     }
+    this.slot = Math.min(this.slot, Math.max(0, this.slots.length - 1));
+  }
+
+  // ---------------------------------------------------------------- Titan Shift
+
+  /** Order a Titan Shift into `form` for `time` seconds; it takes hold once the skill that ordered it has fired. */
+  queueShift(form: ShipSpec, time: number, unlock: number[]): boolean {
+    if (this.form || this.shiftQueued || !this.alive || this.isSummon) return false;
+    this.shiftQueued = { form, time, unlock };
+    return true;
+  }
+
+  /** Every running skill ends now, as if its time ran out. */
+  private endSkills(): void {
+    for (const st of this.skills) {
+      if (!st.active) continue;
+      st.active = false;
+      SKILLS[st.spec.id]?.end?.(this, this.game, st);
+      this.game.events.emit('skillEnd', { ship: this, index: st.index });
+    }
+  }
+
+  private shiftNow(form: ShipSpec, time: number, unlock: number[]): void {
+    this.endSkills();
+    const frac = this.hp / this.maxHp;
+    const hpRatio = this.maxHp / this.spec.hp;
+    const saved = { cooldowns: this.skills.map((st) => st.cooldown), consumables: this.consumables, slot: this.slot, hpRatio };
+    this.build(form);
+    this.maxHp = form.hp * hpRatio;
+    this.hp = Math.min(this.maxHp, this.maxHp * (frac + SHIFT_SURGE));
+    // A form that stays under the sea comes with full tanks.
+    if (form.sub) this.battery = form.sub.battery;
+    // The power-up burns off fires, flooding and stuns; other curses hold.
+    this.extinguish();
+    this.effects = this.effects.filter((e) => e.id !== 'debuff:stun');
+    this.form = { start: this.game.time, until: this.game.time + time, unlock, used: new Set(), saved };
+    this.updateForm();
+    this.game.events.emit('shift', { ship: this, on: true });
+  }
+
+  /** Back to the base hull: same share of hull, cooldowns as they were less the time spent in the form. */
+  private revert(): void {
+    const f = this.form;
+    if (!f) return;
+    this.endSkills();
+    const frac = this.hp / this.maxHp;
+    this.form = null;
+    this.build(this.base);
+    this.maxHp = this.base.hp * f.saved.hpRatio;
+    this.hp = Math.max(1, this.maxHp * frac);
+    // A titan sub's tanks may hold more than the base hull's.
+    if (this.base.sub) this.battery = Math.min(this.battery, this.base.sub.battery);
+    const gone = this.game.time - f.start;
+    this.skills.forEach((st, i) => {
+      if (!st.spec.ult) st.cooldown = Math.max(0, (f.saved.cooldowns[i] ?? 0) - gone);
+    });
+    this.consumables = f.saved.consumables;
+    for (const c of this.consumables) {
+      c.cooldown = Math.max(0, c.cooldown - gone);
+      c.active = 0;
+    }
+    this.slot = Math.min(f.saved.slot, Math.max(0, this.slots.length - 1));
+    this.game.events.emit('shift', { ship: this, on: false });
+  }
+
+  /** In a form: each ultimate charges up to its unlock time, once; the form lapses at the end. */
+  private updateForm(): void {
+    const f = this.form;
+    if (!f) return;
+    if (this.game.time >= f.until) {
+      this.revert();
+      return;
+    }
+    const t = this.game.time - f.start;
+    this.ultIndices.forEach((i, k) => {
+      const st = this.skills[i];
+      if (st.active || f.used.has(i)) return;
+      const at = f.unlock[k] ?? 0;
+      st.meter = at <= 0 ? 1 : Math.min(1, t / at);
+    });
+  }
+
+  /** Seconds of the form left (0 out of one). */
+  get formLeft(): number {
+    return this.form ? Math.max(0, this.form.until - this.game.time) : 0;
   }
 
   // ---------------------------------------------------------------- geometry
@@ -670,7 +806,7 @@ export class Ship {
   }
 
   get isSub(): boolean {
-    return this.spec.cls === 'SS';
+    return !!this.spec.sub;
   }
 
   get submerged(): boolean {
@@ -754,8 +890,14 @@ export class Ship {
     }
     this.recomputeMods(dt);
     this.applyControl();
+    const q = this.shiftQueued;
+    if (q) {
+      this.shiftQueued = null;
+      this.shiftNow(q.form, q.time, q.unlock);
+    }
     updateConsumables(this, dt);
     this.updateSkills(dt);
+    this.updateForm();
     this.updateShield(dt);
     this.updateSub(dt);
     this.updateMovement(dt);
@@ -799,14 +941,15 @@ export class Ship {
 
   /**
    * Back to where the ship was `seconds` ago (at most six): pose, hull and skill cooldowns.
-   * `hullOnly` restores just the hull. Returns false with no record that old.
+   * `'hull'` restores just the hull, `'pose'` just the place and heading (Izanami's loop, which
+   * neither heals nor cleanses). Returns false with no record that old.
    */
-  rewind(seconds: number, hullOnly = false): boolean {
+  rewind(seconds: number, mode: 'all' | 'hull' | 'pose' = 'all'): boolean {
     const back = Math.min(this.history.length, Math.round(seconds * 2));
     if (back <= 0) return false;
     const r = this.history[this.history.length - back];
-    this.hp = Math.max(this.hp, Math.min(this.maxHp, r.hp));
-    if (hullOnly) return true;
+    if (mode !== 'pose') this.hp = Math.max(this.hp, Math.min(this.maxHp, r.hp));
+    if (mode === 'hull') return true;
     const fromX = this.pos.x;
     const fromZ = this.pos.z;
     this.pos.x = r.x;
@@ -815,6 +958,10 @@ export class Ship {
     this.prevPos.copy(this.pos);
     this.renderPos.copy(this.pos);
     this.prevHeading = this.renderHeading = this.heading;
+    if (mode === 'pose') {
+      this.game.events.emit('blink', { ship: this, fromX, fromZ });
+      return true;
+    }
     r.cooldowns.forEach((cd, i) => {
       const st = this.skills[i];
       if (st && !st.spec.ult && !st.active) st.cooldown = Math.min(st.cooldown, cd);
@@ -922,8 +1069,10 @@ export class Ship {
     if (!impl || impl.activate(this, this.game, st) === false) return false;
     st.active = st.spec.duration > 0;
     st.time = st.spec.duration;
-    if (st.spec.ult) st.meter = 0;
-    else st.cooldown = st.spec.cooldown * this.mods.cooldownMul;
+    if (st.spec.ult) {
+      st.meter = 0;
+      this.form?.used.add(i);
+    } else st.cooldown = st.spec.cooldown * this.mods.cooldownMul;
     this.game.events.emit('skill', { ship: this, index: i });
     return true;
   }
@@ -935,10 +1084,12 @@ export class Ship {
 
   /** Add to every ultimate's meter (not to one that is running). */
   charge(amount: number): void {
-    if (this.isSummon) return;
+    // A form's ultimates come ready on the form's own clock.
+    if (this.isSummon || this.form) return;
+    const k = this.spec.shift ? SHIFT_CHARGE : 1;
     for (const i of this.ultIndices) {
       const st = this.skills[i];
-      if (!st.active) st.meter = Math.min(1, st.meter + amount * this.mods.ultChargeMul);
+      if (!st.active) st.meter = Math.min(1, st.meter + amount * k * this.mods.ultChargeMul);
     }
   }
 
@@ -955,7 +1106,7 @@ export class Ship {
         this.game.events.emit('skillEnd', { ship: this, index: st.index });
       }
     }
-    if (this.isSummon) return;
+    if (this.isSummon || this.form) return;
     for (const i of this.ultIndices) {
       const st = this.skills[i];
       if (!st.active) st.meter = Math.min(1, st.meter + (dt / (st.spec.cooldown || ULT_PASSIVE_TIME)) * this.mods.ultChargeMul);
@@ -1376,7 +1527,8 @@ export class Ship {
     }
     const slot = this.currentSlot;
     const c = this.control;
-    if (c.fire && slot?.kind === 'air' && st.cooldown <= 0 && st.hangar[slot.sq] >= 1 && !this.mods.stunned && !this.mods.disarmed) {
+    // A carrier-submarine flies its wing off from periscope depth or the surface, never from the deep.
+    if (c.fire && slot?.kind === 'air' && st.cooldown <= 0 && st.hangar[slot.sq] >= 1 && !this.mods.stunned && !this.mods.disarmed && !this.deep) {
       if (this.game.air.launch(this, slot.sq, c.aimX, c.aimZ)) st.cooldown = air.launchCooldown;
     }
   }
@@ -1392,14 +1544,26 @@ export class Ship {
     return dmg;
   }
 
+  /** Black Flash: the multiplier on one of this ship's hits on `target` (1 for a plain hit). */
+  critMul(target: Ship): number {
+    const c = this.trait?.crit;
+    if (!c || target.team === this.team || this.game.rng() >= c.chance) return 1;
+    this.game.events.emit('ribbon', { ship: this, kind: 'Black Flash', damage: 0, target });
+    return c.mul;
+  }
+
   /**
    * Apply damage after shields and modifiers. `skill` tags skill damage for popups and stats;
-   * `reflected` stops a reflect bouncing back and forth between two mirrored ships.
+   * `reflected` stops a reflect bouncing back and forth between two mirrored ships. A `pierce`
+   * hit (World-Cutting Slash) cuts through invulnerability, guards, shields and hit caps, though
+   * never through a fresh spawn's protection or out of the world.
    */
-  takeDamage(amount: number, attacker: Ship | null, skill: SkillSpec | null = null, reflected = false): number {
+  takeDamage(amount: number, attacker: Ship | null, skill: SkillSpec | null = null, reflected = false, pierce = false): number {
     if (!this.alive || amount <= 0) return 0;
-    if (this.mods.invulnerable) return 0;
+    if (pierce && (this.mods.banished || this.effects.some((e) => e.id === 'spawn' || e.id === 'revived'))) return 0;
+    if (this.mods.invulnerable && !pierce) return 0;
     const hostile = !!attacker && attacker.team !== this.team;
+    if (hostile && !pierce && this.mods.dodge > 0 && this.game.rng() < this.mods.dodge) return 0;
     let mul = this.mods.damageTakenMul;
     if (attacker && this.game.exposed[attacker.team] > 0) mul *= 1.25;
     if (this.mods.marked && hostile) mul *= 1.25;
@@ -1413,12 +1577,12 @@ export class Ship {
       this.heal(raw);
       return 0;
     }
-    if (hostile && skill && !reflected && this.mods.spellMirror) {
+    if (hostile && skill && !reflected && !pierce && this.mods.spellMirror) {
       this.game.events.emit('shieldHit', { ship: this, amount: raw });
       if (attacker.alive) attacker.takeDamage(amount, this, skill, true);
       return 0;
     }
-    if (this.mods.hitCap > 0) raw = Math.min(raw, this.maxHp * this.mods.hitCap);
+    if (this.mods.hitCap > 0 && !pierce) raw = Math.min(raw, this.maxHp * this.mods.hitCap);
     const link = this.link;
     if (link && this.game.time > link.until) this.link = null;
     else if (link && hostile && !reflected) {
@@ -1432,7 +1596,7 @@ export class Ship {
     }
     if (hostile) this.lastHurt = this.game.time;
     const guard = this.guard;
-    if (guard && hostile && raw >= guard.min) {
+    if (guard && hostile && !pierce && raw >= guard.min) {
       if (this.game.time > guard.until) this.guard = null;
       else {
         if (--guard.left <= 0) this.guard = null;
@@ -1441,7 +1605,7 @@ export class Ship {
         return 0;
       }
     }
-    if (this.shield > 0) {
+    if (this.shield > 0 && !pierce) {
       const absorbed = Math.min(this.shield, raw);
       this.shield -= absorbed;
       raw -= absorbed;
@@ -1580,7 +1744,7 @@ export class Ship {
 
   /** Knockback (m/s), eased for long hulls unless `eased` is false. Bastion hulls cannot be moved. */
   shove(vx: number, vz: number, eased = true): void {
-    if (this.trait?.knockImmune || this.mods.banished) return;
+    if (this.trait?.knockImmune || this.mods.knockImmune || this.mods.banished) return;
     const k = eased ? Math.min(1, 180 / this.spec.length) : 1;
     this.pushX += vx * k;
     this.pushZ += vz * k;
@@ -1641,6 +1805,15 @@ export class Ship {
    * controllers, the HUD and the scoreboard keep following it; ultimate meters carry over.
    */
   respawn(x: number, z: number, heading: number): void {
+    // A ship sunk in its titan form comes back as itself.
+    const reverted = !!this.form || this.spec !== this.base;
+    if (reverted) {
+      const hpRatio = this.form?.saved.hpRatio ?? this.maxHp / this.spec.hp;
+      this.form = null;
+      this.build(this.base);
+      this.maxHp = this.base.hp * hpRatio;
+    }
+    this.shiftQueued = null;
     const spec = this.spec;
     this.alive = true;
     this.withdrawn = false;
@@ -1709,6 +1882,8 @@ export class Ship {
         m.invulnerable = true;
       },
     });
+    // Quiet: the respawn has its own flash, but HUDs still lay out the base hull's skills again.
+    if (reverted) this.game.events.emit('shift', { ship: this, on: false, quiet: true });
     this.game.events.emit('respawn', { ship: this });
   }
 

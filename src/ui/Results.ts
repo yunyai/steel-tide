@@ -38,7 +38,7 @@ function teamTable(game: Game, team: Team, ally: boolean, me: Ship | null, limit
     const tr = el('tr', `${s === me ? 'you' : s.humanIndex >= 0 ? 'friend' : ''}${s.alive ? '' : ' sunk'}`.trim());
     tr.append(
       el('td', '', captainName(s, me)),
-      el('td', '', CLASS_LABEL[s.spec.cls]),
+      el('td', '', CLASS_LABEL[s.base.cls]),
       el('td', 'r', Math.round(s.stats.damage).toLocaleString()),
       el('td', 'r', String(s.stats.kills)),
     );
@@ -77,7 +77,8 @@ export function countUp(b: HTMLElement, value: number, format: (n: number) => st
 
 function personal(s: Ship): HTMLElement {
   const row = el('div', 'personal');
-  const acc = s.stats.shotsFired ? Math.round((s.stats.hits / s.stats.shotsFired) * 100) : 0;
+  // Skill salvos land hits without counting as shots fired, so the share is held to 100%.
+  const acc = s.stats.shotsFired ? Math.min(100, Math.round((s.stats.hits / s.stats.shotsFired) * 100)) : 0;
   const int = (n: number) => Math.round(n).toLocaleString();
   const stat = (name: string, value: number, format: (n: number) => string = int, hi = false) => {
     const d = el('div', hi ? 'hi' : '', name);

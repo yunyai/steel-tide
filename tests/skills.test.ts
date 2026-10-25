@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { REGEN_DELAY } from '../src/config';
 import { Game } from '../src/core/Game';
 import type { BattleConfig } from '../src/core/BattleSetup';
-import { SHIPS } from '../src/data/ships';
+import { ALL, SHIPS } from '../src/data/ships';
 import { UPGRADES } from '../src/modes/BossRush';
 import { TITAN_POOLS } from '../src/skills/registry';
 import { stun } from '../src/skills/kit';
@@ -12,8 +12,8 @@ import type { Ship } from '../src/ships/Ship';
 import { SHIP_BY_ID } from '../src/data/ships';
 
 describe('skills', () => {
-  it('every skill of every ship (titans included) runs without breaking the sim', () => {
-    for (const spec of SHIPS) {
+  it('every skill of every ship (titans and Titan Shift forms included) runs without breaking the sim', () => {
+    for (const spec of [...SHIPS, ...ALL.filter((s) => s.formOf)]) {
       for (let i = 0; i < spec.skills.length; i++) {
         const g = emptyGame();
         const me = place(g, spec.id, 0, 0, 0, Math.PI / 2);
@@ -31,8 +31,8 @@ describe('skills', () => {
         }
       }
     }
-    // Every skill of ~100 hulls, 8 s each: well past the default 5 s on a busy machine.
-  }, 60_000);
+    // Every skill of ~110 hulls, 8 s each: well past the default 5 s on a busy machine.
+  }, 90_000);
 
   it('normal skills go on cooldown; the ultimate needs a full meter and empties it', () => {
     const g = emptyGame();

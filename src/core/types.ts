@@ -3,8 +3,8 @@
 /** TT: titan, the oversized super-ships of Boss Rush (also playable). */
 /** AK: a convoy's cargo ship (never in the hangar). */
 export type ShipClass = 'BB' | 'CB' | 'CA' | 'CL' | 'DD' | 'CV' | 'SS' | 'TT' | 'AK';
-/** The four settings a battle can be fought in (or all of them mixed). */
-export type Era = 'historic' | 'fantasy' | 'modern' | 'scifi';
+/** The settings a ship comes from. Misc holds oddities with no era of their own and is never a battle era by itself. */
+export type Era = 'historic' | 'fantasy' | 'modern' | 'scifi' | 'anime' | 'misc';
 /** A battle is fought in one era, or with every era's ships at once. */
 export type BattleEra = Era | 'mixed';
 /** A ship's navy or faction; each belongs to one era (see data/factions). */
@@ -25,7 +25,16 @@ export type Nation =
   | 'jp_sf'
   | 'us_sf'
   | 'ru_sf'
-  | 'cn_sf';
+  | 'cn_sf'
+  | 'jjk'
+  | 'naruto'
+  | 'onepiece'
+  | 'dragonball'
+  | 'bleach'
+  | 'aot'
+  | 'demonslayer'
+  | 'mha'
+  | 'abyss';
 export type AmmoType = 'AP' | 'HE';
 export type Team = 0 | 1;
 
@@ -48,7 +57,7 @@ export type ConsumableType = 'repair' | 'smoke' | 'search' | 'speedBoost' | 'dep
 /** How a main battery's rounds look in flight (and what its two ammo types are called). */
 export type GunLook = 'shell' | 'starbolt' | 'runefire' | 'soulfire' | 'arcane' | 'rail' | 'laser' | 'plasma';
 /** What a carrier's squadrons are drawn as. */
-export type PlaneLook = 'plane' | 'griffon' | 'gyro' | 'bat' | 'dragon' | 'jet' | 'heli' | 'drone';
+export type PlaneLook = 'plane' | 'griffon' | 'gyro' | 'bat' | 'dragon' | 'jet' | 'heli' | 'drone' | 'petal';
 /** What a torpedo is drawn as. */
 export type TorpLook = 'torpedo' | 'eel' | 'lance';
 /** Flight profile of a guided missile. */
@@ -243,7 +252,9 @@ export type SkillIcon =
   | 'eye'
   | 'swap'
   | 'gravity'
-  | 'radar';
+  | 'radar'
+  | 'shift'
+  | 'fist';
 
 export interface SkillSpec {
   /** Key into the skill registry (src/skills). */
@@ -345,6 +356,8 @@ export interface ModelSpec {
   volcano?: { x: number; r: number; h: number; glow: number };
   /** Satellite uplink dishes of radius `r`, tilted skyward (Constellation). */
   dishes?: { x: number; z?: number; r: number }[];
+  /** A titan form's aura: a glowing shell of this colour around the whole hull. */
+  formAura?: number;
 }
 
 export interface ShipSpec {
@@ -384,4 +397,8 @@ export interface ShipSpec {
   sub?: { battery: number; periscopeDepth: number; deepDepth: number; diveRate: number };
   /** Summon-only: never in the hangar or a random roster. */
   hidden?: boolean;
+  /** Titan Shift (anime): the ultimate turns the ship into the titan `form` (a spec id) for `time` seconds. */
+  shift?: { form: string; time: number };
+  /** A Titan Shift form: the id of the ship it is the form of (hidden from the hangar). */
+  formOf?: string;
 }

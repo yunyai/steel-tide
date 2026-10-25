@@ -110,6 +110,61 @@ describe('lockstep determinism', () => {
     expect(b).toEqual(a);
   }, 120000);
 
+  it('two peers of an anime battle stay identical (Titan Shifts, forms and reverts)', () => {
+    const base = lanConfig('domination', 43);
+    const ships = ['gojo', 'naruto', 'luffy'];
+    const config: BattleConfig = { ...base, era: 'anime', teamSize: 6, players: base.players.map((p, i) => ({ ...p, shipId: ships[i] })) };
+    const turns = script(new Game(config), 120);
+    // Every captain calls the shift once the meter has had time to fill, then tries a form skill.
+    const at = Math.round(turns.length * 0.87);
+    for (let p = 0; p < 3; p++) {
+      turns[at + p].e = [...(turns[at + p].e ?? []), [p, 0, { sk: 2 }]];
+      turns[at + 20 + p].e = [...(turns[at + 20 + p].e ?? []), [p, 0, { sk: 3 }]];
+    }
+    const a = play(config, turns);
+    const b = play(structuredClone(config), JSON.parse(JSON.stringify(turns)) as Turn[]);
+    expect(b).toEqual(a);
+
+    const g = new Game(config);
+    let shifts = 0;
+    g.events.on('shift', (e) => {
+      if (e.on) shifts++;
+    });
+    const ap = new TurnApplier(g);
+    for (const t of turns) for (let i = 0; i < TURN_TICKS; i++) ap.applyTick(t, i);
+    expect(shifts).toBeGreaterThan(0);
+  }, 120000);
+
+  it('two peers of an anime battle with the new kits stay identical (Rumbling, sub forms, petal wings)', () => {
+    for (const [seed, ships] of [
+      [47, ['eren', 'muzan', 'byakuya']],
+      [53, ['itachi', 'megumi', 'tanjiro']],
+    ] as const) {
+      const base = lanConfig('domination', seed);
+      const config: BattleConfig = { ...base, era: 'anime', teamSize: 8, players: base.players.map((p, i) => ({ ...p, shipId: ships[i] })) };
+      const turns = script(new Game(config), 120);
+      const at = Math.round(turns.length * 0.8);
+      for (let p = 0; p < 3; p++) {
+        turns[at + p].e = [...(turns[at + p].e ?? []), [p, 0, { sk: 2 }]];
+        // A normal form skill, then the first form ultimate once it has had time to unlock.
+        turns[at + 15 + p].e = [...(turns[at + 15 + p].e ?? []), [p, 0, { sk: 3 }]];
+        turns[turns.length - 4 + p].e = [...(turns[turns.length - 4 + p].e ?? []), [p, 0, { sk: 6 }]];
+      }
+      const a = play(config, turns);
+      const b = play(structuredClone(config), JSON.parse(JSON.stringify(turns)) as Turn[]);
+      expect(b, `seed ${seed}`).toEqual(a);
+
+      const g = new Game(config);
+      let shifts = 0;
+      g.events.on('shift', (e) => {
+        if (e.on) shifts++;
+      });
+      const ap = new TurnApplier(g);
+      for (const t of turns) for (let i = 0; i < TURN_TICKS; i++) ap.applyTick(t, i);
+      expect(shifts, `seed ${seed}`).toBeGreaterThan(0);
+    }
+  }, 240000);
+
   it('two peers of a Free play battle stay identical through ship changes and the host ending it', () => {
     const config: BattleConfig = { ...lanConfig('freeplay', 41), ai: [2, 1] };
     const turns = script(new Game(config), 120);

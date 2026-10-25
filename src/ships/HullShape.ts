@@ -8,7 +8,7 @@ export function hullHalfWidth(spec: ShipSpec, x: number): number {
   const half = spec.length / 2;
   const u = x / half;
   const hb = spec.beam / 2;
-  if (spec.cls === 'SS') {
+  if (spec.sub) {
     const t = Math.min(1, Math.abs(u));
     return hb * Math.pow(Math.max(0, 1 - Math.pow(t, 2.4)), 0.5);
   }
@@ -39,7 +39,7 @@ export function hullHalfWidthSlope(spec: ShipSpec, x: number): number {
 
 /** Deck height above waterline at local x (sheer line rises toward the bow). */
 export function deckHeight(spec: ShipSpec, x: number): number {
-  if (spec.cls === 'SS' || spec.model.hullStyle === 'block') return spec.freeboard;
+  if (spec.sub || spec.model.hullStyle === 'block') return spec.freeboard;
   const u = x / (spec.length / 2);
   const sheer = spec.model.sheer ?? 0.3;
   const rise = u > 0.2 ? Math.pow((u - 0.2) / 0.8, 2) * sheer : 0;

@@ -176,7 +176,7 @@ export class TorpedoSystem {
     const prot = s.spec.armor.torpedoProtection;
     const ult = t.skill?.ult ? t.owner.mods.ultDamageMul : 1;
     const mul = t.owner.mods.damageMul * t.owner.mods.torpDamageMul * s.mods.torpTakenMul * ult;
-    const dmg = s.takeDamage(t.damage * (1 - prot) * mul, t.owner, t.skill);
+    const dmg = s.takeDamage(t.damage * (1 - prot) * mul * t.owner.critMul(s), t.owner, t.skill);
     t.owner.stats.torpHits++;
     if (!s.alive && dmg > 0 && g.rng() < TORP_DETONATION) s.detonate(t.owner);
     if (g.rng() < t.flood * (1 - prot)) s.startFlood(t.owner);

@@ -2,6 +2,7 @@ import { PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import type { InputDeviceId, KeyLayout } from '../config';
 import type { Game } from '../core/Game';
 import { bearingTo, clamp, dist2D, wrapAngle } from '../core/math';
+import type { ShipSpec } from '../core/types';
 import type { ControlState, Ship } from '../ships/Ship';
 import { waveHeight } from '../world/Waves';
 import type { Input } from '../input/Input';
@@ -97,7 +98,7 @@ export class PlayerController {
   /** Short message for the HUD (e.g. a lock with nothing to lock onto) and how long it stays up. */
   notice = '';
   noticeTime = 0;
-  private keys: { b: Bindings; layout: KeyLayout } | null = null;
+  private keys: { b: Bindings; spec: ShipSpec; layout: KeyLayout } | null = null;
   readonly aim = new Vector3();
   readonly shellCam: ShellCam;
   /** Set for a LAN battle (see `out`). */
@@ -123,7 +124,7 @@ export class PlayerController {
   get layout(): KeyLayout | null {
     if (this.device !== 'mouse') return null;
     const b = bindings();
-    if (this.keys?.b !== b) this.keys = { b, layout: layoutFor(this.ship.spec, b) };
+    if (this.keys?.b !== b || this.keys.spec !== this.ship.spec) this.keys = { b, spec: this.ship.spec, layout: layoutFor(this.ship.spec, b) };
     return this.keys.layout;
   }
 

@@ -19,6 +19,8 @@ const LABELS: Record<Era, Record<ConsumableType, string>> = {
   fantasy: { repair: 'Mending Rune', smoke: 'Fog Veil', search: 'Scrying Eye', speedBoost: 'Tailwind', depthCharges: 'Depth Runes' },
   modern: { repair: 'Damage Control', smoke: 'Smoke and Chaff', search: 'Search Radar', speedBoost: 'Gas Turbine Boost', depthCharges: 'ASW Mortar' },
   scifi: { repair: 'Nano-Repair', smoke: 'Photon Screen', search: 'Quantum Scan', speedBoost: 'Afterburner', depthCharges: 'Gravity Charges' },
+  anime: { repair: 'Second Wind', smoke: 'Smoke Bomb', search: 'Sense Presence', speedBoost: 'Burst Step', depthCharges: 'Shock Palms' },
+  misc: { repair: 'Hull Mend', smoke: 'Ink Cloud', search: 'Deep Sonar', speedBoost: 'Jet Surge', depthCharges: 'Pressure Mines' },
 };
 
 /** What a ship's consumable is called in its era. */

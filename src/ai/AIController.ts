@@ -17,6 +17,8 @@ export class AIController {
   leader: Ship | null = null;
   /** Boss Rush: head for this ship wherever it is, and fight at shorter range. */
   hunt: Ship | null = null;
+  /** A marching summon (the Rumbling): hold this bearing at full speed, whatever is in the way. */
+  march: number | null = null;
   private think = 0;
   private desired = 0;
   private side = 1;
@@ -172,7 +174,9 @@ export class AIController {
     const station = this.convoyStation();
     const dodge = this.evasion();
 
-    if (this.escapeTime > 0) {
+    if (this.march !== null) {
+      heading = this.march;
+    } else if (this.escapeTime > 0) {
       heading = this.escapeHeading;
     } else if (dodge !== null) {
       heading = dodge;
@@ -224,7 +228,8 @@ export class AIController {
         throttle = 4;
       }
     }
-    this.desired = avoid(g, ship, separate(g, ship, wrapAngle(heading)));
+    // A marching line keeps its ranks: only land turns it.
+    this.desired = avoid(g, ship, this.march !== null ? wrapAngle(heading) : separate(g, ship, wrapAngle(heading)));
     c.throttleSet = throttle;
   }
 
@@ -357,6 +362,14 @@ export class AIController {
       c.fire = true;
       return;
     }
+    // A carrier-submarine fires its torpedoes when they are loaded and in reach, and flies its wing otherwise.
+    const tspec = ship.spec.torpedoes;
+    if (ship.spec.air && ship.isSub && tspec && t && !t.deep && ship.launchers.some((l) => l.reload <= 0) && dist2D(ship.pos.x, ship.pos.z, t.pos.x, t.pos.z) < tspec.range * 0.8) {
+      this.wantTorps = true;
+      c.slot = ship.slots.findIndex((s) => s.kind === 'torp');
+      c.fire = true;
+      return;
+    }
     if (ship.spec.air) {
       const st = ship.air!;
       const enemyAir = this.game.air.squadrons.some(
@@ -364,7 +377,8 @@ export class AIController {
       );
       let slot = st.hangar.torpedo >= 3 ? 0 : st.hangar.dive >= 3 ? 1 : 2;
       if (enemyAir && st.hangar.fighter >= 3) slot = 2;
-      c.slot = slot;
+      // A carrier-submarine's wing sits behind its torpedo slot.
+      c.slot = ship.isSub ? ship.slots.findIndex((s) => s.kind === 'air') + slot : slot;
       c.fire = !!t && st.cooldown <= 0;
       return;
     }

@@ -13,7 +13,7 @@ import { audio } from './Audio';
 import { PK, type ParticleSystem } from './Particles';
 
 /** Colour of the Search sweep ring in each era. */
-const SEARCH_TINT: Record<Era, number> = { historic: 0x8fe3ff, modern: 0x8fe3ff, fantasy: 0xc9a6ff, scifi: 0x7fffc8 };
+const SEARCH_TINT: Record<Era, number> = { historic: 0x8fe3ff, modern: 0x8fe3ff, fantasy: 0xc9a6ff, scifi: 0x7fffc8, anime: 0xffd36b, misc: 0x5fe0d0 };
 
 // Turns simulation events and ship state into particles, sounds and camera shake.
 

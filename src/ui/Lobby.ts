@@ -1,8 +1,8 @@
 import { DIFFICULTIES } from '../config';
 import type { DifficultyId } from '../core/BattleSetup';
 import type { BattleEra, ShipSpec, Team } from '../core/types';
-import { ERA_LABEL, ERAS } from '../data/factions';
-import { CLASS_LABEL, SHIP_BY_ID, shipsOf } from '../data/ships';
+import { ERA_LABEL } from '../data/factions';
+import { CLASS_LABEL, LINE_ERAS, SHIP_BY_ID, titansOf } from '../data/ships';
 import type { NetClient } from '../net/NetClient';
 import { type LobbySettings, type LobbyState, MAX_AI, MAX_PER_TEAM, type Member, NAME_MAX, type ServerMsg } from '../net/protocol';
 import { MAPS } from '../world/GameMap';
@@ -25,8 +25,7 @@ const TYPE_LABEL: Record<LobbySettings['type'], string> = { domination: 'Dominat
 const FREEPLAY_NOTE = 'No score and no clock. Sunk ships come back after 8 s; change ship from the battle menu (Esc). The host ends it.';
 const TEAM_LABEL = ['Team A', 'Team B'];
 /** Eras with ships to sail, then Mixed once there are two. */
-const LIVE_ERAS = ERAS.filter((e) => shipsOf(e).length > 0);
-const LAN_ERAS: BattleEra[] = LIVE_ERAS.length > 1 ? [...LIVE_ERAS, 'mixed'] : LIVE_ERAS;
+const LAN_ERAS: BattleEra[] = LINE_ERAS.length > 1 ? [...LINE_ERAS, 'mixed'] : LINE_ERAS;
 
 function eraLabel(e: BattleEra): string {
   return e === 'mixed' ? 'Mixed' : ERA_LABEL[e];
@@ -253,15 +252,16 @@ export class Lobby {
       settings.append(
         field('Map', sg(MAPS.map((m) => ({ value: m.id, label: m.name })), () => st.mapId, (v) => set({ mapId: v }))),
         field('AI skill', sg<DifficultyId>((Object.keys(DIFFICULTIES) as DifficultyId[]).map((k) => ({ value: k, label: DIFFICULTIES[k].label })), () => st.difficulty, (v) => set({ difficulty: v }))),
-        field('Titans', sg([{ value: 1, label: 'Allowed' }, { value: 0, label: 'Not allowed' }], () => (st.titans ? 1 : 0), (v) => set({ titans: v === 1 }))),
       );
+      // Anime has no hangar titans (its ships become titans by Titan Shift), so the switch has nothing to gate.
+      if (titansOf(st.era).length) settings.append(field('Titans', sg([{ value: 1, label: 'Allowed' }, { value: 0, label: 'Not allowed' }], () => (st.titans ? 1 : 0), (v) => set({ titans: v === 1 }))));
       if (LAN_ERAS.length > 1) settings.append(field('Era', sg<BattleEra>(LAN_ERAS.map((e) => ({ value: e, label: eraLabel(e) })), () => st.era, (v) => set({ era: v }))));
     } else {
       const facts: [string, string][] = [
         ['Battle type', TYPE_LABEL[st.type] + (st.type === 'convoy' ? `, transports with ${TEAM_LABEL[st.escortTeam]}` : '')],
         ['Map', mapName],
         ['AI skill', DIFFICULTIES[st.difficulty].label],
-        ['Titans', st.titans ? 'Allowed' : 'Not allowed'],
+        ...(titansOf(st.era).length ? [['Titans', st.titans ? 'Allowed' : 'Not allowed'] as [string, string]] : []),
         ['Era', eraLabel(st.era)],
       ];
       settings.append(h('dl', { class: 'lan-facts' }, ...facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));

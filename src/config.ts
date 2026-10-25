@@ -68,6 +68,24 @@ export const ULT_KILL_CHARGE = 0.25;
 /** The meter fills on its own in this many seconds. */
 export const ULT_PASSIVE_TIME = 75;
 
+/**
+ * Titan Shift tempos: how much of a form's written time it lasts, and when (as a share of that
+ * time) each of its three ultimates comes ready. Each fires once per form.
+ */
+export const SHIFT_TEMPOS = {
+  burst: { label: 'Burst', timeMul: 0.75, unlock: [0, 0, 0] },
+  staggered: { label: 'Staggered', timeMul: 1, unlock: [0, 0.3, 0.6] },
+  long: { label: 'Long', timeMul: 1.5, unlock: [0.15, 0.45, 0.75] },
+} as const;
+export type ShiftTempo = keyof typeof SHIFT_TEMPOS;
+/** Hull added on a Titan Shift, as a share of the form's max HP. */
+export const SHIFT_SURGE = 0.2;
+/**
+ * Damage charges a Titan Shift at this share of the usual rate (anime skills hit hard enough to
+ * fill it in a single cast otherwise), and the meter starts empty: the shift is a moment, not a state.
+ */
+export const SHIFT_CHARGE = 0.25;
+
 export const DEFAULT_SHELL_CD = 0.3;
 
 export interface Difficulty {
@@ -128,13 +146,16 @@ export const LAYOUT_MOUSE: KeyLayout = {
   diveDown: 'KeyC',
 };
 
-/** Titans: six skills on Q E Z X C V and three ultimates on R T B; lock moves to middle mouse, assist to N. Defaults: see input/Keybinds. */
+/** Titans: six skills on Q E Z X C V and three ultimates on R T B; lock moves to middle mouse, assist to N, a titan sub's dive keys to Y and H. Defaults: see input/Keybinds. */
 export const LAYOUT_TITAN: KeyLayout = {
   ...LAYOUT_MOUSE,
   label: 'Keyboard + Mouse (titan)',
   skills: ['KeyQ', 'KeyE', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyR', 'KeyT', 'KeyB'],
   lock: '',
   assist: 'KeyN',
+  // Z and C are titan skills, so a titan submarine surfaces and dives on Y and H.
+  diveUp: 'KeyY',
+  diveDown: 'KeyH',
 };
 
 export type InputDeviceId = 'mouse' | 'pad0';

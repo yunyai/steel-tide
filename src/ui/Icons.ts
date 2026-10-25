@@ -14,6 +14,9 @@ const GLYPHS: Record<string, string> = {
   missile: `<path ${F} d="M10 -10 L6.5 -2 L-3 7.5 L-7.5 3 L2 -6.5 Z"/><path ${S} d="M-6 3 L-10 3 L-8 6 M-3 6 L-3 10 L-6 8"/>`,
   shield: `<path ${S} d="M0 -10 L8 -6.5 V0.5 C8 5.5 4.5 8.5 0 10.5 C-4.5 8.5 -8 5.5 -8 0.5 V-6.5 Z"/><path ${S} d="M-3.5 0.5 L-0.8 3.2 L4 -2"/>`,
   lightning: `<path ${F} d="M2.5 -11 L-7 1.5 H-0.5 L-2.5 11 L7 -1.5 H0.5 Z"/>`,
+  // Titan Shift: a small hull rising into a burst.
+  shift: `<path ${F} d="M-7 10 H7 L5 6.5 H-5 Z"/><path ${S} stroke-width="2.4" d="M0 4 V-6 M-4.5 -2 L0 -6.5 L4.5 -2"/><path ${S} opacity=".6" d="M-9 -4 L-6.5 -6.5 M9 -4 L6.5 -6.5 M-4 -10 L-2.6 -8 M4 -10 L2.6 -8"/>`,
+  fist: `<path ${F} d="M-8 -3.5 C-8 -6.5 -6 -7.5 -4 -7.5 H5 C7.5 -7.5 9 -6 9 -3.5 V3 C9 7 6.5 9.5 3 9.5 H-3 C-6 9.5 -8 7.5 -8 4.5 Z"/><path fill="none" stroke="#000" stroke-opacity=".45" stroke-width="1.4" stroke-linecap="round" d="M-3.5 -7 V-2 M1 -7 V-2 M5 -7 V-2 M-8 0.5 H-2"/>`,
   blink: `<path ${S} d="M-10 -6 L-4.5 0 L-10 6 M-3 -6 L2.5 0 L-3 6"/><circle ${F} cx="8" cy="0" r="2.6"/>`,
   strike: `<circle ${S} r="7.5"/><path ${S} d="M0 -11 V-4 M0 4 V11 M-11 0 H-4 M4 0 H11"/><circle ${F} r="1.8"/>`,
   heal: `<path ${F} d="M-2.6 -9 H2.6 V-2.6 H9 V2.6 H2.6 V9 H-2.6 V2.6 H-9 V-2.6 H-2.6 Z"/>`,

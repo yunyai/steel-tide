@@ -3,8 +3,8 @@ import { KILL_HEAL, KILL_HEAL_TITAN, MAP_HALF, RESPAWN_DELAY, SPAWN_LINE } from 
 import { buildRoster, spawnOffset, type BattleConfig } from '../src/core/BattleSetup';
 import { makeRng } from '../src/core/math';
 import type { BattleEra } from '../src/core/types';
-import { ERAS, eraOf } from '../src/data/factions';
-import { SHIP_BY_ID, shipsOf, titansOf } from '../src/data/ships';
+import { eraOf } from '../src/data/factions';
+import { LINE_ERAS, SHIP_BY_ID, bossesOf, shipsOf } from '../src/data/ships';
 import { Game } from '../src/core/Game';
 import { emptyGame, place, run } from './helpers';
 
@@ -210,7 +210,8 @@ describe('survival', () => {
 });
 
 describe('eras', () => {
-  const live = ERAS.filter((e) => shipsOf(e).length > 0);
+  // Battle eras: those with line ships (Misc holds only a titan and sails in Mixed battles).
+  const live = LINE_ERAS;
   const battle = (era: BattleEra, type: BattleConfig['type'] = 'annihilation', shipId = shipsOf(live[0])[0].id): BattleConfig => ({
     mode: 'solo',
     type,
@@ -248,7 +249,7 @@ describe('eras', () => {
     for (const r of buildRoster(config, makeRng(2))) expect(eraOf(r.spec)).toBe('historic');
   });
 
-  it('Boss Rush sends the era\'s titans', () => {
+  it('Boss Rush sends the era\'s titans (in Anime, its Titan Shift forms)', () => {
     for (const era of live) {
       const g = new Game({ ...battle(era, 'bossrush', shipsOf(era)[0].id), teamSize: 1, escorts: 0 });
       const r = g.rush!;
@@ -260,7 +261,7 @@ describe('eras', () => {
         run(g, 5);
       }
       expect(r.wave).toBe(5);
-      expect(titansOf(era)).toContain(SHIP_BY_ID[r.boss!.spec.id]);
+      expect(bossesOf(era)).toContain(SHIP_BY_ID[r.boss!.spec.id]);
     }
   });
 });

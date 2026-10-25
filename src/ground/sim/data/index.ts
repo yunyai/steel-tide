@@ -1,5 +1,5 @@
-import type { BattleEra, Nation } from '../../../core/types';
-import type { VehicleSpec } from '../types';
+import type { BattleEra } from '../../../core/types';
+import type { GroundNation, VehicleSpec } from '../types';
 import { HISTORIC_VEHICLES } from './historic';
 import { GROUND_TITANS } from './titans';
 
@@ -14,7 +14,7 @@ export function vehiclesIn(era: BattleEra): VehicleSpec[] {
 }
 
 /** Nations as armies: the factions' names are their navies'. Fantasy factions keep their own. */
-export const ARMY: Record<Nation, { label: string; short: string }> = {
+export const ARMY: Record<GroundNation, { label: string; short: string }> = {
   japan: { label: 'Imperial Japanese Army', short: 'IJA' },
   usa: { label: 'United States Army', short: 'US' },
   germany: { label: 'Wehrmacht', short: 'DE' },

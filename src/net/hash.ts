@@ -27,6 +27,7 @@ export function stateHash(g: Game): number {
     h = mix(h, s.hp);
     h = mix(h, s.shield);
     h = mix(h, s.alive ? 1 : 0);
+    h = mix(h, s.form ? 1 : 0);
   }
   h = mix(h, g.shells.shells.length);
   h = mix(h, g.torps.torps.length);

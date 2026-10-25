@@ -32,6 +32,9 @@ export interface GameEventMap {
   respawn: { ship: Ship };
   /** Free play: a captain's next ship replaced `old` in the fleet (it then respawns). */
   shipChanged: { old: Ship; ship: Ship };
+  /** Titan Shift: the ship took its titan form (`on`), or the form lapsed and it is itself again. */
+  /** A Titan Shift (`on`) or the return to the base hull; `quiet` when a respawn did it (no FX). */
+  shift: { ship: Ship; on: boolean; quiet?: boolean };
   fire: { ship: Ship; site: number };
   flood: { ship: Ship };
   /** Skill `index` (0 Q, 1 E, 2 R) triggered / ran out. */

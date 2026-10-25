@@ -34,7 +34,9 @@ export type ActionId =
   | 'tult1'
   | 'tult2'
   | 'tult3'
-  | 'tassist';
+  | 'tassist'
+  | 'tdiveUp'
+  | 'tdiveDown';
 
 /** Which layouts an action is in: both, warships only, or titans only. */
 export type Scope = 'both' | 'ship' | 'titan';
@@ -78,6 +80,8 @@ export const ACTIONS: ActionInfo[] = [
   { id: 'tult2', label: 'Titan ultimate 2', scope: 'titan', pad: 'LB Y' },
   { id: 'tult3', label: 'Titan ultimate 3', scope: 'titan', pad: 'RB Y' },
   { id: 'tassist', label: 'Titan fire-control assist on / off (lock: middle mouse)', scope: 'titan', pad: 'D-pad down' },
+  { id: 'tdiveUp', label: 'Titan submarine: surface', scope: 'titan', pad: 'RS click' },
+  { id: 'tdiveDown', label: 'Titan submarine: dive', scope: 'titan', pad: 'LS click' },
 ];
 
 const SCOPE = Object.fromEntries(ACTIONS.map((a) => [a.id, a.scope])) as Record<ActionId, Scope>;
@@ -122,6 +126,8 @@ export const DEFAULT_BINDINGS: Bindings = (() => {
     tult2: T.skills[7],
     tult3: T.skills[8],
     tassist: T.assist,
+    tdiveUp: T.diveUp,
+    tdiveDown: T.diveDown,
   };
 })();
 
@@ -209,7 +215,7 @@ export function onBindings(f: () => void): () => void {
 }
 
 /** The keyboard layout for a ship, from the bindings: titans need nine skill keys. */
-export function layoutFor(spec: { cls: string }, b: Bindings = bindings()): KeyLayout {
+export function layoutFor(spec: { cls: string; sub?: unknown }, b: Bindings = bindings()): KeyLayout {
   const base = {
     throttleUp: b.throttleUp,
     throttleDown: b.throttleDown,
@@ -225,11 +231,11 @@ export function layoutFor(spec: { cls: string }, b: Bindings = bindings()): KeyL
       ...base,
       label: LAYOUT_TITAN.label,
       skills: [b.tskill1, b.tskill2, b.tskill3, b.tskill4, b.tskill5, b.tskill6, b.tult1, b.tult2, b.tult3],
-      // Titans lock with the middle mouse button and never dive.
+      // Titans lock with the middle mouse button; only a titan submarine dives.
       lock: '',
       assist: b.tassist,
-      diveUp: '',
-      diveDown: '',
+      diveUp: spec.sub ? b.tdiveUp : '',
+      diveDown: spec.sub ? b.tdiveDown : '',
     };
   }
   return { ...base, label: LAYOUT_MOUSE.label, skills: [b.skill1, b.skill2, b.ult], lock: b.lock, assist: b.assist, diveUp: b.diveUp, diveDown: b.diveDown };

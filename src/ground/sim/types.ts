@@ -165,10 +165,13 @@ export interface VehicleLook {
   parts?: string[];
 }
 
+/** The nations that field ground vehicles (the anime series and the Abyss sail only). */
+export type GroundNation = Exclude<Nation, 'jjk' | 'naruto' | 'onepiece' | 'dragonball' | 'bleach' | 'aot' | 'demonslayer' | 'mha' | 'abyss'>;
+
 export interface VehicleSpec {
   id: string;
   name: string;
-  nation: Nation;
+  nation: GroundNation;
   era: Era;
   cls: VehicleClass;
   year: number;

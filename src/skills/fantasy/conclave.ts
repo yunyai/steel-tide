@@ -169,7 +169,7 @@ export const CONCLAVE_SKILLS: SkillDef[] = [
       activate(ship, game) {
         const allies = alliesWithin(ship, game, 1500).filter((s) => s !== ship);
         if (!ship.rewind(5)) return false;
-        for (const s of allies) s.rewind(5, true);
+        for (const s of allies) s.rewind(5, 'hull');
       },
       aiShouldUse(ship) {
         const then = ship.history[0];

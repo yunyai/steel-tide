@@ -2,6 +2,7 @@ import type { Game } from '../../core/Game';
 import { forwardX, forwardZ } from '../../core/math';
 import type { SkillSpec } from '../../core/types';
 import type { Ship } from '../../ships/Ship';
+import type { FieldLook } from '../../weapons/FieldSystem';
 import type { Missile } from '../../weapons/MissileSystem';
 import { clearWater, placeAt } from '../kit';
 
@@ -44,8 +45,16 @@ export function droneDive(ship: Ship, game: Game, target: Ship, n: number, damag
 }
 
 /** A damage-over-time cloud riding one hull (venom, nanites, coils): `dps` for `time` seconds. */
-export function clingTo(owner: Ship, game: Game, target: Ship, dps: number, time: number, skill: SkillSpec, o: { healBlock?: boolean; root?: boolean; slow?: number } = {}): void {
-  game.fields.add(owner, { x: target.pos.x, z: target.pos.z, r: 30, life: time, follow: target, dps, skill, look: 'nanite', healBlock: !!o.healBlock, root: !!o.root, slow: o.slow ?? 1 });
+export function clingTo(
+  owner: Ship,
+  game: Game,
+  target: Ship,
+  dps: number,
+  time: number,
+  skill: SkillSpec,
+  o: { healBlock?: boolean; root?: boolean; slow?: number; look?: FieldLook; color?: number } = {},
+): void {
+  game.fields.add(owner, { x: target.pos.x, z: target.pos.z, r: 30, life: time, follow: target, dps, skill, look: o.look ?? 'nanite', color: o.color ?? skill.accent, healBlock: !!o.healBlock, root: !!o.root, slow: o.slow ?? 1 });
 }
 
 /** Put `s` down at the first clear water `d` metres from (x, z) along one of a few bearings. */

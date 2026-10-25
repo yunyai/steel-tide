@@ -135,7 +135,7 @@ export class StrikeSystem {
     const g = this.game;
     const o = s.owner;
     const mul = o.mods.damageMul * (s.skill?.ult ? o.mods.ultDamageMul : 1);
-    ship.takeDamage(s.damage * fall * mul, o, s.skill);
+    ship.takeDamage(s.damage * fall * mul * o.critMul(ship), o, s.skill);
     if (s.fire > 0 && g.rng() < s.fire) ship.startFire(Math.floor(g.rng() * 4), o);
     if (s.flood > 0 && g.rng() < s.flood) ship.startFlood(o);
     if (s.stun > 0 && ship.alive) stun(ship, s.stun);

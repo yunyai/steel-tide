@@ -121,7 +121,7 @@ export class NavalBattle implements ActiveBattle {
         this.reportIn = 3.5;
         const rush = game.rush;
         const me = this.mine;
-        if (rush && me) this.newBest = saveBest(me.spec.id, rush.wave, rush.total, rush.survival);
+        if (rush && me) this.newBest = saveBest(me.base.id, rush.wave, rush.total, rush.survival);
         const win = g.winner !== -1 && g.winner === me?.team;
         audio.ui(win || config.type === 'freeplay' ? 'victory' : 'defeat');
         link?.over();
@@ -144,6 +144,18 @@ export class NavalBattle implements ActiveBattle {
         const k = s.killer;
         const me = this.mine;
         if (me && k && s.ship.team !== me.team && (k === me || k.summonOwner === me)) this.slow = SLOW_HOLD + SLOW_EASE;
+      }),
+      // Titan Shift: the captain's HUD is laid out again for the form's nine skills (or back to three).
+      game.events.on('shift', ({ ship, on }) => {
+        const i = this.pcs.findIndex((p) => p.ship === ship);
+        if (i < 0) return;
+        this.huds[i].dispose();
+        this.huds[i] = new HUD(this.game, this.pcs[i], this.shell.input);
+        this.shell.hudLayer.append(this.huds[i].root);
+        if (on) {
+          this.slow = SLOW_HOLD + SLOW_EASE + 0.3;
+          this.pcs[i].fovKick = 16;
+        }
       }),
       // Free play: the captain's orders and view follow them into their next ship.
       game.events.on('shipChanged', ({ old, ship }) => {

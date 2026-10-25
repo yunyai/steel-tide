@@ -22,7 +22,9 @@ export type UiSound =
   | 'horn'
   | 'heartbeat'
   | 'ultReady'
-  | 'streak';
+  | 'streak'
+  | 'shift'
+  | 'unshift';
 
 const SOUND_SPEED = 343 * 1.6;
 
@@ -380,6 +382,18 @@ export class AudioEngine {
         break;
       case 'defeat':
         [392, 330, 262].forEach((f, i) => this.tone(g, t + i * 0.25, 'triangle', f, 0.2, 0.8));
+        break;
+      case 'shift':
+        // Titan Shift: a long rising roar, then the boom as the form breaks out.
+        this.tone(g, t, 'sawtooth', 55, 0.2, 1.6, 440);
+        this.tone(g, t + 0.1, 'sine', 110, 0.22, 1.6, 1320);
+        this.burst(g, t, 'bandpass', 900, 0.8, 1.4, 0.35);
+        this.thump(g, t + 1.4, 48, 18, 1.1, 1.6);
+        this.burst(g, t + 1.4, 'lowpass', 600, 0.01, 1.4, 0.9);
+        break;
+      case 'unshift':
+        this.tone(g, t, 'sine', 660, 0.16, 1.2, 140);
+        this.burst(g, t, 'lowpass', 700, 0.1, 1, 0.3);
         break;
     }
     window.setTimeout(() => g.disconnect(), 3000);

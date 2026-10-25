@@ -26,7 +26,7 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
   const allowed = (s: ShipSpec) => o.titans || s.cls !== 'TT';
   const eras: Era[] = o.era === 'mixed' ? LIVE_ERAS : [o.era];
   // Ships of the battle's era only (a mixed battle offers them all), titans when allowed.
-  let spec = me.nextSpec ?? me.spec;
+  let spec = me.nextSpec ?? me.base;
   if (!shipsIn(o.era).includes(spec) || !allowed(spec)) spec = shipsIn(o.era).find(allowed)!;
   let era: Era = eras.includes(eraOf(spec)) ? eraOf(spec) : eras[0];
   let tab: Tab = tabOf(spec.cls);
@@ -58,7 +58,7 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
     const f = FACTIONS[s.nation];
     const meta = h('p', { class: 'meta' }, `${CLASS_LABEL[s.cls]}, ${f.label}. ${s.hp.toLocaleString()} hull, ${+s.maxSpeed.toFixed(1)} knots`);
     const actions = h('div', { class: 'picker-actions' });
-    const current = s === me.spec;
+    const current = s === me.base;
     if (me.alive) {
       if (current && !me.nextSpec) actions.append(h('p', { class: 'note' }, 'You are sailing this ship.'));
       else if (current) actions.append(act('Keep this ship', 'btn-primary', () => o.pick(s, false)));
@@ -108,7 +108,7 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
         .map((s) => {
           const b = h('button', { 'aria-pressed': String(s === spec), class: s.cls === 'TT' ? 'tt' : '' });
           b.innerHTML = classIcon(s.cls);
-          const mark = s === me.spec ? 'Sailing' : s === me.nextSpec ? 'Next' : FACTIONS[s.nation].short;
+          const mark = s === me.base ? 'Sailing' : s === me.nextSpec ? 'Next' : FACTIONS[s.nation].short;
           b.append(h('b', {}, s.name), h('small', {}, mark));
           b.onclick = () => {
             o.click();
@@ -124,7 +124,7 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
   const renderLede = () => {
     const next = me.nextSpec;
     lede.textContent = me.alive
-      ? `Sailing ${me.spec.name}${next ? `; ${next.name} is next` : ''}. Switch now to leave the fight and come back in the new ship after 8 seconds, or change at your next respawn.`
+      ? `Sailing ${me.base.name}${next ? `; ${next.name} is next` : ''}. Switch now to leave the fight and come back in the new ship after 8 seconds, or change at your next respawn.`
       : `Pick the ship you sail when you come back${next ? `: ${next.name} so far` : ''}.`;
   };
   renderLede();

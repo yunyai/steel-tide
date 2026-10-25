@@ -1,7 +1,7 @@
 import type { BattleConfig } from '../src/core/BattleSetup';
 import type { Team } from '../src/core/types';
-import { ERAS, eraOf } from '../src/data/factions';
-import { SHIP_BY_ID, shipsIn } from '../src/data/ships';
+import { eraOf } from '../src/data/factions';
+import { LINE_ERAS, SHIP_BY_ID, shipsIn } from '../src/data/ships';
 import { type Continuous, DEFAULT_SETTINGS, type Edge, type LobbySettings, MAX_AI } from '../src/net/protocol';
 import { MAPS } from '../src/world/GameMap';
 
@@ -62,7 +62,8 @@ export const navalRules: BattleRules = {
     if (o.difficulty === 'easy' || o.difficulty === 'normal' || o.difficulty === 'hard') st.difficulty = o.difficulty;
     if (isTeam(o.escortTeam)) st.escortTeam = o.escortTeam;
     if (typeof o.titans === 'boolean') st.titans = o.titans;
-    if (o.era === 'mixed' || ERAS.includes(o.era as never)) st.era = o.era as LobbySettings['era'];
+    // Only eras with line ships to fill the fleets (Misc's lone titan sails in Mixed).
+    if (o.era === 'mixed' || LINE_ERAS.includes(o.era as never)) st.era = o.era as LobbySettings['era'];
   },
 
   pickAllowed: shipAllowed,

@@ -78,7 +78,7 @@ const CONS_SHORT: Record<ConsumableType, string> = {
   depthCharges: 'DEPTH',
 };
 /** Search goes by another name outside the gunnery eras. */
-const SEARCH_SHORT: Record<Era, string> = { historic: 'RADAR', modern: 'RADAR', fantasy: 'SCRY', scifi: 'SCAN' };
+const SEARCH_SHORT: Record<Era, string> = { historic: 'RADAR', modern: 'RADAR', fantasy: 'SCRY', scifi: 'SCAN', anime: 'SENSE', misc: 'SONAR' };
 
 interface Ribbon {
   kind: string;
@@ -268,6 +268,21 @@ export class HUD {
     e.hpShield = el('i', 'sh', hp);
     el('i', 'ticks', hp);
     e.status = el('div', 'status-row', ck);
+    // Titan Shift: the form's name, the time it has left, and where each ultimate comes ready.
+    const f = me.form;
+    if (f) {
+      const fb = el('div', 'formbar', ck);
+      fb.style.setProperty('--accent', accentCss(me.spec.model.formAura ?? 0xff8ac8));
+      el('span', 'nm', fb).textContent = 'Titan Shift';
+      const track = el('div', 'track', fb);
+      e.formFill = el('i', 'fill', track);
+      const span = f.until - f.start;
+      for (const at of f.unlock) {
+        if (at <= 0) continue;
+        el('i', 'tick', track).style.left = `${((1 - at / span) * 100).toFixed(1)}%`;
+      }
+      e.formLeft = el('span', 'left num', fb);
+    }
 
     const sb = el('div', `skillbar${titan ? ' titan' : ''}`, ck);
     let normals = 0;
@@ -277,7 +292,7 @@ export class HUD {
       // A gap sets the ultimates apart from the normal skills.
       if (ult && !ults) el('div', 'gap', sb);
       const pad = ult ? PAD_ULT[ults++] : PAD_NORMAL[normals++];
-      const root = el('div', `sk${ult ? ' ult' : ''}`, sb);
+      const root = el('div', `sk${ult ? ' ult' : ''}${st.spec.icon === 'shift' ? ' shift' : ''}`, sb);
       root.style.setProperty('--accent', accentCss(st.spec.accent));
       root.title = `${st.spec.name}: ${st.spec.description}`;
       const hx = el('div', 'hx', root);
@@ -638,7 +653,7 @@ export class HUD {
         const span = el('span', t === team ? 'ally' : 'enemy', e.fleet);
         for (const s of alive(t)) {
           const b = el('b', s.alive ? '' : 'dead', span);
-          b.title = s.spec.name;
+          b.title = s.base.name;
         }
       }
       if (!g.caps.length && !free) {
@@ -720,6 +735,11 @@ export class HUD {
     this.chipHold -= dt;
     if (this.chipHp < me.hp) this.chipHp = me.hp;
     else if (this.chipHold <= 0) this.chipHp = Math.max(me.hp, this.chipHp - me.maxHp * 0.5 * dt);
+    if (me.form && e.formFill) {
+      const left = me.formLeft;
+      setWidth(e.formFill, left / (me.form.until - me.form.start));
+      setText(e.formLeft, `${Math.ceil(left)} s`);
+    }
     setWidth(e.hp, frac);
     setWidth(e.hpChip, this.chipHp / me.maxHp);
     setWidth(e.hpShield, me.shield / me.maxHp);

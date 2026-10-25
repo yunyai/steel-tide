@@ -41,15 +41,14 @@ describe('ship roster', () => {
   it('historic keeps its three titans with guns, and the Habakkuk also flies planes', () => {
     const titans = titansOf('historic');
     expect(titans.map((s) => s.id).sort()).toEqual(['habakkuk', 'leviathan', 'raijin']);
-    for (const t of SHIPS.filter((s) => s.cls === 'TT')) {
-      expect(t.main).toBeDefined();
-      expect(t.hp).toBeGreaterThanOrEqual(500000);
-    }
+    for (const t of titans) expect(t.main).toBeDefined();
+    for (const t of SHIPS.filter((s) => s.cls === 'TT')) expect(t.hp).toBeGreaterThanOrEqual(500000);
     expect(SHIP_BY_ID.habakkuk.air).toBeDefined();
   });
 
   it('each new genre, once built, fills every hangar tab with four ships and four titans', () => {
-    for (const era of ERAS.filter((e) => e !== 'historic')) {
+    // Anime ships turn into titans instead (and its roster grows a series at a time); Misc is one titan.
+    for (const era of ERAS.filter((e) => e !== 'historic' && e !== 'anime' && e !== 'misc')) {
       const ships = shipsOf(era);
       if (!ships.length) continue;
       for (const tab of TABS) expect(ships.filter((s) => tab.includes(s.cls)).length, `${era} ${tab}`).toBe(4);
