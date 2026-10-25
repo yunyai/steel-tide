@@ -16,11 +16,17 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import type { MapPreset } from '../world/GameMap';
 import type { OceanLook } from './Ocean';
 
 // Sky dome, sun, ambient light, fog and the image-based lighting environment
 // for one battle. Colours are tuned per map preset (time of day / haze).
+
+/** What the sky needs from a map, naval or ground: its look id, the sun's place and the haze. */
+export interface SkyPreset {
+  id: string;
+  sun: { elevation: number; azimuth: number };
+  turbidity: number;
+}
 
 export interface Look extends OceanLook {
   rayleigh: number;
@@ -96,6 +102,39 @@ export const LOOKS: Record<string, Look> = {
     exposure: 0.95,
     skyTint: 0xffa08c,
   },
+  // Ground, Ruined city: low overcast evening, smoke-brown haze over the rooftops.
+  city: {
+    deep: 0x141a1c,
+    scatter: 0x2c3a38,
+    horizon: 0xb59a80,
+    zenith: 0x5a6070,
+    sunColor: 0xffc890,
+    fog: 0x8f8478,
+    fogDensity: 9e-4,
+    rayleigh: 1.4,
+    clouds: 0.75,
+    sunIntensity: 2.1,
+    hemiSky: 0xa8a49c,
+    hemiGround: 0x3a342c,
+    exposure: 0.72,
+    skyTint: 0xe8d8c8,
+  },
+  // Ground, Snowy pass: cold bright morning, blue shadows on the snow.
+  pass: {
+    deep: 0x10202a,
+    scatter: 0x3a6070,
+    horizon: 0xd8e4ee,
+    zenith: 0x4a78b0,
+    sunColor: 0xfff0e0,
+    fog: 0xc8d6e2,
+    fogDensity: 6e-4,
+    rayleigh: 1.2,
+    clouds: 0.35,
+    sunIntensity: 2.8,
+    hemiSky: 0xbcd4ec,
+    hemiGround: 0x5a6878,
+    exposure: 0.5,
+  },
 };
 
 /** Sky radiance above the knee rolls off toward SKY_MAX. */
@@ -141,7 +180,7 @@ export class Environment {
 
   constructor(
     readonly scene: Scene,
-    preset: MapPreset,
+    preset: SkyPreset,
   ) {
     this.look = LOOKS[preset.id] ?? LOOKS.open;
     const look = this.look;

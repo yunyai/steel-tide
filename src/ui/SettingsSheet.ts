@@ -249,7 +249,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
     };
     actions.prepend(reset);
     return [
-      h('p', { class: 'lede' }, 'Click a key, then press the one you want. Warships and titans share the helm, weapon and camera keys; a key taken by another action moves to your old key, or is left unbound when that would clash.'),
+      h('p', { class: 'lede' }, 'Click a key, then press the one you want. Warships, tanks and titans share the helm, weapon and camera keys; a key taken by another action moves to your old key, or is left unbound when that would clash.'),
       status,
       table,
     ];

@@ -66,11 +66,12 @@ export interface GameEventMap {
 
 type Handler<T> = (payload: T) => void;
 
-export class EventBus {
-  private handlers: { [K in keyof GameEventMap]?: Handler<GameEventMap[K]>[] } = {};
+/** Typed publish/subscribe; `M` maps each event name to its payload (naval by default). */
+export class EventBus<M = GameEventMap> {
+  private handlers: { [K in keyof M]?: Handler<M[K]>[] } = {};
 
-  on<K extends keyof GameEventMap>(type: K, fn: Handler<GameEventMap[K]>): () => void {
-    const list = (this.handlers[type] ??= []) as Handler<GameEventMap[K]>[];
+  on<K extends keyof M>(type: K, fn: Handler<M[K]>): () => void {
+    const list = (this.handlers[type] ??= []) as Handler<M[K]>[];
     list.push(fn);
     return () => {
       const i = list.indexOf(fn);
@@ -78,8 +79,8 @@ export class EventBus {
     };
   }
 
-  emit<K extends keyof GameEventMap>(type: K, payload: GameEventMap[K]): void {
-    const list = this.handlers[type] as Handler<GameEventMap[K]>[] | undefined;
+  emit<K extends keyof M>(type: K, payload: M[K]): void {
+    const list = this.handlers[type] as Handler<M[K]>[] | undefined;
     if (!list) return;
     for (const fn of list) fn(payload);
   }

@@ -1,5 +1,7 @@
 import type { BattleConfig } from '../core/BattleSetup';
 import type { ShipSpec } from '../core/types';
+import type { GroundConfig } from '../ground/sim/setup';
+import type { VehicleSpec } from '../ground/sim/types';
 import type { Input } from '../input/Input';
 import type { Renderer } from '../render/Renderer';
 import type { Menu } from '../ui/Menu';
@@ -23,8 +25,8 @@ export interface Shell {
   show(battle: ActiveBattle): void;
   /** Close the battle on screen. */
   closeBattle(): void;
-  /** Show a ship turning behind the menus, `offset` across the screen. */
-  preview(spec: ShipSpec, offset: number): void;
-  /** Start a battle on this machine alone. */
-  startSolo(config: BattleConfig): void;
+  /** Show a ship or a vehicle turning behind the menus, `offset` across the screen. */
+  preview(spec: ShipSpec | VehicleSpec, offset: number): void;
+  /** Start a battle, naval or ground, on this machine alone. */
+  startSolo(config: BattleConfig | GroundConfig): void;
 }

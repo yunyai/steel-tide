@@ -7,6 +7,7 @@ import { display, setDisplay } from '../input/Settings';
 import { saveBest } from '../modes/BossRush';
 import { draftOrders } from '../net/navalTurns';
 import { PlayerController } from '../player/PlayerController';
+import { NavalScene } from '../render/NavalScene';
 import type { Viewport } from '../render/Renderer';
 import { emptyControl, type Ship } from '../ships/Ship';
 import { h } from '../ui/dom';
@@ -54,6 +55,8 @@ export class NavalBattle implements ActiveBattle {
   readonly pcs: PlayerController[];
   readonly huds: HUD[];
   readonly viewports: Viewport[];
+  /** The sea, islands, ships and effects this battle draws. */
+  readonly scene: NavalScene;
   /** Solo: the battle is frozen. LAN: the battle menu is open (nothing freezes). */
   paused = false;
   /** performance.now() when the battle was last paused. */
@@ -84,7 +87,8 @@ export class NavalBattle implements ActiveBattle {
     const { menu, menuLayer, renderer, hudLayer, input, canvas } = shell;
     menu.hide();
     menuLayer.style.pointerEvents = 'none';
-    renderer.attach(game);
+    this.scene = new NavalScene(renderer, game);
+    renderer.attach(this.scene);
     const humans = local ? [local] : [];
     this.pcs = humans.map((s, i) => {
       // LAN: the server knows only the ship; controls and fire control are this machine's own choice.
@@ -101,9 +105,9 @@ export class NavalBattle implements ActiveBattle {
       return h;
     });
 
-    const fx = renderer.effects!;
+    const fx = this.scene.effects;
     fx.locals = humans;
-    renderer.skillFx!.locals = humans;
+    this.scene.skillFx.locals = humans;
     fx.onShake = (s) => {
       for (const pc of this.pcs) {
         const d = Math.hypot(pc.camera.position.x - s.x, pc.camera.position.z - s.z);
@@ -204,8 +208,8 @@ export class NavalBattle implements ActiveBattle {
     this.huds[i] = new HUD(this.game, pc, this.shell.input);
     this.shell.hudLayer.append(this.huds[i].root);
     const locals = this.pcs.map((p) => p.ship);
-    this.shell.renderer.effects!.locals = locals;
-    this.shell.renderer.skillFx!.locals = locals;
+    this.scene.effects.locals = locals;
+    this.scene.skillFx.locals = locals;
   }
 
   private setOverlay(el: HTMLElement | null): void {

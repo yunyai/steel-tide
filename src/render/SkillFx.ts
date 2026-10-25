@@ -39,7 +39,7 @@ const WHITE = new Color(0xffffff);
 /** The orbital pillar and rod streaks start this high. */
 const SKY = 2400;
 
-const SHIELD_VERT = /* glsl */ `
+export const SHIELD_VERT = /* glsl */ `
 varying vec3 vN;
 varying vec3 vV;
 varying vec3 vP;
@@ -52,7 +52,7 @@ void main() {
 }`;
 
 // Fresnel bubble with a hexagon lattice that brightens where (and when) it is struck.
-const SHIELD_FRAG = /* glsl */ `
+export const SHIELD_FRAG = /* glsl */ `
 uniform vec3 uColor;
 uniform float uAlpha;
 uniform float uHit;

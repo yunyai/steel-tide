@@ -5,7 +5,7 @@ import { EXACT, PORTED } from '../src/core/detMath';
 // the simulation source against the things that break that: wall clocks, unseeded randomness,
 // and maths the engines compute differently (exponentiation, unported transcendental functions).
 
-const SIM_DIRS = ['core', 'ships', 'weapons', 'skills', 'ai', 'modes', 'world', 'data'];
+const SIM_DIRS = ['core', 'ships', 'weapons', 'skills', 'ai', 'modes', 'world', 'data', 'ground/sim'];
 const SIM_FILES = ['config.ts', 'net/hash.ts', 'net/protocol.ts'];
 /** The ports themselves read the native functions on purpose. */
 const SKIP = new Set(['core/detMath.ts', 'core/installDetMath.ts']);

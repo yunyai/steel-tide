@@ -61,7 +61,7 @@ function tables(game: Game, team: Team, me: Ship | null): HTMLElement {
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Count a number up from zero once the report is on screen. */
-function countUp(b: HTMLElement, value: number, format: (n: number) => string): void {
+export function countUp(b: HTMLElement, value: number, format: (n: number) => string): void {
   b.textContent = format(value);
   if (reduceMotion() || value <= 0) return;
   const t0 = performance.now() + 250;

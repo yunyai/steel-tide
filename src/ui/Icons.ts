@@ -1,5 +1,6 @@
 import type { PickupKind } from '../core/Pickups';
 import type { ConsumableType, ShipClass, SkillIcon } from '../core/types';
+import type { GroundConsumableType, VehicleClass } from '../ground/sim/types';
 
 // Inline SVG glyphs for skills, consumables, pickups, status and ship classes. Every glyph sits
 // in a 24-unit box centred on the origin and takes its colour from `currentColor`.
@@ -95,6 +96,30 @@ const CLASS_GLYPH: Record<ShipClass, string> = {
   AK: `<path ${F} d="M-10 -3 H10 L7 5 H-7 Z"/><path ${F} d="M-3 -8 H3 V-3 H-3 Z"/>`,
 };
 
+/** Vehicle-class marks, after the map symbols for armour: heavier classes read as solid blocks. */
+const VEHICLE_GLYPH: Record<VehicleClass, string> = {
+  HT: `<path ${F} d="M-10 -6.5 H10 V6.5 H-10 Z"/><path fill="#000" fill-opacity=".45" d="M-6 0 A6 3.2 0 1 0 6 0 A6 3.2 0 1 0 -6 0 Z"/>`,
+  MT: `<path ${S} stroke-width="2.4" d="M-9.5 -6 H9.5 V6 H-9.5 Z"/><ellipse ${F} rx="5" ry="2.6"/>`,
+  LT: `<path ${S} stroke-width="2.6" d="M-9 5 L0 -5 L9 5"/><path ${S} stroke-width="2.6" opacity=".55" d="M-6 9.5 L0 3 L6 9.5"/>`,
+  TD: `<path ${F} d="M-10 -7 H10 L0 8.5 Z"/>`,
+  SPG: `<circle ${S} stroke-width="2.4" r="7.5"/><circle ${F} r="3.2"/>`,
+  MSL: GLYPHS.missile,
+  SUP: `<path ${S} stroke-width="2.4" d="M-9.5 -6.5 H9.5 V6.5 H-9.5 Z"/><path ${F} d="M-1.6 -4.6 H1.6 V-1.6 H4.6 V1.6 H1.6 V4.6 H-1.6 V1.6 H-4.6 V-1.6 H-1.6 Z"/>`,
+  TT: GLYPHS.star,
+};
+
+const GROUND_CONSUMABLE_GLYPH: Record<GroundConsumableType, string> = {
+  repair: 'repairKit',
+  applique: 'shield',
+  overdrive: 'speed',
+  smoke: 'smoke',
+  steady: 'strike',
+  relocate: 'speed',
+  rapidReload: 'reset',
+  fieldRepair: 'heal',
+  bulwark: 'shield',
+};
+
 function svg(body: string, cls: string): string {
   return `<svg class="ico${cls ? ` ${cls}` : ''}" viewBox="-12 -12 24 24" aria-hidden="true">${body}</svg>`;
 }
@@ -113,6 +138,14 @@ export function pickupIcon(kind: PickupKind, cls = ''): string {
 
 export function classIcon(cls: ShipClass, extra = ''): string {
   return svg(CLASS_GLYPH[cls], extra);
+}
+
+export function vehicleClassIcon(cls: VehicleClass, extra = ''): string {
+  return svg(VEHICLE_GLYPH[cls], extra);
+}
+
+export function groundConsumableIcon(type: GroundConsumableType, cls = ''): string {
+  return svg(GLYPHS[GROUND_CONSUMABLE_GLYPH[type]], cls);
 }
 
 export function glyph(name: string, cls = ''): string {

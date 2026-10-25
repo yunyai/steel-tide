@@ -2,6 +2,7 @@
 import './core/installDetMath';
 import './ui/styles.css';
 import type { ActiveBattle } from './app/ActiveBattle';
+import { GroundBattle } from './app/GroundBattle';
 import { LanLink } from './app/LanLink';
 import { NavalBattle } from './app/NavalBattle';
 import type { Shell } from './app/Shell';
@@ -9,6 +10,9 @@ import type { BattleConfig } from './core/BattleSetup';
 import { Game } from './core/Game';
 import type { ShipSpec } from './core/types';
 import { audio } from './fx/Audio';
+import { GroundGame } from './ground/sim/GroundGame';
+import type { GroundConfig } from './ground/sim/setup';
+import type { VehicleSpec } from './ground/sim/types';
 import { Input } from './input/Input';
 import { NetClient } from './net/NetClient';
 import { Renderer } from './render/Renderer';
@@ -46,8 +50,9 @@ const showcase = new Showcase(renderer.gl);
 
 let battle: ActiveBattle | null = null;
 
-function preview(spec: ShipSpec, offset: number): void {
-  showcase.setShip(spec);
+function preview(spec: ShipSpec | VehicleSpec, offset: number): void {
+  if ('drive' in spec) showcase.setVehicle(spec);
+  else showcase.setShip(spec);
   showcase.offset = offset;
 }
 
@@ -63,9 +68,10 @@ function closeBattle(): void {
   battle = null;
 }
 
-function startSolo(config: BattleConfig): void {
+function startSolo(config: BattleConfig | GroundConfig): void {
   closeBattle();
-  shell.show(new NavalBattle(shell, config, new Game(config), null));
+  if (config.kind === 'ground') shell.show(new GroundBattle(shell, config, new GroundGame(config), null));
+  else shell.show(new NavalBattle(shell, config, new Game(config), null));
 }
 
 const shell: Shell = {

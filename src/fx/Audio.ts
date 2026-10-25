@@ -4,7 +4,7 @@ import { sound } from '../input/Settings';
 // Procedural WebAudio sound: no asset files. Distance attenuation, air
 // absorption (low-pass) and speed-of-sound delay, so far salvos rumble late.
 
-export type SoundKind = 'gun' | 'explosion' | 'splash' | 'hit' | 'torpedo' | 'missile' | 'flak' | 'depth' | 'zap' | 'thunder' | 'laser' | 'nuke' | 'shield' | 'charge';
+export type SoundKind = 'gun' | 'explosion' | 'splash' | 'hit' | 'torpedo' | 'missile' | 'flak' | 'depth' | 'zap' | 'thunder' | 'laser' | 'nuke' | 'shield' | 'charge' | 'ricochet' | 'collapse';
 
 export type UiSound =
   | 'click'
@@ -238,6 +238,19 @@ export class AudioEngine {
         this.thump(air, t0, 45, 16, 1.6, 4.5);
         this.burst(air, t0, 'lowpass', 400, 0.05, 4.8, 1.5);
         this.burst(air, t0 + 0.3, 'bandpass', 900, 0.4, 3, 0.6);
+        break;
+      case 'ricochet':
+        // A whine off the plate as the round skips away.
+        dur = 0.6;
+        this.burst(air, t0, 'highpass', 2400, 0.001, 0.08, 0.8);
+        this.tone(air, t0, 'sine', 2600 + Math.random() * 900, 0.25, 0.55, 900);
+        break;
+      case 'collapse':
+        // `size` scales the building: a long grinding roar of masonry.
+        dur = 2.2 + size * 0.6;
+        this.thump(air, t0, 55, 24, 1.1, dur * 0.6);
+        this.burst(air, t0, 'lowpass', 500, 0.08, dur, 1.2);
+        this.burst(air, t0 + 0.25, 'bandpass', 1300, 0.3, dur * 0.7, 0.45);
         break;
       case 'shield':
         dur = 0.5;

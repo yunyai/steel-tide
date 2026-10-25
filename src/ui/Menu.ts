@@ -7,16 +7,21 @@ import { CLASS_LABEL, SHIPS, SHIP_BY_ID, shipsIn, shipsOf } from '../data/ships'
 import { keyName, layoutFor } from '../input/Keybinds';
 import { RUSH_WAVES, loadBest } from '../modes/BossRush';
 import { consumableLabel } from '../ships/Consumables';
+import type { GroundConfig } from '../ground/sim/setup';
+import type { VehicleSpec } from '../ground/sim/types';
+import { VEHICLES } from '../ground/sim/data';
 import { MAPS } from '../world/GameMap';
 import { field, h, html, seg } from './dom';
-import { classIcon, glyph, skillIcon } from './Icons';
+import { type GarageFlow, GroundMenu, kindSwitch } from './GroundMenu';
+import { classIcon, glyph, skillIcon, vehicleClassIcon } from './Icons';
 import { buildSettings } from './SettingsSheet';
 
-// Title, battle orders, the hangar (ship selection) and settings.
+// Title, battle orders, the hangar (ship selection) and settings. Ground battles' orders and
+// Garage live in GroundMenu.
 
 export interface MenuHooks {
-  start(config: BattleConfig): void;
-  preview(spec: ShipSpec, offset: number): void;
+  start(config: BattleConfig | GroundConfig): void;
+  preview(spec: ShipSpec | VehicleSpec, offset: number): void;
   click(): void;
   /** Open the LAN lobbies. */
   lan(): void;
@@ -136,10 +141,44 @@ export class Menu {
   /** LAN hangar: whether the lobby allows titans, its era, and where the pick goes. */
   private lan: { titans: boolean; era: BattleEra; done: (shipId: string) => void } | null = null;
 
+  private ground: GroundMenu;
+
   constructor(
     private root: HTMLElement,
     private hooks: MenuHooks,
-  ) {}
+  ) {
+    this.ground = new GroundMenu({
+      mount: (el) => this.mount(el),
+      start: (config) => {
+        // One pair of hands: the controls picked in the Garage carry over to the hangar.
+        const p = config.players[0];
+        this.setDevice(p.device, p.assist);
+        hooks.start(config);
+      },
+      preview: (spec, offset) => hooks.preview(spec, offset),
+      click: () => hooks.click(),
+      title: () => this.showTitle(),
+      ships: () => this.showHangar(null),
+    });
+  }
+
+  private setDevice(device: InputDeviceId, assist: boolean | undefined): void {
+    const pc = this.draft.players[0];
+    pc.device = device;
+    pc.assist = assist;
+  }
+
+  /** Ground battle orders, with the captain's controls carried over from the hangar. */
+  showGroundOrders(): void {
+    const pc = this.draft.players[0];
+    this.ground.setDevice(pc.device, pc.assist);
+    this.ground.showOrders();
+  }
+
+  /** The Garage: for the last ground battle's orders, or (`null`) browsing. */
+  showGarage(flow: GarageFlow = 'battle'): void {
+    this.ground.showGarage(flow);
+  }
 
   private mount(el: HTMLElement): void {
     this.root.replaceChildren(el);
@@ -176,28 +215,30 @@ export class Menu {
     this.hooks.preview(SHIP_BY_ID[this.draft.players[0].shipId], 0.3);
     const item = (icon: string, label: string, note: string, cls: string, fn: () => void) => {
       const b = h('button', { class: `go${cls ? ` ${cls}` : ''}` });
-      b.innerHTML = `${glyph(icon)}<b>${label}</b><small>${note}</small>`;
+      b.innerHTML = `${icon.startsWith('<') ? icon : glyph(icon)}<b>${label}</b><small>${note}</small>`;
       b.onclick = () => {
         this.hooks.click();
         fn();
       };
       return b;
     };
-    const battle = item('salvo', 'Battle', 'Fleet against fleet: capture zones or sink them all', '', () => this.showOrders('battle'));
+    const battle = item('salvo', 'Naval battle', 'Fleet against fleet: capture zones or sink them all', '', () => this.showOrders('battle'));
     battle.dataset.focus = '';
+    const ground = item(vehicleClassIcon('HT'), 'Ground battle', 'Tanks on land: angle the armour, find the weak plate, flatten the cover', '', () => this.showGroundOrders());
     const rush = item('nuke', 'Boss Rush', `Hold out against ${RUSH_WAVES} waves, with a titan every fifth`, 'rush', () => this.showOrders('rush'));
     const lan = item('fleet', 'LAN battle', 'Play friends on your network: team against team, or together against the AI', '', () => this.hooks.lan());
     const line = SHIPS.filter((s) => s.cls !== 'TT').length;
     const titans = SHIPS.length - line;
     const eras = LIVE_ERAS.length > 1 ? ` across ${LIVE_ERAS.length} eras` : '';
-    const hangar = item('star', 'Hangar', `${line} warships with two skills and an ultimate, ${titans} titans with six and three${eras}`, '', () => this.showHangar(null));
+    const vehicles = VEHICLES.filter((v) => !v.hidden).length;
+    const hangar = item('star', 'Hangar', `${line} warships and ${vehicles} vehicles with two skills and an ultimate, ${titans} titans with six and three${eras}`, '', () => this.showHangar(null));
     const minor = h('div', { class: 'minor' }, this.act('Settings', 'btn-quiet', () => this.showSettings()));
     const el = h(
       'div',
       { class: 'title-screen' },
       h('h1', { class: 'title-mark' }, 'Steel', h('span', {}, 'Tide')),
       h('p', { class: 'title-sub' }, 'Real hulls, real armour, and weapons that should never have been built. Wave-motion cannons, orbital rods and lightning storms decide the fight.'),
-      h('div', { class: 'title-actions' }, battle, rush, lan, hangar, minor),
+      h('div', { class: 'title-actions' }, battle, ground, rush, lan, hangar, minor),
     );
     const best = Object.entries(loadBest()).sort((a, b) => b[1].score - a[1].score)[0];
     if (best && SHIP_BY_ID[best[0]]) {
@@ -518,7 +559,10 @@ export class Menu {
         }),
       );
     };
-    roster.append(h('h3', {}, eras.length > 1 ? 'Hangar' : `${ERA_LABEL[eras[0]]} hangar`), eraTabs, classTabs, list);
+    roster.append(h('h3', {}, eras.length > 1 ? 'Hangar' : `${ERA_LABEL[eras[0]]} hangar`));
+    // Browsing from the title: the hangar and the garage are one screen with two halves.
+    if (!flow) roster.append(kindSwitch('ships', () => {}, () => this.showGarage(null), () => this.hooks.click()));
+    roster.append(eraTabs, classTabs, list);
     renderRoster();
     renderDossier();
 

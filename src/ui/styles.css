@@ -3449,3 +3449,200 @@ select {
   pointer-events: none;
   z-index: 5;
 }
+
+/* ------------------------------------------------------- ground battles */
+/* Fixed crosshair: where the camera looks. The aim circle shows where the gun really points. */
+.gcross,
+.gaim {
+  position: absolute;
+  pointer-events: none;
+  color: rgba(234, 246, 255, 0.92);
+}
+
+.gcross {
+  left: 50%;
+  top: 50%;
+  width: 80px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+}
+
+.gcross svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
+}
+
+.gaim {
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+.gaim svg {
+  position: absolute;
+  left: -100px;
+  top: -100px;
+  width: 200px;
+  height: 200px;
+  overflow: visible;
+  fill: none;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));
+}
+
+.gaim .ring {
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.gaim .ticks path {
+  stroke: currentColor;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.gaim .reload {
+  stroke: var(--amber);
+  stroke-width: 2.4;
+  opacity: 0.85;
+}
+
+.gaim .reload.ready {
+  stroke: var(--cyan);
+  opacity: 0.5;
+}
+
+.greadout {
+  position: absolute;
+  left: calc(50% + 26px);
+  top: calc(50% + 22px);
+  white-space: nowrap;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.greadout span {
+  font-weight: 600;
+  color: var(--cyan);
+}
+
+.greadout small {
+  display: block;
+  font-family: var(--text);
+  font-size: 0.82rem;
+  color: #b9cddd;
+}
+
+.greadout .note {
+  color: var(--amber);
+}
+
+.greadout .out {
+  color: var(--red) !important;
+}
+
+.ghelm {
+  align-items: center;
+}
+
+.tankcard {
+  position: relative;
+  width: 84px;
+  height: 84px;
+}
+
+.tankcard svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.tankcard .body,
+.tankcard .tbody {
+  fill: rgba(77, 232, 255, 0.22);
+  stroke: var(--cyan);
+  stroke-width: 1.4;
+}
+
+.tankcard .trk {
+  fill: rgba(234, 246, 255, 0.35);
+}
+
+.tankcard .trk.broken {
+  fill: var(--red);
+  animation: lamp 0.6s steps(2) infinite;
+}
+
+.tankcard .nose {
+  fill: none;
+  stroke: var(--cyan);
+  stroke-width: 1.4;
+}
+
+.tankcard .gun {
+  fill: var(--ice);
+}
+
+.tankcard .view {
+  stroke: rgba(234, 246, 255, 0.28);
+  stroke-width: 1;
+  fill: none;
+}
+
+.tankcard .lamps {
+  position: absolute;
+  left: -2px;
+  bottom: -4px;
+  display: flex;
+  gap: 2px;
+}
+
+.tankcard .lamps i {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-size: 13px;
+  color: rgba(234, 246, 255, 0.25);
+}
+
+.tankcard .lamps i.lit,
+.tankcard .lamps i.on {
+  color: var(--red);
+  filter: drop-shadow(0 0 4px var(--red));
+}
+
+.tankcard .lamps i.on {
+  animation: lampflash 1.6s ease-out;
+}
+
+@keyframes lamp {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes lampflash {
+  from {
+    color: var(--amber);
+  }
+  to {
+    color: rgba(234, 246, 255, 0.25);
+    filter: none;
+  }
+}
+
+.marker.summon .nm {
+  opacity: 0.7;
+  font-size: 0.85em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tankcard .trk.broken,
+  .tankcard .lamps i.on {
+    animation: none;
+  }
+}

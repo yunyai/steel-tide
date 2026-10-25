@@ -28,6 +28,8 @@ export function defaultAssist(device: InputDeviceId): boolean {
 }
 
 export interface BattleConfig {
+  /** Naval when absent: ground battles carry `kind: 'ground'` (see ground/sim/setup). */
+  kind?: 'naval';
   mode: BattleMode;
   type: BattleType;
   mapId: string;
