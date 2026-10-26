@@ -20,6 +20,7 @@ import { eraOf } from '../data/factions';
 import { THROTTLE_LABELS, type Ship } from '../ships/Ship';
 import { solve } from '../weapons/Ballistics';
 import { Feedback } from './Feedback';
+import { hullHealthDisplay } from './HullHealth';
 import { classIcon, consumableIcon, glyph, skillIcon } from './Icons';
 import { Intermission } from './Intermission';
 import { Minimap } from './Minimap';
@@ -270,6 +271,7 @@ export class HUD {
     e.hpChip = el('i', 'chipt', hp);
     e.hp = el('i', 'fill', hp);
     e.hpShield = el('i', 'sh', hp);
+    e.hpReserved = el('i', 'reserved', hp);
     el('i', 'ticks', hp);
     e.status = el('div', 'status-row', ck);
     if (me.architect) {
@@ -533,7 +535,7 @@ export class HUD {
     this.updateSkills();
     if(me.architect)this.moduleEls.forEach((item,i)=>{
       const a=me.architect!.slots[i],state=a.state;
-      item.dataset.state=state;item.style.setProperty('--health',`${Math.max(0,a.hp/me.architect!.moduleHp)}`);
+      item.dataset.state=state;item.dataset.health=a.hp/me.architect!.moduleHp<.3?'low':a.hp/me.architect!.moduleHp<.6?'mid':'high';item.style.setProperty('--health',`${Math.max(0,a.hp/me.architect!.moduleHp)}`);
       setText(item.querySelector('span')!,state==='destroyed'?`${Math.ceil(a.rebuild)}s`:state==='docked'?'DOCK':state==='deployed'?'SET':state==='citadel'?'AIR':state==='returning'?'HOME':state==='assembling'?'BUILD':'MOVE');
       item.title=`Module ${i+1}: ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP${a.reload>0?`, reload ${a.reload.toFixed(1)}s`:''}`;
       item.setAttribute('aria-label',item.title);
@@ -745,11 +747,16 @@ export class HUD {
     const e = this.e;
     const team = this.team;
     const enemy: Team = team === 0 ? 1 : 0;
-    e.hpNum.innerHTML = `${Math.round(me.hp).toLocaleString()} <small>/ ${me.maxHp.toLocaleString()}</small>`;
-    if(me.architect){
-      const a=me.architect,outside=a.slots.reduce((n,slot)=>n+(!slot.aboard&&slot.entity?.alive?slot.entity.hp:0),0);
-      e.hpNum.title=`${Math.round(outside).toLocaleString()} HP in platforms · Full pool ${Math.round(me.hp+outside).toLocaleString()} / ${Math.round(a.fullHp).toLocaleString()}`;
-    }
+    const health=hullHealthDisplay(me),fmt=(n:number)=>Math.round(n).toLocaleString();
+    e.hpNum.innerHTML = `${fmt(me.hp)} <small>/ ${fmt(health.maximum)}</small>`;
+    const healthDetail=health.reserved>0
+      ?`Hull ${fmt(me.hp)} / ${fmt(me.maxHp)} HP · ${fmt(health.reserved)} hull HP reserved · Platforms ${fmt(health.platformHp)} / ${fmt(health.platformMaxHp)} combat HP`
+      :`Hull ${fmt(me.hp)} / ${fmt(health.maximum)} HP`;
+    e.hpNum.title=healthDetail;e.hpbar.title=healthDetail;
+    e.hpbar.setAttribute('aria-label',healthDetail);
+    e.hpReserved.style.display=health.reserved>0?'':'none';
+    setWidth(e.hpReserved,health.reserved/health.maximum);
+    setText(e.hpReserved,health.reserved>=1e6?`${+(health.reserved/1e6).toFixed(1)}M`:`${Math.round(health.reserved/1000)}k`);
     const frac = me.hp / me.maxHp;
     if(me.architect&&this.lastHullCapacity!==me.maxHp){this.lastHp=me.hp;this.chipHp=me.hp;this.chipHold=0;}
     this.lastHullCapacity=me.maxHp;
@@ -767,9 +774,9 @@ export class HUD {
       setWidth(e.formFill, left / (me.form.until - me.form.start));
       setText(e.formLeft, `${Math.ceil(left)} s`);
     }
-    setWidth(e.hp, frac);
-    setWidth(e.hpChip, this.chipHp / me.maxHp);
-    setWidth(e.hpShield, me.shield / me.maxHp);
+    setWidth(e.hp, me.hp / health.maximum);
+    setWidth(e.hpChip, Math.min(this.chipHp,me.maxHp) / health.maximum);
+    setWidth(e.hpShield, Math.min(me.shield,me.maxHp) / health.maximum);
     const regen = me.alive && me.regenerating;
     setClass(e.hp, `fill${frac < 0.3 ? ' low' : frac < 0.6 ? ' mid' : regen ? ' regen' : ''}`);
     e.regen.style.display = regen ? '' : 'none';
@@ -958,7 +965,7 @@ export class HUD {
     const rowH = 24;
     const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
     items.forEach((it, n) => {
-      const w = it.label.length * 6.4 + 30;
+      const w = Math.max(it.s.architectPlatform?60:0,it.label.length * 6.4 + 30);
       let y = it.y;
       for (let tries = 0; tries < 6; tries++) {
         const box = { x0: it.x - w / 2, x1: it.x + w / 2, y0: y - rowH, y1: y };
@@ -983,6 +990,10 @@ export class HUD {
       m.style.transform = `translate(${it.x.toFixed(0)}px, ${y.toFixed(0)}px) translate(-50%, -100%)`;
       setText(m.querySelector('.tx') as HTMLElement, it.label);
       setWidth(m.querySelector('.hp i') as HTMLElement, s.hp / s.maxHp);
+      if(s.architectPlatform){
+        m.dataset.health=s.hp/s.maxHp<.3?'low':s.hp/s.maxHp<.6?'mid':'high';
+        m.setAttribute('aria-label',`Module ${s.architectPlatform.index+1}: ${Math.ceil(s.hp).toLocaleString()} / ${Math.round(s.maxHp).toLocaleString()} HP`);
+      }else{delete m.dataset.health;m.removeAttribute('aria-label');}
       const sh = m.querySelector('.sh') as HTMLElement;
       sh.style.visibility = s.shield > 0 ? '' : 'hidden';
       if (s.shield > 0) setWidth(sh.firstChild as HTMLElement, s.shield / Math.max(1, s.shieldMax));

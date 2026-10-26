@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
-const out='docs/verification/architect';mkdirSync(out,{recursive:true});
+const out=process.env.STEEL_ARCH_OUT??'docs/verification/architect';mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL??'chrome',headless:true,args:['--autoplay-policy=no-user-gesture-required']});
 const results=[];const check=(v,m)=>{if(!v)throw new Error(m);};
 const base=process.env.STEEL_URL??'http://127.0.0.1:5184';
@@ -42,7 +42,7 @@ for(const [q,width,height] of [['ultralow',1280,720],['low',1280,720],['medium',
     pc.camera.position.set(-2300,1800,4000);pc.camera.lookAt(0,0,200);pc.camera.updateMatrixWorld(true);window.drawArch(0);
     return {count:s.architect.slots.filter(a=>a.state==='deployed').length,hp:s.hp,maxHp:s.maxHp,slots:document.querySelectorAll('.architect-slot').length,hiddenDockTurrets:s.turrets.every((_,i)=>!b.scene.views.get(s).root.getObjectByName(`architect-turret-${i}`).visible)};
   });
-  check(deployed.count===10&&deployed.hp===1000000&&deployed.maxHp===1000000&&deployed.slots===10&&deployed.hiddenDockTurrets,JSON.stringify(deployed));await shot('network');
+  check(deployed.count===10&&deployed.hp===1500000&&deployed.maxHp===1500000&&deployed.slots===10&&deployed.hiddenDockTurrets,JSON.stringify(deployed));await shot('network');
   await page.evaluate(()=>{const{s,pc}=window.archTest;s.control.aimX=0;s.control.aimZ=-1800;pc.aim.set(0,0,-1800);s.activateSkill(1);window.runArch(2);});await shot('command-burst');
   await setup();
   await page.evaluate(()=>{const{s}=window.archTest;s.activateSkill(6);window.runArch(42);});await shot('assembly-build');

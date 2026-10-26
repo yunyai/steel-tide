@@ -32,7 +32,7 @@ export function stateHash(g: Game): number {
       const a=s.architect;
       for (const n of [a.fullHp,a.moduleHp,a.healthReady?1:0,a.linkUntil,a.linkTick,a.clearing?1:0]) h=mix(h,n);
       for (const slot of a.slots) {
-        for (const n of [slot.aboard?1:0,slot.index,['docked','launching','deployed','moving','returning','destroyed','assembling','citadel'].indexOf(slot.state),slot.hp,slot.reload,slot.disabled,slot.rebuild,slot.dockedFor,slot.entity?.id??0])h=mix(h,n);
+        for (const n of [slot.aboard?1:0,slot.index,['docked','launching','deployed','moving','returning','destroyed','assembling','citadel'].indexOf(slot.state),slot.hp,slot.reload,slot.reloadScale,slot.disabled,slot.rebuild,slot.dockedFor,slot.entity?.id??0])h=mix(h,n);
         if(slot.path)for(const n of [slot.path.x,slot.path.y,slot.path.z,slot.path.tx,slot.path.ty,slot.path.tz,slot.path.elapsed,slot.path.duration,slot.path.damage?1:0,...slot.path.hit])h=mix(h,n);
       }
       for(const edge of a.links){h=mix(h,edge.a);h=mix(h,edge.b);}

@@ -1,4 +1,4 @@
-import { ensureArchitectHealth, detachArchitectHealth, returnArchitectHealth, rebuildArchitectHealth } from './ArchitectHealth';
+import { ensureArchitectHealth, detachArchitectHealth, returnArchitectHealth, rebuildArchitectHealth, ARCHITECT_FULL_HP, MODULE_COMBAT_HP, PLATFORM_HEALTH_RATIO } from './ArchitectHealth';
 import { Vector3 } from 'three';
 import type { Ship, TurretState } from '../../ships/Ship';
 import type { SkillSpec } from '../../core/types';
@@ -12,7 +12,7 @@ import { updateArchitectUltimate, endArchitectUltimate, type ArchitectUltimate }
 
 export type ModuleMode = 'docked'|'launching'|'deployed'|'moving'|'returning'|'destroyed'|'assembling'|'citadel';
 export interface ModuleSlot {
-  aboard:boolean; index:number; state:ModuleMode; hp:number; reload:number; disabled:number; rebuild:number; dockedFor:number;
+  aboard:boolean; index:number; state:ModuleMode; hp:number; reload:number; reloadScale:number; disabled:number; rebuild:number; dockedFor:number;
   entity:Ship|null;
   path:{ x:number;y:number;z:number;tx:number;ty:number;tz:number;elapsed:number;duration:number;hit:number[];damage:boolean }|null;
 }
@@ -24,9 +24,9 @@ export interface ArchitectState {
   clearing:boolean;
 }
 export interface ArchitectPlatform { owner:Ship; index:number }
-export const MODULE_HP=50000;
+export const MODULE_HP=MODULE_COMBAT_HP;
 export function newArchitectState():ArchitectState {
-  return {fullHp:1500000,moduleHp:50000,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false};
+  return {fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:1,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false};
 }
 export function dockPoint(s:Ship,i:number):Vector3 {
   const t=s.spec.main!.turrets[i];return s.localToWorld(t.x,s.spec.freeboard+t.y,t.z??0);
@@ -79,6 +79,7 @@ export function moveModule(s:Ship,a:ModuleSlot,p:{x:number;y?:number;z:number;he
   disableDocked(s,a);
 }
 export function attachModule(s:Ship,a:ModuleSlot):void {
+  setModuleReloadScale(a,1);
   const m=a.entity;
   if(m){a.hp=m.hp;a.reload=Math.max(0,m.turrets[0].reload);a.disabled=Math.max(0,m.turrets[0].disabled);m.withdraw();}
   returnArchitectHealth(s,a);
@@ -140,6 +141,17 @@ export function connectModules(s:Ship):boolean {
   if(!a.links.length)return s.failSkill('Connect: two anchored platforms need a clear link within 2.5 km');
   a.linkUntil=s.game.time+10;a.linkTick=0;return true;
 }
+/** Keep the completed fraction of a reload when changing deployment modes. */
+function setModuleReloadScale(slot:ModuleSlot,scale:number):void {
+  if(slot.reloadScale===scale)return;
+  const turret=slot.entity?.turrets[0];
+  slot.reload=(turret?.reload??slot.reload)*scale/slot.reloadScale;
+  if(turret)turret.reload=slot.reload;
+  slot.reloadScale=scale;
+}
+function platformReloadScale(slot:ModuleSlot):number {
+  return slot.state==='citadel'?.375:slot.state==='deployed'?.75:1;
+}
 export function commandedBurst(s:Ship,spec:SkillSpec):boolean {
   let count=0;
   for(const a of available(s)){
@@ -149,7 +161,8 @@ export function commandedBurst(s:Ship,spec:SkillSpec):boolean {
     if(Math.hypot(origin.x-s.control.aimX,origin.z-s.control.aimZ)>s.mainRange)continue;
     const shell={...s.spec.main!.ap!,damage:20000};
     for(let barrel=0;barrel<2;barrel++)s.game.shells.fire(s,{ammo:'AP',spec:shell,table:s.tableFor('AP')!,fromX:origin.x+(barrel?3:-3),fromY:origin.y,fromZ:origin.z,toX:s.control.aimX,toZ:s.control.aimZ,toY:s.control.aimY,dmgMul:s.mods.damageMul,guaranteedFire:false,railgun:false,flat:3,look:'rail',skill:spec});
-    a.reload=s.spec.main!.reload*s.mods.reloadMul;
+    setModuleReloadScale(a,platformReloadScale(a));
+    a.reload=s.spec.main!.reload*s.mods.reloadMul*a.reloadScale;
     const turret=m?.turrets[0]??s.turrets[a.index];turret.reload=a.reload;turret.recoil=.6;
     s.stats.shotsFired+=2;count++;
     s.game.events.emit('gunFired',{ship:m??s,x:origin.x,y:origin.y,z:origin.z,bearing:bearingTo(origin.x,origin.z,s.control.aimX,s.control.aimZ),caliber:420,secondary:false,look:'rail'});
@@ -170,7 +183,7 @@ export function clearArchitect(s:Ship):void {
   a.clearing=true;
   for(const slot of a.slots)if(slot.entity?.alive)slot.entity.withdraw();
   s.architect=s.spec.id==='architect'?newArchitectState():null;
-  if(s.architect){s.architect.fullHp=full;s.architect.moduleHp=full/30;}
+  if(s.architect){s.architect.fullHp=full;s.architect.moduleHp=full*MODULE_COMBAT_HP/ARCHITECT_FULL_HP;}
 }
 export function syncArchitectSlot(s:Ship):void {
   if(s.architectPlatform){const {owner,index}=s.architectPlatform;const slot=owner.architect?.slots[index];if(slot&&slot.entity===s){slot.hp=s.hp;slot.reload=Math.max(0,s.turrets[0].reload);slot.disabled=Math.max(0,s.turrets[0].disabled);}return;}
@@ -203,14 +216,14 @@ export function updateArchitect(s:Ship,dt:number):void {
       if(slot.dockedFor>2)repairBudget+=Math.min(a.moduleHp-slot.hp,a.moduleHp*.1*Math.min(dt,slot.dockedFor-2));
     }else if(slot.state==='destroyed'){
       slot.rebuild-=dt;disableDocked(s,slot);
-      if(slot.rebuild<=1e-8){slot.state='docked';slot.rebuild=0;rebuildArchitectHealth(s,slot);slot.reload=0;slot.disabled=0;slot.dockedFor=0;t.disabled=0;t.reload=0;}
+      if(slot.rebuild<=1e-8){slot.state='docked';slot.reloadScale=1;slot.rebuild=0;rebuildArchitectHealth(s,slot);slot.reload=0;slot.disabled=0;slot.dockedFor=0;t.disabled=0;t.reload=0;}
     }else{
       disableDocked(s,slot);
       if(slot.entity?.alive){slot.hp=slot.entity.hp;slot.reload=Math.max(0,slot.entity.turrets[0].reload);slot.disabled=Math.max(0,slot.entity.turrets[0].disabled);}
       if(!a.ultimate)updateModulePath(s,slot,dt);
     }
   }
-  if(repairBudget>0)s.heal(repairBudget);
+  if(repairBudget>0)s.heal(repairBudget/PLATFORM_HEALTH_RATIO);
   updateArchitectUltimate(s,dt);
   if(a.linkUntil>s.game.time){
     a.linkTick+=dt;
@@ -234,7 +247,10 @@ export function preparePlatform(m:Ship):void {
   if(!s.alive||!a||a.clearing||s.game.over||!slot||slot.entity!==m){m.withdraw();return;}
   m.mods.regenMul=0;m.mods.knockImmune=true;m.pushX=m.pushZ=0;m.speed=0;m.throttle=2;
   m.mods.damageMul*=s.mods.damageMul;m.mods.apDamageMul*=s.mods.apDamageMul;m.mods.reloadMul*=s.mods.reloadMul;
-  if(slot.state==='citadel')m.mods.reloadMul*=.5;
+  setModuleReloadScale(slot,platformReloadScale(slot));
+  if(slot.state==='deployed'||slot.state==='citadel'){
+    m.mods.damageMul*=2;m.mods.reloadMul*=slot.reloadScale;
+  }
   m.control.fire=false;
   if(slot.state!=='deployed'&&slot.state!=='citadel')return;
   if(a.ultimate&&a.ultimate.kind!=='citadel'&&a.ultimate.members.includes(slot.index))return;

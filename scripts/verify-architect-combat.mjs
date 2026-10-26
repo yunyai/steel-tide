@@ -1,6 +1,6 @@
 import { runnerImport } from 'vite';
 import { mkdirSync,writeFileSync } from 'node:fs';
-const out='docs/verification/architect';mkdirSync(out,{recursive:true});
+const out=process.env.STEEL_ARCH_OUT??'docs/verification/architect';mkdirSync(out,{recursive:true});
 await runnerImport(`${process.cwd()}/src/core/installDetMath.ts`);
 const {module:{Game}}=await runnerImport(`${process.cwd()}/src/core/Game.ts`);
 const {module:{AIController}}=await runnerImport(`${process.cwd()}/src/ai/AIController.ts`);

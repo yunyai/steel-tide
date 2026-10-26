@@ -13,7 +13,7 @@ function arena() {
 function deploy() {const a=arena();a.s.activateSkill(0);run(a.g,2);return a;}
 describe('Architect arsenal',()=>{
   it('has ten actual twin turrets, nine skills, and the chosen titan hull',()=>{
-    expect(SHIP_BY_ID.architect.hp).toBe(1500000);expect(SHIP_BY_ID.architect.maxSpeed).toBe(30);
+    expect(SHIP_BY_ID.architect.hp).toBe(2500000);expect(SHIP_BY_ID.architect.maxSpeed).toBe(30);
     const {s}=arena();expect(s.turrets).toHaveLength(10);expect(s.skills).toHaveLength(9);
     expect(s.architect!.slots).toHaveLength(10);
     expect(s.spec.main!.ap!.damage).toBe(10800);expect(s.spec.main!.reload).toBe(6);
@@ -26,9 +26,9 @@ describe('Architect arsenal',()=>{
     run(g,2);
     const slots=s.architect!.slots.slice(0,2);
     expect(slots.every(a=>a.state==='deployed')).toBe(true);
-    expect(slots.every(a=>a.entity?.maxHp===50000)).toBe(true);
-    expect(slots[0].entity!.turrets[0].reload).toBeGreaterThan(1.9);
-    expect(slots[1].entity!.turrets[0].reload).toBeGreaterThan(0.9);
+    expect(slots.every(a=>a.entity?.maxHp===200000)).toBe(true);
+    expect(slots[0].entity!.turrets[0].reload).toBeGreaterThan(1);
+    expect(slots[1].entity!.turrets[0].reload).toBeGreaterThan(.3);
     expect(g.ai.has(slots[0].entity!)).toBe(false);
   });
   it('fails blocked placement atomically without spending cooldown',()=>{
@@ -43,7 +43,7 @@ describe('Architect arsenal',()=>{
     expect(s.activateSkill(4)).toBe(true);run(g,2);
     expect(slot.state).toBe('docked');expect(slot.hp).toBe(20000);
     expect(s.turrets[0].disabled).toBe(0);expect(s.turrets[0].reload).toBeGreaterThan(2.9);
-    run(g,3);expect(slot.hp).toBeGreaterThan(20000);expect(slot.hp).toBeLessThanOrEqual(50000);
+    run(g,3);expect(slot.hp).toBeGreaterThan(20000);expect(slot.hp).toBeLessThanOrEqual(200000);
   });
   it('rebuilds destroyed platforms after twelve seconds without kill or score rewards',()=>{
     const {g,s,t}=deploy();const slot=s.architect!.slots[0],m=slot.entity!;
@@ -52,7 +52,7 @@ describe('Architect arsenal',()=>{
     expect(slot.state).toBe('destroyed');expect(t.stats.kills).toBe(0);expect(t.hp).toBe(hp);expect(g.score).toEqual([0,0]);
     expect(t.meter).toBeGreaterThanOrEqual(meter);
     run(g,11.9);expect(slot.state).toBe('destroyed');
-    run(g,0.1);expect(slot.state).toBe('docked');expect(slot.hp).toBeGreaterThan(0);expect(slot.hp).toBeLessThanOrEqual(50000);
+    run(g,0.1);expect(slot.state).toBe('docked');expect(slot.hp).toBeGreaterThan(0);expect(slot.hp).toBeLessThanOrEqual(200000);
   });
   it('credits actual platform damage once to the owner and charges its ultimate',()=>{
     const {g,s,t}=deploy();const m=s.architect!.slots[0].entity!;
