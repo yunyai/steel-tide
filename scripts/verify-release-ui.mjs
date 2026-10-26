@@ -122,14 +122,14 @@ try {
     await page.waitForFunction(() => window.steel.net.client.lobby.settings.shiftTempo === 'long');
     const scroll = await page.evaluate(() => {
       document.querySelector('.lan-room-body').scrollTop = 80;
-      document.querySelector('.fleet-detail').scrollTop = 150;
-      return [...document.querySelectorAll('.lan-room-body,.fleet-detail')].map(e => e.scrollTop);
+      document.querySelector('.fleet-slots').scrollTop = 150;
+      return [...document.querySelectorAll('.lan-room-body,[data-scroll-key]')].map(e => e.scrollTop);
     });
     await page.evaluate(() => window.steel.net.client.send({ t: 'settings', s: { shiftTempo: 'burst' } }));
     await page.waitForFunction(() => window.steel.net.client.lobby.settings.shiftTempo === 'burst');
-    const restored = await page.evaluate(() => [...document.querySelectorAll('.lan-room-body,.fleet-detail')].map(e => e.scrollTop));
+    const restored = await page.evaluate(() => [...document.querySelectorAll('.lan-room-body,[data-scroll-key]')].map(e => e.scrollTop));
     check(JSON.stringify(restored) === JSON.stringify(scroll), 'Lobby refresh must preserve scroll position');
-    await page.locator('.lan-room-body,.fleet-detail').evaluateAll(es => es.forEach(e => e.scrollTop = 0));
+    await page.locator('.lan-room-body,[data-scroll-key]').evaluateAll(es => es.forEach(e => e.scrollTop = 0));
     await shot('lan-room');
     await page.locator('.lan-room-body').evaluate(e => e.scrollTop = e.scrollHeight);
     await shot('lan-room-bottom');

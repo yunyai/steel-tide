@@ -130,8 +130,9 @@ export function buildRoster(config: BattleConfig, rng: () => number): RosterEntr
     let botIndex = 0;
     groups.forEach((g, i) => {
       if (slots[i]) return;
-      const chosen = selectedAI(config.aiSelection?.[team], botIndex, config.era ?? 'historic', config.titans !== false, rng, () => randomOf(g, rng, config.era));
-      const id = config.resolvedAI?.[team][botIndex++];
+      const index = botIndex++;
+      const chosen = selectedAI(config.aiSelection?.[team], index, config.era ?? 'historic', config.titans !== false, rng, () => randomOf(g, rng, config.era));
+      const id = config.resolvedAI?.[team][index];
       const spec = id && Object.hasOwn(SHIP_BY_ID, id) ? SHIP_BY_ID[id] : chosen;
       slots[i] = { team, spec, humanIndex: -1, name: takeName() };
     });

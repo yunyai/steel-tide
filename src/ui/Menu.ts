@@ -330,7 +330,7 @@ export class Menu {
       for (const t of [0, 1] as const) fleetControls.append(fleetEditor(t === 0 ? 'Allied AI' : 'Enemy AI', d.era ?? 'historic', true, d.aiSelection?.[t], counts[t], value => {
         d.aiSelection ??= [{ mode: 'auto' }, { mode: 'auto' }];
         d.aiSelection[t] = value;
-      }));
+      }, t === 1 && counts[t] > 0 && SHIP_BY_ID[d.players[0].shipId].cls === 'TT' ? 2 : 0));
     };
     const notes = () => {
       renderFleets();
@@ -380,13 +380,13 @@ export class Menu {
             () => d.era ?? 'historic',
             (v) => {
               d.era = v;
-              renderFleets();
               eraNote.textContent = eraBlurb(v);
               tempo.hidden = !shifting(v);
               // The captain's ship has to come from the era too.
               const pc = d.players[0];
               const cur = SHIP_BY_ID[pc.shipId];
               if (v !== 'mixed' && eraOf(cur) !== v) pc.shipId = eraDefault(v, cur).id;
+              renderFleets();
             },
           ),
           eraNote,

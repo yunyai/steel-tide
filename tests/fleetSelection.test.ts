@@ -10,6 +10,21 @@ import { randomShip } from '../src/core/FleetSelection';
 const config = (): BattleConfig => ({ mode: 'solo', type: 'annihilation', mapId: 'open', teamSize: 1, ai: [2, 3], era: 'historic', difficulty: 'normal', seed: 27, players: [{ shipId: 'leviathan', device: 'mouse' }] });
 
 describe('fleet selection', () => {
+  it('uses each solo assignment once, including automatic gaps', () => {
+    const c = { ...config(), ai: [0, 3] as [number, number], players: [{ shipId: 'iowa', device: 'mouse' as const }] };
+    c.aiSelection = [{ mode: 'auto' }, { mode: 'assign', slots: ['queenElizabeth', null, 'gato'] }];
+    c.era = 'mixed';
+    const enemies = buildRoster(c, makeRng(1)).filter(s => s.team === 1);
+    expect(enemies.map(s => s.spec.id)).toEqual(['queenElizabeth', expect.any(String), 'gato']);
+    expect(enemies.filter(s => s.spec.id === 'queenElizabeth')).toHaveLength(1);
+  });
+  it('keeps one requested assignment and uses automatic ships for titan compensation', () => {
+    const c = { ...config(), era: 'mixed' as const, ai: [0, 1] as [number, number], players: [{ shipId: 'stepper', device: 'mouse' as const }] };
+    c.aiSelection = [{ mode: 'auto' }, { mode: 'assign', slots: ['queenElizabeth'] }];
+    const enemies = new Game(c).fleet.filter(s => s.team === 1);
+    expect(enemies).toHaveLength(3);
+    expect(enemies.filter(s => s.spec.id === 'queenElizabeth')).toHaveLength(1);
+  });
   it('chooses an eligible random line ship immediately and never rerolls it on respawn', () => {
     const rng = makeRng(3);
     for (let i = 0; i < 100; i++) expect(randomShip('mixed', rng)?.cls).not.toBe('TT');

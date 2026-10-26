@@ -457,6 +457,7 @@ select {
   flex-direction: column;
   min-height: 0;
   padding: 16px 0 12px;
+  container-type: inline-size;
 }
 
 .roster h3 {
@@ -467,31 +468,39 @@ select {
 
 .class-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 3px;
-  margin: 0 12px 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 16px 16px;
+  flex-shrink: 0;
 }
 
 .class-tabs button {
   border: 0;
-  padding: 0.42em 0.3em;
+  min-height: 40px;
+  padding: 8px 4px;
   font-family: var(--display);
   font-weight: 700;
   font-size: 0.85rem;
   color: var(--mute);
   background: rgba(77, 232, 255, 0.06);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
+
+.class-tabs button:only-child { grid-column: 1 / -1; }
 
 .class-tabs button[aria-pressed='true'] {
   color: var(--abyss);
   background: var(--cyan);
 }
 
-/* Six eras: each tab takes the width its name needs, so none wraps or clips. */
+/* Two rows keep six eras distinct, including with wider fallback fonts. */
 .era-tabs {
-  display: flex;
-  gap: 2px;
-  margin: 0 12px 6px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 16px 16px;
+  flex-shrink: 0;
 }
 
 .era-tabs[hidden] {
@@ -500,16 +509,17 @@ select {
 
 .era-tabs button {
   --era: var(--cyan);
-  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 36px;
   white-space: nowrap;
   border: 0;
   border-bottom: 2px solid transparent;
-  padding: 0.38em 0.15em;
+  padding: 7px 4px;
   font-family: var(--display);
   font-weight: 700;
   font-size: 0.8rem;
   color: var(--mute);
-  background: transparent;
+  background: rgba(77, 232, 255, 0.04);
 }
 
 .era-tabs button[aria-pressed='true'] {
@@ -3043,7 +3053,7 @@ select {
 }
 
 .sheet.lan.room {
-  width: min(1080px, 96vw);
+  width: min(1440px, 96vw);
 }
 
 .lan input[type='text'] {
@@ -3745,17 +3755,45 @@ select {
 .hangar-foot { flex-wrap: wrap; }
 .hangar-bottom > .error:empty { display: none; }
 .error { color: var(--amber); }
-.fleet-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.fleet-editor { min-width: 0; }
-.fleet-editor h3 { margin: 16px 0 8px; font-family: var(--display); }
-.fleet-editor .seg { flex-wrap: wrap; }
-.fleet-detail { max-height: 280px; overflow: auto; padding: 4px 8px 0 0; }
+.fleet-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.fleet-editor { min-width: 0; container-type: inline-size; border-top: 1px solid var(--edge); padding-top: 16px; margin-top: 16px; }
+.fleet-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.fleet-editor h3 { margin: 0; font-family: var(--display); font-size: 1.1rem; }
+.fleet-count { color: var(--mute); font-size: 0.85rem; }
+.fleet-editor .fleet-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 12px 0 16px; }
+.fleet-editor .fleet-modes button { min-height: 40px; padding: 8px; font-size: 0.9rem; }
+.fleet-detail { padding: 0; }
 .fleet-detail select { width: 100%; min-width: 0; }
-.fleet-detail select[multiple] { min-height: 120px; padding: 6px; }
-.fleet-detail option { padding: 5px 8px; }
-.fleet-detail .field { margin-top: 8px; }
+.fleet-detail .note { color: var(--mute); line-height: 1.4; font-size: 0.9rem; }
+.fleet-detail .error { color: var(--amber); }
+.fleet-pool-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.fleet-pool-toolbar .btn { padding: 6px 10px; font-size: 0.85rem; }
+.fleet-pool-count { flex: 1; min-width: 140px; margin: 0; color: var(--ice); font-size: 0.9rem; }
+.fleet-pool-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 0.6fr); gap: 8px; margin: 12px 0; }
+.fleet-pool-filters input { min-width: 0; width: 100%; border: 1px solid var(--edge); padding: 9px 10px; background: var(--abyss-2); color: var(--ice); font: inherit; }
+.fleet-pool-filters input::placeholder { color: var(--mute); }
+.fleet-pool, .fleet-slots { max-height: 280px; overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--cyan-dim) var(--abyss-2); padding-right: 6px; }
+.fleet-pool { border-block: 1px solid var(--edge); }
+.fleet-pool-choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px; cursor: pointer; }
+.fleet-pool-choice:hover { background: rgba(77, 232, 255, 0.08); }
+.fleet-pool-choice:has(input:checked) { background: rgba(77, 232, 255, 0.12); }
+.fleet-pool-choice input { width: 18px; height: 18px; margin: 0; accent-color: var(--cyan); cursor: pointer; }
+.fleet-pool-choice b, .fleet-pool-choice small { display: block; overflow-wrap: anywhere; }
+.fleet-pool-choice b { font-family: var(--display); font-size: 0.95rem; }
+.fleet-pool-choice small { margin-top: 3px; color: var(--mute); font-size: 0.8rem; }
+.fleet-slots { display: grid; gap: 10px; margin-bottom: 16px; }
+.fleet-slot { display: grid; grid-template-columns: 60px minmax(0, 1fr); align-items: center; gap: 12px; }
+.fleet-slot label { font-family: var(--display); color: var(--mute); font-size: 0.9rem; }
+.fleet-slot select { min-height: 40px; }
+.fleet-reinforcements { color: var(--amber); line-height: 1.4; font-size: 0.9rem; }
+.roster .kind-switch { margin: 0 16px 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.roster .kind-switch button { min-height: 40px; padding: 8px; font-size: 0.85rem; }
 .lan-room { align-items: start; }
+.lan-room-body { container-type: inline-size; }
 .lan-teams > * { min-width: 0; }
+@container (max-width: 1200px) { .lan-teams { grid-template-columns: minmax(0, 1fr); gap: 24px; } }
+@container (max-width: 420px) { .fleet-editor .fleet-modes { grid-template-columns: minmax(0, 1fr); } .fleet-pool-filters { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 280px) { .roster .era-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .status-row { flex-wrap: wrap; max-height: 74px; overflow: auto; }
 .status-row span { flex: 0 1 auto; }
 .skillbar.titan { flex-wrap: wrap; row-gap: 4px; }

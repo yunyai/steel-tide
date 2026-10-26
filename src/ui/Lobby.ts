@@ -117,15 +117,21 @@ export class Lobby {
     // Re-rendering replaces the buttons; keep keyboard focus on the same one.
     const focused = (document.activeElement as HTMLElement | null)?.dataset?.k;
     const menuOption = (document.activeElement as HTMLElement | null)?.dataset?.menuOption;
-    const typing = document.activeElement instanceof HTMLInputElement && this.root.contains(document.activeElement);
+    const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'text' && this.root.contains(document.activeElement);
     if (typing) return this.renderStatusOnly();
     const lobby = this.net.status === 'online' ? this.net.lobby : null;
     const view = lobby ? `room-${lobby.id}` : 'list';
-    const scrollers = () => Array.from(this.root.querySelectorAll<HTMLElement>('.lan-room-body, .fleet-detail'));
-    const scroll = view === this.view ? scrollers().map(el => ({ top: el.scrollTop, left: el.scrollLeft })) : [];
+    const scrollers = () => Array.from(this.root.querySelectorAll<HTMLElement>('.lan-room-body, [data-scroll-key]'));
+    const scroll = new Map(view === this.view ? scrollers().map(el => [el.dataset.scrollKey ?? 'room', { top: el.scrollTop, left: el.scrollLeft }]) : []);
+    const filters = Array.from(this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.fleet-pool-filters [data-k]')).map(el => ({ key: el.dataset.k!, value: el.value }));
     this.root.replaceChildren(lobby ? this.room(lobby) : this.list());
-    scrollers().forEach((el, i) => {
-      if (scroll[i]) { el.scrollTop = scroll[i].top; el.scrollLeft = scroll[i].left; }
+    for (const f of filters) {
+      const el = this.root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-k="${CSS.escape(f.key)}"]`);
+      if (el) { el.value = f.value; el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input')); }
+    }
+    scrollers().forEach(el => {
+      const position = scroll.get(el.dataset.scrollKey ?? 'room');
+      if (position) { el.scrollTop = position.top; el.scrollLeft = position.left; }
     });
     // The default focus only on arriving at a screen, never on a refresh of the same one.
     const el = focused ? this.root.querySelector<HTMLElement>(`[data-k="${CSS.escape(focused)}"]`) : view !== this.view ? this.root.querySelector<HTMLElement>('[data-focus]') : null;
@@ -311,7 +317,7 @@ export class Lobby {
         const aiSelection: NonNullable<LobbySettings['aiSelection']> = structuredClone(st.aiSelection ?? [{ mode: 'auto' }, { mode: 'auto' }]);
         aiSelection[t] = value;
         set({ aiSelection });
-      }));
+      }, extra));
       else if (st.aiSelection?.[t]) col.append(h('p', { class: 'note' }, `AI selection: ${st.aiSelection[t].mode}`));
       return col;
     };
