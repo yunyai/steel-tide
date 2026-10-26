@@ -1,402 +1,342 @@
 import { Vector3 } from 'three';
 import { sound } from '../input/Settings';
+import { allAudioAssets, cueAsset, LOOP_ASSETS, recordedFallbacks, UI_ASSETS, worldAsset, worldCategory, type AudioBattleMode, type CueEvent, type CueFamily, type LoopKind, type SoundKind, type UiSound } from './SoundCues';
+import { VoiceBudget, type AudioCategory } from './VoiceBudget';
+export type { SoundKind, UiSound } from './SoundCues';
 
-// Procedural WebAudio sound: no asset files. Distance attenuation, air
-// absorption (low-pass) and speed-of-sound delay, so far salvos rumble late.
-
-export type SoundKind = 'gun' | 'explosion' | 'splash' | 'hit' | 'torpedo' | 'missile' | 'flak' | 'depth' | 'zap' | 'thunder' | 'laser' | 'nuke' | 'shield' | 'charge' | 'ricochet' | 'collapse';
-
-export type UiSound =
-  | 'click'
-  | 'ribbon'
-  | 'alarm'
-  | 'ability'
-  | 'ult'
-  | 'capture'
-  | 'victory'
-  | 'defeat'
-  | 'citadel'
-  | 'warning'
-  | 'pickup'
-  | 'siren'
-  | 'horn'
-  | 'heartbeat'
-  | 'ultReady'
-  | 'streak'
-  | 'shift'
-  | 'unshift';
-
+// Every audible source is a decoded recording. Filters, gain and pitch shape those recordings;
+// no oscillators or generated noise remain, including when an asset is unavailable.
 const SOUND_SPEED = 343 * 1.6;
+const MAX_PENDING = 12;
+interface PendingSound {
+  urls: string[];
+  key: string;
+  priority: number;
+  expires: number;
+  generation: number;
+  run(buffer: AudioBuffer): void;
+}
+interface LoopVoice { source: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode; stop(): void }
+interface SampleOptions {
+  bus: AudioNode;
+  category: AudioCategory;
+  priority: number;
+  key: string;
+  gain: number;
+  rate?: number;
+  delay?: number;
+  pan?: number;
+  cutoff?: number;
+  duration?: number;
+}
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
-  /** World sounds, the sea and the engine. */
   private effects!: GainNode;
-  /** Interface sounds. */
+  private weapons!: GainNode;
+  private abilities!: GainNode;
+  private ambience!: GainNode;
   private uiBus!: GainNode;
-  private noise!: AudioBuffer;
-  private brown!: AudioBuffer;
-  private engineGain: GainNode | null = null;
-  private engineFilter: BiquadFilterNode | null = null;
-  private voices = 0;
+  private budget = new VoiceBudget();
+  private sources = new Set<AudioBufferSourceNode>();
+  private buffers = new Map<string, AudioBuffer>();
+  private fetches = new Map<string, Promise<ArrayBuffer | null>>();
+  private loops = new Map<LoopKind, LoopVoice>();
+  private pending: PendingSound[] = [];
+  private loading: Promise<void> | null = null;
+  private loaded = false;
+  private failed = new Set<string>();
+  private battleActive = false;
+  private battleMode: AudioBattleMode = 'naval';
+  private generation = 0;
+  private engineLevel = 0;
+  private duckUntil = 0;
   muted = false;
-  /** Listener positions (one per viewport). */
   listeners: Vector3[] = [];
-  /** Listener right vector when there is a single viewport (for panning). */
   right = new Vector3(1, 0, 0);
 
-  /** Must be called from a user gesture. */
+  /** Fetch before the first gesture; decoding still waits for the unlocked AudioContext. */
+  prepare(): Promise<void> {
+    for (const url of allAudioAssets()) {
+      if (this.fetches.has(url)) continue;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      this.fetches.set(url, fetch(url, { signal: controller.signal })
+        .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null).finally(() => clearTimeout(timer)));
+    }
+    return Promise.all(this.fetches.values()).then(() => {});
+  }
+
+  /** Must be called from a user gesture. Safe before or after a battle starts. */
   init(): void {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
+      if (this.ctx.state === 'suspended') void this.ctx.resume().then(() => this.ensureLoops()).catch(() => {});
       return;
     }
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AC) return;
-    const ctx = new AC();
-    this.ctx = ctx;
+    const ctx = this.ctx = new AC();
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 6;
     comp.attack.value = 0.003;
     comp.release.value = 0.25;
-    comp.connect(ctx.destination);
+    const limiter = ctx.createWaveShaper();
+    const curve = new Float32Array(2049);
+    for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(((i / (curve.length - 1)) * 2 - 1) * 1.4) * 0.92;
+    limiter.curve = curve;
+    limiter.oversample = '4x';
+    comp.connect(limiter).connect(ctx.destination);
     this.master = ctx.createGain();
     this.master.connect(comp);
     this.effects = ctx.createGain();
     this.effects.connect(this.master);
+    this.weapons = ctx.createGain();
+    this.weapons.connect(this.effects);
+    this.abilities = ctx.createGain();
+    this.abilities.connect(this.effects);
+    this.ambience = ctx.createGain();
+    this.ambience.connect(this.effects);
     this.uiBus = ctx.createGain();
     this.uiBus.connect(this.master);
     this.applySound();
-
-    const len = ctx.sampleRate * 2;
-    this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = this.noise.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    this.brown = ctx.createBuffer(1, len, ctx.sampleRate);
-    const b = this.brown.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < len; i++) {
-      last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
-      b[i] = last * 3.5;
-    }
-    this.startAmbience();
+    void this.prepare();
+    this.loading = Promise.all([...this.fetches].map(async ([url, request]) => {
+      const data = await request;
+      if (!data) { this.failed.add(url); this.flushPending(); this.ensureLoops(); return; }
+      try {
+        this.buffers.set(url, await ctx.decodeAudioData(data.slice(0)));
+        this.flushPending();
+        this.ensureLoops();
+      } catch { this.failed.add(url); this.flushPending(); this.ensureLoops(); }
+    })).then(() => {
+      this.loaded = true;
+      this.flushPending();
+      this.ensureLoops();
+    });
   }
 
-  /** Take up the volumes from the sound settings. */
-  applySound(): void {
-    if (!this.ctx) return;
-    const v = sound();
-    this.master.gain.value = this.muted ? 0 : v.master;
-    this.effects.gain.value = v.effects;
-    this.uiBus.gain.value = v.ui;
+  /** After init, waits until every asset has decoded or failed. */
+  ready(): Promise<void> { return this.loading ?? this.prepare(); }
+
+  beginBattle(mode: AudioBattleMode = 'naval'): void {
+    this.stopBattle();
+    this.battleMode = mode;
+    this.battleActive = true;
+    this.engineLevel = 0;
+    this.ensureLoops();
   }
 
-  toggleMute(): void {
-    this.muted = !this.muted;
+  stopBattle(): void {
+    this.battleActive = false;
+    this.generation++;
+    this.pending = [];
+    this.budget.clear();
+    for (const loop of [...this.loops.values()]) loop.stop();
+    for (const source of this.sources) { try { source.stop(); } catch { /* Already ended. */ } source.disconnect(); }
+    this.sources.clear();
+    this.loops.clear();
+    this.duckUntil = 0;
     this.applySound();
   }
 
-  private startAmbience(): void {
-    const ctx = this.ctx!;
-    const sea = ctx.createBufferSource();
-    sea.buffer = this.brown;
-    sea.loop = true;
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = 380;
-    const g = ctx.createGain();
-    g.gain.value = 0.12;
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.13;
-    const lg = ctx.createGain();
-    lg.gain.value = 0.06;
-    lfo.connect(lg).connect(g.gain);
-    sea.connect(f).connect(g).connect(this.effects);
-    sea.start();
-    lfo.start();
-
-    const eng = ctx.createBufferSource();
-    eng.buffer = this.brown;
-    eng.loop = true;
-    this.engineFilter = ctx.createBiquadFilter();
-    this.engineFilter.type = 'lowpass';
-    this.engineFilter.frequency.value = 120;
-    this.engineGain = ctx.createGain();
-    this.engineGain.gain.value = 0;
-    eng.connect(this.engineFilter).connect(this.engineGain).connect(this.effects);
-    eng.start();
+  applySound(): void {
+    if (!this.ctx || this.ctx.state === 'closed') return;
+    const v = sound();
+    this.master.gain.value = this.muted ? 0 : v.master;
+    this.effects.gain.value = v.effects;
+    this.weapons.gain.value = v.weapons;
+    this.abilities.gain.value = v.abilities;
+    const t = this.ctx.currentTime;
+    const ducked = this.duckUntil > t;
+    this.ambience.gain.cancelScheduledValues(t);
+    this.ambience.gain.setTargetAtTime(v.ambience * (ducked ? 0.28 : 1), t, 0.03);
+    // Audio-time automation pauses and resumes with the context, including on system sleep.
+    if (ducked) this.ambience.gain.setTargetAtTime(v.ambience, this.duckUntil, 0.12);
+    this.uiBus.gain.value = v.ui;
   }
 
-  /** Engine rumble for the local player(s), 0..1. */
-  engine(level: number): void {
-    if (!this.ctx || !this.engineGain || !this.engineFilter) return;
+  toggleMute(): void { this.muted = !this.muted; this.applySound(); }
+
+  private duck(): void {
+    if (!this.ctx) return;
+    this.duckUntil = this.ctx.currentTime + 1.8;
+    this.applySound();
+  }
+
+  private bufferFor(urls: string[]): AudioBuffer | undefined {
+    for (const url of urls) { const b = this.buffers.get(url); if (b) return b; }
+    return undefined;
+  }
+
+  private request(url: string, category: AudioCategory, priority: number, key: string, run: (buffer: AudioBuffer) => void): void {
+    const urls = recordedFallbacks(category, url);
+    const buffer = this.buffers.get(url) ?? (this.loaded || this.failed.has(url) ? this.bufferFor(urls) : undefined);
+    if (buffer) { run(buffer); return; }
+    if (this.loaded || category === 'weapon' && priority < 2) return;
+    const now = performance.now();
+    this.pending = this.pending.filter(p => p.expires > now && p.generation === this.generation);
+    if (this.pending.some(p => p.key === key)) return;
+    if (this.pending.length >= MAX_PENDING) {
+      const lowest = this.pending.reduce((a, b) => a.priority <= b.priority ? a : b);
+      if (lowest.priority >= priority) return;
+      this.pending = this.pending.filter(p => p !== lowest);
+    }
+    this.pending.push({ urls, key, priority, generation: this.generation, expires: now + (category === 'ui' ? 1000 : category === 'ability' ? 350 : 200), run });
+  }
+
+  private flushPending(): void {
+    const now = performance.now();
+    const waiting = this.pending;
+    this.pending = [];
+    for (const p of waiting) {
+      if (p.generation !== this.generation || p.expires <= now || this.ctx?.state !== 'running') continue;
+      const primary = p.urls[0];
+      const buffer = this.buffers.get(primary) ?? (this.loaded || this.failed.has(primary) ? this.bufferFor(p.urls) : undefined);
+      if (buffer) p.run(buffer);
+      else if (!this.loaded) this.pending.push(p);
+    }
+  }
+
+  private ensureLoops(): void {
+    if (!this.battleActive || this.ctx?.state !== 'running') return;
+    const ambient: LoopKind = this.battleMode === 'naval' ? 'sea' : 'wind';
+    const engine: LoopKind = this.battleMode === 'naval' ? 'navalEngine' : 'groundEngine';
+    this.startLoop(ambient, this.buffers.get(LOOP_ASSETS[ambient]), 0.38);
+    // The two engine recordings are suitable recorded fallbacks for each other.
+    const primary = LOOP_ASSETS[engine];
+    const fallback = this.loaded || this.failed.has(primary) ? this.buffers.get(LOOP_ASSETS[engine === 'navalEngine' ? 'groundEngine' : 'navalEngine']) : undefined;
+    this.startLoop(engine, this.buffers.get(primary) ?? fallback, 0);
+    this.updateEngine();
+  }
+
+  private startLoop(kind: LoopKind, buffer: AudioBuffer | undefined, volume: number): void {
+    if (!buffer || !this.ctx || this.loops.has(kind)) return;
+    const source = this.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = kind === 'sea' || kind === 'wind' ? 12000 : 1000;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0, this.ctx.currentTime);
+    gain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.3);
+    source.connect(filter).connect(gain).connect(this.ambience);
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      try { source.stop(); } catch { /* Not started or already ended. */ }
+      source.disconnect(); filter.disconnect(); gain.disconnect();
+      this.sources.delete(source); this.loops.delete(kind);
+    };
+    source.onended = stop;
+    this.sources.add(source);
+    this.loops.set(kind, { source, filter, gain, stop });
+    source.start();
+  }
+
+  engine(level: number): void { this.engineLevel = Math.max(0, Math.min(1, level)); this.updateEngine(); }
+
+  private updateEngine(): void {
+    if (!this.ctx) return;
+    const loop = this.loops.get(this.battleMode === 'naval' ? 'navalEngine' : 'groundEngine');
+    if (!loop) return;
     const t = this.ctx.currentTime;
-    this.engineGain.gain.setTargetAtTime(0.05 + level * 0.25, t, 0.4);
-    this.engineFilter.frequency.setTargetAtTime(90 + level * 160, t, 0.4);
+    loop.gain.gain.setTargetAtTime(0.12 + this.engineLevel * 0.55, t, 0.3);
+    loop.source.playbackRate.setTargetAtTime(0.78 + this.engineLevel * 0.48, t, 0.4);
+    loop.filter.frequency.setTargetAtTime(500 + this.engineLevel * 1400, t, 0.4);
   }
 
   private nearest(x: number, y: number, z: number): { d: number; pan: number } {
-    let best = Infinity;
-    let pan = 0;
+    let d = Infinity, pan = 0;
     for (const l of this.listeners) {
-      const dx = x - l.x;
-      const dy = y - l.y;
-      const dz = z - l.z;
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (d < best) {
-        best = d;
-        if (this.listeners.length === 1 && d > 1) pan = (dx * this.right.x + dz * this.right.z) / d;
-      }
+      const dx = x - l.x, dy = y - l.y, dz = z - l.z;
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance >= d) continue;
+      d = distance;
+      if (this.listeners.length === 1 && d > 1) pan = (dx * this.right.x + dz * this.right.z) / d;
     }
-    return { d: best === Infinity ? 0 : best, pan };
+    return { d: d === Infinity ? 0 : d, pan };
   }
 
-  /** Spatial one-shot. `size` is calibre in mm for guns/splashes, scale for explosions. */
-  play(kind: SoundKind, x: number, y: number, z: number, size = 100, gain = 1): void {
-    const ctx = this.ctx;
-    if (!ctx || this.muted || ctx.state !== 'running') return;
+  /** One decoded recording per voice, with physical attenuation and a short bounded delay. */
+  play(kind: SoundKind, x: number, y: number, z: number, size = 100, gain = 1, options: { category?: AudioCategory; priority?: number; asset?: string } = {}): void {
+    if (!this.ctx || !this.battleActive || this.muted || this.ctx.state !== 'running') return;
     const { d, pan } = this.nearest(x, y, z);
     const c = size / 1000;
     const reach = kind === 'gun' ? 900 + c * 9000 : kind === 'explosion' ? 2500 * Math.max(0.5, size) : kind === 'splash' ? 400 + c * 3000 : 1500;
     const vol = gain / (1 + Math.pow(d / reach, 1.5));
     if (vol < 0.015) return;
-    if (this.voices > 40 && vol < 0.25) return;
-    const t0 = ctx.currentTime + Math.min(4, d / SOUND_SPEED);
-    const air = ctx.createBiquadFilter();
-    air.type = 'lowpass';
-    air.frequency.value = Math.max(260, 14000 / (1 + d / 900));
-    const out = ctx.createGain();
-    out.gain.value = vol;
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = Math.max(-1, Math.min(1, pan * 0.8));
-    air.connect(out).connect(panner).connect(this.effects);
-    let dur = 1;
-    switch (kind) {
-      case 'gun':
-        dur = 0.4 + c * 2.8;
-        this.burst(air, t0, 'lowpass', 400 + 2200 * (1 - Math.min(1, c * 2)), 0.002, dur * 0.6, 1.1);
-        this.thump(air, t0, 95 - c * 90, 32, 0.9, dur);
-        break;
-      case 'explosion':
-        dur = 1.6 + size * 0.5;
-        this.burst(air, t0, 'lowpass', 700, 0.01, dur, 1.3);
-        this.thump(air, t0, 60, 25, 1.2, dur * 0.8);
-        break;
-      case 'splash':
-        dur = 0.6 + c * 1.6;
-        this.burst(air, t0, 'bandpass', 700 + 900 * (1 - c), 0.04, dur, 0.8);
-        break;
-      case 'hit':
-        dur = 0.5;
-        this.burst(air, t0, 'highpass', 1400, 0.001, 0.25, 0.9);
-        this.tone(air, t0, 'triangle', 380 + Math.random() * 200, 0.4, 0.35);
-        this.thump(air, t0, 80, 40, 0.6, 0.4);
-        break;
-      case 'torpedo':
-        dur = 0.8;
-        this.thump(air, t0, 140, 50, 0.7, 0.5);
-        this.burst(air, t0 + 0.05, 'bandpass', 1800, 0.05, 0.7, 0.4);
-        break;
-      case 'missile':
-        dur = 2.5;
-        this.burst(air, t0, 'bandpass', 1200, 0.2, 2.4, 0.7);
-        break;
-      case 'flak':
-        dur = 0.4;
-        this.burst(air, t0, 'lowpass', 1600, 0.001, 0.35, 0.6);
-        break;
-      case 'depth':
-        dur = 1.8;
-        this.thump(air, t0, 50, 22, 1.3, 1.6);
-        this.burst(air, t0 + 0.1, 'lowpass', 500, 0.08, 1.6, 0.7);
-        break;
-      case 'zap':
-        dur = 0.3;
-        this.tone(air, t0, 'sawtooth', 1800, 0.25, 0.18, 300);
-        this.burst(air, t0, 'highpass', 3000, 0.001, 0.12, 0.4);
-        break;
-      case 'thunder':
-        dur = 1.6;
-        this.burst(air, t0, 'highpass', 2200, 0.001, 0.18, 1.1);
-        this.burst(air, t0 + 0.05, 'lowpass', 900, 0.02, 1.4, 1.0);
-        this.thump(air, t0, 70, 30, 0.8, 1.2);
-        break;
-      case 'laser':
-        // `size` is the beam's duration in seconds: a hum that holds, then dies.
-        dur = size + 0.6;
-        this.tone(air, t0, 'sawtooth', 110, 0.22, dur, 90);
-        this.tone(air, t0, 'square', 220, 0.08, dur, 180);
-        this.burst(air, t0, 'bandpass', 2600, 0.05, dur, 0.35);
-        break;
-      case 'charge':
-        dur = Math.max(0.5, size);
-        this.tone(air, t0, 'sawtooth', 80, 0.18, dur, 900);
-        this.tone(air, t0, 'sine', 160, 0.2, dur, 1800);
-        break;
-      case 'nuke':
-        dur = 5;
-        this.thump(air, t0, 45, 16, 1.6, 4.5);
-        this.burst(air, t0, 'lowpass', 400, 0.05, 4.8, 1.5);
-        this.burst(air, t0 + 0.3, 'bandpass', 900, 0.4, 3, 0.6);
-        break;
-      case 'ricochet':
-        // A whine off the plate as the round skips away.
-        dur = 0.6;
-        this.burst(air, t0, 'highpass', 2400, 0.001, 0.08, 0.8);
-        this.tone(air, t0, 'sine', 2600 + Math.random() * 900, 0.25, 0.55, 900);
-        break;
-      case 'collapse':
-        // `size` scales the building: a long grinding roar of masonry.
-        dur = 2.2 + size * 0.6;
-        this.thump(air, t0, 55, 24, 1.1, dur * 0.6);
-        this.burst(air, t0, 'lowpass', 500, 0.08, dur, 1.2);
-        this.burst(air, t0 + 0.25, 'bandpass', 1300, 0.3, dur * 0.7, 0.45);
-        break;
-      case 'shield':
-        dur = 0.5;
-        this.tone(air, t0, 'sine', 1400, 0.2, 0.35, 700);
-        this.tone(air, t0, 'triangle', 2100, 0.08, 0.25);
-        break;
-    }
-    this.voices++;
-    window.setTimeout(() => {
-      this.voices--;
-      out.disconnect();
-    }, (t0 - ctx.currentTime + dur + 0.3) * 1000);
+    const category = options.category ?? worldCategory(kind);
+    const priority = options.priority ?? (d < 700 ? 2 : vol > 0.25 ? 1 : 0);
+    const key = `${kind}:${Math.floor(x / 500)}:${Math.floor(z / 500)}`;
+    const generation = this.generation;
+    this.request(options.asset ?? worldAsset(kind, size), category, priority, key, buffer => {
+      if (!this.battleActive || generation !== this.generation || this.muted) return;
+      this.sample(buffer, {
+        bus: category === 'ability' ? this.abilities : this.weapons, category, priority, key, gain: vol,
+        pan: Math.max(-1, Math.min(1, pan * 0.8)), cutoff: Math.max(260, 14000 / (1 + d / 900)),
+        delay: priority >= 2 ? Math.min(0.08, d / SOUND_SPEED) : Math.min(0.35, d / SOUND_SPEED),
+        rate: kind === 'explosion' ? size < 0.7 ? 1.15 : size > 2 ? 0.85 : 1 : 1,
+        duration: (kind === 'laser' || kind === 'charge') && size < 20 ? Math.max(0.2, Math.min(12, size)) : undefined,
+      });
+    });
   }
 
-  private burst(dest: AudioNode, t0: number, type: BiquadFilterType, freq: number, attack: number, decay: number, peak: number): void {
-    const ctx = this.ctx!;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    src.loop = true;
-    src.playbackRate.value = 0.8 + Math.random() * 0.4;
-    const f = ctx.createBiquadFilter();
-    f.type = type;
-    f.frequency.value = freq;
-    f.Q.value = type === 'bandpass' ? 0.8 : 0.7;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(peak, t0 + attack);
-    g.gain.exponentialRampToValueAtTime(0.0005, t0 + attack + decay);
-    src.connect(f).connect(g).connect(dest);
-    src.start(t0, Math.random() * 1.5);
-    src.stop(t0 + attack + decay + 0.05);
+  cue(ability: string, event: CueEvent, family: CueFamily, x: number, y: number, z: number, local = false): void {
+    const kind: Record<CueFamily, SoundKind> = { charge: 'charge', impact: 'explosion', beam: 'laser', slash: 'zap', transform: 'thunder' };
+    this.play(kind[family], x, y, z, family === 'charge' || family === 'beam' ? 1.2 : 2, local ? 0.8 : 0.45, { category: 'ability', priority: local ? 3 : 1, asset: cueAsset(ability, event, family) });
   }
 
-  private thump(dest: AudioNode, t0: number, f0: number, f1: number, peak: number, decay: number): void {
-    const ctx = this.ctx!;
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(Math.max(20, f0), t0);
-    o.frequency.exponentialRampToValueAtTime(Math.max(18, f1), t0 + decay);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0005, t0 + decay);
-    o.connect(g).connect(dest);
-    o.start(t0);
-    o.stop(t0 + decay + 0.05);
-  }
-
-  private tone(dest: AudioNode, t0: number, type: OscillatorType, freq: number, peak: number, decay: number, freq1 = freq): void {
-    const ctx = this.ctx!;
-    const o = ctx.createOscillator();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, t0);
-    if (freq1 !== freq) o.frequency.exponentialRampToValueAtTime(freq1, t0 + decay);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0005, t0 + decay);
-    o.connect(g).connect(dest);
-    o.start(t0);
-    o.stop(t0 + decay + 0.05);
-  }
-
-  /** Non-spatial interface sounds. */
   ui(kind: UiSound): void {
-    const ctx = this.ctx;
-    if (!ctx || this.muted || ctx.state !== 'running') return;
-    const t = ctx.currentTime;
-    const g = ctx.createGain();
-    g.gain.value = 0.5;
-    g.connect(this.uiBus);
-    switch (kind) {
-      case 'click':
-        this.tone(g, t, 'sine', 900, 0.15, 0.06);
-        break;
-      case 'ribbon':
-        this.tone(g, t, 'sine', 1320, 0.12, 0.12);
-        break;
-      case 'citadel':
-        this.tone(g, t, 'triangle', 880, 0.2, 0.12);
-        this.tone(g, t + 0.08, 'triangle', 1320, 0.2, 0.2);
-        break;
-      case 'alarm':
-        for (let i = 0; i < 3; i++) this.tone(g, t + i * 0.18, 'square', i % 2 ? 660 : 880, 0.08, 0.14);
-        break;
-      case 'warning':
-        this.tone(g, t, 'sawtooth', 220, 0.08, 0.3, 180);
-        break;
-      case 'ability':
-        this.tone(g, t, 'sawtooth', 160, 0.12, 0.9, 720);
-        this.tone(g, t + 0.05, 'sine', 320, 0.2, 1.0, 1100);
-        this.burst(g, t, 'bandpass', 1500, 0.3, 0.8, 0.25);
-        break;
-      case 'ult':
-        this.tone(g, t, 'sawtooth', 90, 0.16, 1.4, 900);
-        this.tone(g, t + 0.05, 'sine', 220, 0.22, 1.5, 1760);
-        this.thump(g, t + 0.1, 70, 30, 0.6, 1.2);
-        this.burst(g, t, 'bandpass', 1800, 0.4, 1.1, 0.3);
-        break;
-      case 'pickup':
-        [880, 1175, 1568].forEach((f, i) => this.tone(g, t + i * 0.06, 'triangle', f, 0.14, 0.25));
-        break;
-      case 'siren':
-        for (let i = 0; i < 4; i++) this.tone(g, t + i * 0.6, 'sawtooth', 420, 0.12, 0.58, 760);
-        break;
-      case 'horn':
-        this.tone(g, t, 'sawtooth', 110, 0.14, 1.4, 104);
-        this.tone(g, t, 'sawtooth', 165, 0.08, 1.4, 156);
-        break;
-      case 'heartbeat':
-        this.thump(g, t, 70, 40, 0.5, 0.18);
-        this.thump(g, t + 0.2, 60, 35, 0.35, 0.2);
-        break;
-      case 'ultReady':
-        [784, 1046, 1568].forEach((f, i) => this.tone(g, t + i * 0.09, 'sine', f, 0.18, 0.5));
-        break;
-      case 'streak':
-        this.tone(g, t, 'square', 523, 0.1, 0.12);
-        this.tone(g, t + 0.1, 'square', 784, 0.12, 0.3);
-        break;
-      case 'capture':
-        this.tone(g, t, 'sine', 660, 0.15, 0.2);
-        this.tone(g, t + 0.15, 'sine', 990, 0.15, 0.35);
-        break;
-      case 'victory':
-        [523, 659, 784, 1046].forEach((f, i) => this.tone(g, t + i * 0.16, 'triangle', f, 0.2, 0.6));
-        break;
-      case 'defeat':
-        [392, 330, 262].forEach((f, i) => this.tone(g, t + i * 0.25, 'triangle', f, 0.2, 0.8));
-        break;
-      case 'shift':
-        // Titan Shift: a long rising roar, then the boom as the form breaks out.
-        this.tone(g, t, 'sawtooth', 55, 0.2, 1.6, 440);
-        this.tone(g, t + 0.1, 'sine', 110, 0.22, 1.6, 1320);
-        this.burst(g, t, 'bandpass', 900, 0.8, 1.4, 0.35);
-        this.thump(g, t + 1.4, 48, 18, 1.1, 1.6);
-        this.burst(g, t + 1.4, 'lowpass', 600, 0.01, 1.4, 0.9);
-        break;
-      case 'unshift':
-        this.tone(g, t, 'sine', 660, 0.16, 1.2, 140);
-        this.burst(g, t, 'lowpass', 700, 0.1, 1, 0.3);
-        break;
-    }
-    window.setTimeout(() => g.disconnect(), 3000);
+    if (!this.ctx || this.muted || this.ctx.state !== 'running') return;
+    const ability = ['ability', 'ult', 'shift', 'unshift'].includes(kind);
+    const category = ability ? 'ability' : 'ui';
+    const priority = ['alarm', 'siren', 'warning', 'heartbeat'].includes(kind) ? 3 : ability ? 2 : 1;
+    const generation = this.generation;
+    this.request(UI_ASSETS[kind], category, priority, `ui:${kind}`, buffer => {
+      if (generation !== this.generation || this.muted) return;
+      this.sample(buffer, { bus: ability ? this.abilities : this.uiBus, category, priority, key: `ui:${kind}`, gain: 0.8 });
+    });
+  }
+
+  private sample(buffer: AudioBuffer, o: SampleOptions): void {
+    const ctx = this.ctx!;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const rate = o.rate ?? 1;
+    source.playbackRate.value = rate;
+    const natural = buffer.duration / rate;
+    const duration = o.duration ?? natural;
+    const t0 = ctx.currentTime + (o.delay ?? 0);
+    if (duration > natural) { source.loop = true; source.loopStart = Math.min(.03, buffer.duration * .05); source.loopEnd = buffer.duration; }
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass'; filter.frequency.value = o.cutoff ?? 20000;
+    const gain = ctx.createGain();
+    const fade = Math.min(.025, duration * .2);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(o.gain, t0 + fade);
+    gain.gain.setValueAtTime(o.gain, t0 + Math.max(fade, duration - fade));
+    gain.gain.linearRampToValueAtTime(0, t0 + duration);
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = o.pan ?? 0;
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      try { source.stop(); } catch { /* Not started or already ended. */ }
+      source.disconnect(); filter.disconnect(); gain.disconnect(); panner.disconnect();
+      this.sources.delete(source); this.budget.release(stop);
+    };
+    if (!this.budget.admit(o.category, ctx.currentTime, (o.delay ?? 0) + duration, o.priority, o.key, stop)) { stop(); return; }
+    source.connect(filter).connect(gain).connect(panner).connect(o.bus);
+    source.onended = stop;
+    this.sources.add(source);
+    if (o.category === 'ability' && o.priority >= 2) this.duck();
+    source.start(t0);
+    source.stop(t0 + duration);
   }
 }
 

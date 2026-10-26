@@ -12,7 +12,11 @@
     "lan:dev": "vite --host 0.0.0.0",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json",
-    "balance": "node scripts/balance.mjs"
+    "balance": "node scripts/balance.mjs",
+    "verify:ui": "node scripts/verify-ui.mjs && node scripts/verify-menu-navigation.mjs && node scripts/verify-lobby.mjs",
+    "verify:presentation": "node scripts/verify-presentation.mjs && node scripts/verify-sonniss.mjs",
+    "balance:compare": "node scripts/compareBalance.mjs",
+    "verify:audio": "node scripts/verify-all-audio.mjs"
   },
   "dependencies": {
     "three": "^0.186.1"
@@ -21,6 +25,7 @@
     "@types/node": "^26.6.5",
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.2",
+    "playwright": "^1.64.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5",

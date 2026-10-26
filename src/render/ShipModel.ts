@@ -1,3 +1,4 @@
+import { StepperModel } from './StepperModel';
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -932,10 +933,12 @@ function geometriesFor(spec: ShipSpec) {
     lp.box(2.2, 1.1, n * r * 2.1 + 0.4, -3.6, 0.4, 0, pal.upper);
     launcher = lp.merge();
   }
-  g = { hull: staticGeometry(spec), turrets, secs, launcher };
+  g = { hull: staticGeometry(spec.id === 'stepper' ? {...spec,beam:spec.beam*0.56} : spec), turrets, secs, launcher };
   geoCache.set(spec.id, g);
   return g;
 }
+
+export function ghostHull(spec: ShipSpec): BufferGeometry { return geometriesFor(spec).hull; }
 
 /** Build a hull's shared geometry ahead of its first view; true if it was not built yet. */
 export function warmGeometry(spec: ShipSpec): boolean {
@@ -1013,6 +1016,7 @@ export class ShipView {
   private mastDeck = 0;
   private split: Split | null = null;
   private wasAlive = true;
+  private stepModel: StepperModel | null = null;
 
   constructor(readonly spec: ShipSpec, shadows = true) {
     const geo = geometriesFor(spec);
@@ -1043,6 +1047,7 @@ export class ShipView {
       this.dome.visible = false;
     }
     this.body.add(hull);
+    if(spec.id==='stepper'){this.stepModel=new StepperModel((g,m)=>this.mesh(g,shadows,m));this.body.add(this.stepModel.root);}
 
     const top = spec.sub ? null : mastTop(spec);
     if (top) {
@@ -1383,6 +1388,7 @@ export class ShipView {
 
   /** Static pose for menus / previews. */
   pose(time: number): void {
+    this.stepModel?.pose(time);
     this.root.position.y = waveHeight(0, 0, time) * 0.3;
     this.root.rotation.z = Math.sin(time * 0.6) * 0.01;
     this.root.rotation.x = Math.sin(time * 0.45) * 0.015;
@@ -1392,6 +1398,12 @@ export class ShipView {
   }
 
   update(ship: Ship, time: number): void {
+    this.stepModel?.pose(time,!!ship.stepper?.copy);
+    if(this.stepModel) {
+      this.material.transparent=!!ship.stepper?.copy;
+      this.material.opacity=ship.stepper?.copy?0.48:1;
+      if(ship.stepper?.copy)for(const m of this.meshes)m.castShadow=false;
+    }
     const spec = this.spec;
     const L = spec.length;
     const h = ship.renderHeading;
@@ -1558,6 +1570,7 @@ export class ShipView {
 
   /** Free what this view owns (hull and turret geometry is shared and cached). */
   dispose(): void {
+    this.stepModel?.dispose();
     this.aura.material.dispose();
     this.formShell?.material.dispose();
     this.material.dispose();

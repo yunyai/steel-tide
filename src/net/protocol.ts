@@ -1,6 +1,8 @@
 // LAN lobby and lockstep wire format, shared by the browser and the lobby server.
 // Keep this file free of DOM and game imports: the server reads it too.
 
+import type { TeamAISelection } from '../core/FleetSelection';
+import type { ShiftTempo } from '../config';
 import type { BattleConfig, BattleType, DifficultyId } from '../core/BattleSetup';
 import type { BattleEra, Team } from '../core/types';
 
@@ -66,6 +68,8 @@ export interface LobbySettings {
   mapId: string;
   /** AI ships in each fleet, besides its captains (0..MAX_AI). */
   ai: [number, number];
+  aiSelection?: TeamAISelection;
+  shiftTempo?: ShiftTempo;
   difficulty: DifficultyId;
   /** Convoy: the fleet that escorts the transports. */
   escortTeam: Team;

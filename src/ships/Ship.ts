@@ -1,3 +1,5 @@
+import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
+import { canTrack } from '../core/Targeting';
 import { Vector3 } from 'three';
 import {
   FIRE_DPS_FRACTION,
@@ -489,6 +491,7 @@ export class Ship {
   /** Titan passive (see COLOSSUS); Boss Rush bosses go without it. */
   colossus: boolean;
   expiresAt = Infinity;
+  stepper: StepperState | null = null;
 
   pos = new Vector3();
   heading = 0;
@@ -620,6 +623,7 @@ export class Ship {
     this.team = team;
     this.name = name ?? spec.name;
     this.hp = this.maxHp = spec.hp;
+    if (spec.id === 'stepper') this.stepper = newStepperState();
     this.colossus = spec.cls === 'TT';
     this.trait = traitOf(spec);
     this.build(spec);
@@ -863,7 +867,7 @@ export class Ship {
     let best: Ship | null = null;
     let bd = r;
     for (const s of this.game.ships) {
-      if (!s.alive || s.team === this.team || s.mods.untargetable || s.deep) continue;
+      if (!canTrack(this, s)) continue;
       if (s.mods.lockRange > 0 && dist2D(s.pos.x, s.pos.z, this.pos.x, this.pos.z) > s.mods.lockRange) continue;
       const d = dist2D(s.pos.x, s.pos.z, x, z) - s.spec.length * 0.3;
       if (d < bd) {
@@ -900,7 +904,7 @@ export class Ship {
     this.updateForm();
     this.updateShield(dt);
     this.updateSub(dt);
-    this.updateMovement(dt);
+    if (!this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
     this.updateMain(dt);
     this.updateSecondaries(dt);
     this.updateTorpedoes(dt);
@@ -971,6 +975,9 @@ export class Ship {
     this.game.events.emit('blink', { ship: this, fromX, fromZ });
     return true;
   }
+
+  /** Re-evaluate effects without advancing their timers after an immediate skill transition. */
+  refreshModifiers(): void { this.recomputeMods(0); }
 
   private recomputeMods(dt: number): void {
     const m = baseMods();
@@ -1061,12 +1068,30 @@ export class Ship {
     return this.ultIndices.some((i) => this.skills[i].active);
   }
 
-  activateSkill(i: number): boolean {
-    if (!this.skillReady(i)) return false;
+  /** Last activation failure, shown locally by the HUD. No simulation randomness. */
+  skillFailure = '';
+  skillFailureUntil = 0;
+
+  failSkill(reason: string): false {
+    this.skillFailure = reason;
+    this.skillFailureUntil = this.game.time + 3;
+    return false;
+  }
+
+  activateSkill(i: number, mirrored = false): boolean {
+    this.skillFailure = '';
+    if (this.stepper?.flicker || this.stepper?.rush) return this.failSkill('Step sequence already active');
+    const echo = mirrored && this.stepper?.copy && this.summonOwner?.alive && i !== 8;
+    if (this.stepper?.copy && !echo) return false;
+    if (!echo && !this.skillReady(i) || echo && (!this.alive || this.mods.stunned || this.mods.silenced || this.skills[i]?.active)) {
+      const st = this.skills[i];
+      return this.failSkill(!this.alive ? 'Ship sunk' : this.mods.stunned ? 'Stunned' : this.mods.silenced ? 'Silenced' : st?.active ? 'Ability already active' : st?.spec.ult ? 'Ultimate charge not ready' : 'Ability reloading');
+    }
     const st = this.skills[i];
+    const origin = {x:this.pos.x,z:this.pos.z,aimX:this.control.aimX,aimZ:this.control.aimZ};
     const impl = SKILLS[st.spec.id];
     st.data = {};
-    if (!impl || impl.activate(this, this.game, st) === false) return false;
+    if (!impl || impl.activate(this, this.game, st) === false) return this.skillFailure ? false : this.failSkill('No eligible target in ability range');
     st.active = st.spec.duration > 0;
     st.time = st.spec.duration;
     if (st.spec.ult) {
@@ -1074,6 +1099,7 @@ export class Ship {
       this.form?.used.add(i);
     } else st.cooldown = st.spec.cooldown * this.mods.cooldownMul;
     this.game.events.emit('skill', { ship: this, index: i });
+    mirrorStep(this, i, origin);
     return true;
   }
 
@@ -1230,7 +1256,7 @@ export class Ship {
     const table = this.tableFor(this.ammo);
     const elev = table ? solve(table, aimDist).elevation : 0;
     const traverse = main.traverse * this.mods.traverseMul * dt;
-    const canFireGuns = (!this.isSub || this.depthState === 0 && this.pos.y > -1.5) && !this.mods.stunned && !this.mods.disarmed;
+    const canFireGuns = !this.stepper?.flicker && !this.stepper?.rush && (!this.isSub || this.depthState === 0 && this.pos.y > -1.5) && !this.mods.stunned && !this.mods.disarmed;
     for (const t of this.turrets) {
       if (t.reload > 0) t.reload -= dt;
       if (t.disabled > 0) t.disabled -= dt;
@@ -1245,10 +1271,11 @@ export class Ship {
       t.pitch = approach(t.pitch, elev, dt * 0.15);
     }
     const slot = this.currentSlot;
-    if (c.fire && slot?.kind === 'gun' && canFireGuns) {
+    const broadAuto = !!this.stepper && this.stepper.broadUntil > this.game.time && this.stepper.broadTarget !== 0;
+    if ((c.fire && slot?.kind === 'gun' || broadAuto) && canFireGuns) {
       for (let i = 0; i < this.turrets.length; i++) {
         const t = this.turrets[i];
-        if (t.reload <= 0 && t.aligned && t.disabled <= 0) this.fireTurret(i, slot.ammo);
+        if (t.reload <= 0 && t.aligned && t.disabled <= 0) this.fireTurret(i, slot?.kind === 'gun' ? slot.ammo : this.ammo);
       }
     }
   }
@@ -1277,7 +1304,7 @@ export class Ship {
     const disp = main.dispersion * this.mods.dispersionMul * (buff?.dispersionMul ?? 1) * smoke * this.evasionAt(c.aimX, c.aimZ);
     const sigmaH = (disp * (0.25 + (0.75 * dist) / main.range)) / 2;
     const sigmaV = sigmaH * 0.6;
-    const dmgMul = this.mods.damageMul * (ammo === 'AP' ? this.mods.apDamageMul : 1) * (buff?.damageMul ?? 1);
+    const dmgMul = this.mods.damageMul * (this.stepper && this.stepper.broadUntil > this.game.time ? 2 : 1) * (ammo === 'AP' ? this.mods.apDamageMul : 1) * (buff?.damageMul ?? 1);
     for (let b = 0; b < t.spec.barrels; b++) {
       const lateral = truncGaussian(g.rng) * sigmaH;
       const along = truncGaussian(g.rng) * sigmaV;
@@ -1330,7 +1357,7 @@ export class Ship {
     const tgt = this.secTarget;
     for (const m of this.secondaries) {
       if (m.reload > 0) m.reload -= dt;
-      if (!tgt || m.reload > 0) continue;
+      if (!tgt || !canTrack(this, tgt) || m.reload > 0) continue;
       const mp = this.localToWorld(m.x, 0, m.z, tmpV);
       const brg = bearingTo(mp.x, mp.z, tgt.pos.x, tgt.pos.z);
       const rel = wrapAngle(brg - this.heading);
@@ -1371,7 +1398,7 @@ export class Ship {
     let bestD = Infinity;
     const maxR = Math.max(...(this.spec.secondaries ?? []).map((s) => s.range)) * this.mods.secRangeMul;
     for (const s of this.game.ships) {
-      if (!s.alive || s.team === this.team || s.submerged) continue;
+      if (!canTrack(this, s) || s.submerged) continue;
       const d = dist2D(this.pos.x, this.pos.z, s.pos.x, s.pos.z);
       const bias = s.id === this.control.targetId ? 0.6 : 1;
       if (d < maxR && d * bias < bestD) {
@@ -1397,6 +1424,15 @@ export class Ship {
       default:
         return a >= 25 && a <= 155;
     }
+  }
+
+  torpedoReadiness(l: LauncherState, aimX = this.control.aimX, aimZ = this.control.aimZ, ignoreReload = false): 'ready' | 'reloading' | 'outside arc' | 'too deep' | 'stunned' | 'disarmed' {
+    if (this.mods.stunned) return 'stunned';
+    if (this.mods.disarmed) return 'disarmed';
+    if (this.isSub && this.depthState === 2) return 'too deep';
+    if (l.reload > 0 && !ignoreReload) return 'reloading';
+    const p = this.localToWorld(l.spec.x, 0, (l.spec.side === 1 ? 1 : l.spec.side === -1 ? -1 : 0) * this.spec.beam * 0.3);
+    return this.launcherCanBear(l, wrapAngle(bearingTo(p.x, p.z, aimX, aimZ) - this.heading)) ? 'ready' : 'outside arc';
   }
 
   private updateTorpedoes(dt: number): void {
@@ -1431,11 +1467,10 @@ export class Ship {
     };
     let fired = 0;
     for (const l of this.launchers) {
-      if (l.reload > 0 && !ignoreReload) continue;
+      if (this.torpedoReadiness(l, c.aimX, c.aimZ, ignoreReload) !== 'ready') continue;
       const lp = this.localToWorld(l.spec.x, 0, (l.spec.side === 1 ? 1 : l.spec.side === -1 ? -1 : 0) * this.spec.beam * 0.3, tmpV);
       const brg = bearingTo(lp.x, lp.z, c.aimX, c.aimZ);
-      const rel = wrapAngle(brg - this.heading);
-      if (!this.launcherCanBear(l, rel)) continue;
+
       const n = l.tubes;
       for (let i = 0; i < n; i++) {
         const off = n > 1 ? (i / (n - 1) - 0.5) * tspec.spread * DEG : 0;
@@ -1465,6 +1500,7 @@ export class Ship {
     const c = this.control;
     const cap = this.mods.rangeCap > 0 ? Math.min(this.mods.rangeCap, ms.range) : ms.range;
     v.lock = this.lockAt(c.aimX, c.aimZ, 700);
+    if (v.lock?.submerged) v.lock = null;
     if (v.lock && dist2D(v.lock.pos.x, v.lock.pos.z, this.pos.x, this.pos.z) > cap) v.lock = null;
     if (!c.fire || this.currentSlot?.kind !== 'vls' || v.reload > 0 || this.mods.stunned || this.mods.disarmed) return;
     if (this.isSub && this.depthState === 2) return;
@@ -1558,11 +1594,13 @@ export class Ship {
    * hit (World-Cutting Slash) cuts through invulnerability, guards, shields and hit caps, though
    * never through a fresh spawn's protection or out of the world.
    */
-  takeDamage(amount: number, attacker: Ship | null, skill: SkillSpec | null = null, reflected = false, pierce = false): number {
+  takeDamage(amount: number, attacker: Ship | null, skill: SkillSpec | null = null, reflected = false, pierce = false, periodic = false, forwarded = false): number {
     if (!this.alive || amount <= 0) return 0;
     if (pierce && (this.mods.banished || this.effects.some((e) => e.id === 'spawn' || e.id === 'revived'))) return 0;
     if (this.mods.invulnerable && !pierce) return 0;
+    if (incomingStep(this, attacker, reflected, pierce, periodic)) return 0;
     const hostile = !!attacker && attacker.team !== this.team;
+    if (attacker?.stepper?.copy && !forwarded) amount *= 0.75;
     if (hostile && !pierce && this.mods.dodge > 0 && this.game.rng() < this.mods.dodge) return 0;
     let mul = this.mods.damageTakenMul;
     if (attacker && this.game.exposed[attacker.team] > 0) mul *= 1.25;
@@ -1589,9 +1627,9 @@ export class Ship {
       const others = link.group.filter((s) => s !== this && s.alive);
       if (link.mode === 'spread' && others.length) {
         raw /= others.length + 1;
-        for (const s of others) s.takeDamage(raw, attacker, link.skill, true);
+        for (const s of others) s.takeDamage(raw, attacker, link.skill, true, false, periodic, true);
       } else if (link.mode === 'echo') {
-        for (const s of others) s.takeDamage(raw * link.share, attacker, link.skill, true);
+        for (const s of others) s.takeDamage(raw * link.share, attacker, link.skill, true, false, periodic, true);
       }
     }
     if (hostile) this.lastHurt = this.game.time;
@@ -1628,7 +1666,7 @@ export class Ship {
       this.lastAttacker = attacker;
       // Wingmen credit their damage to the player who summoned them.
       if (attacker.summonOwner) attacker.summonOwner.stats.damage += dmg;
-      if (skill) attacker.stats.skill += dmg;
+      if (skill) { attacker.stats.skill += dmg; if(attacker.stepper?.copy && attacker.summonOwner) attacker.summonOwner.stats.skill += dmg; }
       if (skill) this.game.events.emit('skillHit', { ship: this, attacker, skill, damage: dmg });
       if (this.mods.reflect > 0 && !reflected && attacker.alive) {
         attacker.takeDamage(dmg * this.mods.reflect, this, null, true);
@@ -1667,7 +1705,7 @@ export class Ship {
   }
 
   startFire(site: number, attacker: Ship | null): boolean {
-    if (!this.alive || this.submerged || this.fireProof) return false;
+    if (!this.alive || this.submerged || this.fireProof || (this.stepper?.phaseUntil ?? 0) > this.game.time) return false;
     site = clamp(site, 0, MAX_FIRES - 1);
     if (this.fires[site] > 0) return false;
     this.fires[site] = FIRE_DURATION * this.mods.fireDurationMul;
@@ -1679,7 +1717,7 @@ export class Ship {
   }
 
   startFlood(attacker: Ship | null): boolean {
-    if (!this.alive || this.fireProof || this.flooding > 0) return false;
+    if (!this.alive || this.fireProof || this.flooding > 0 || (this.stepper?.phaseUntil ?? 0) > this.game.time) return false;
     this.flooding = FLOOD_DURATION * this.mods.fireDurationMul;
     this.floodAttacker = attacker;
     this.game.events.emit('flood', { ship: this });
@@ -1714,12 +1752,12 @@ export class Ship {
       if (this.fires[i] <= 0) continue;
       this.fires[i] -= dt;
       const by = this.fireAttacker[i];
-      this.takeDamage(this.maxHp * FIRE_DPS_FRACTION * dt * (by?.mods.fireDamageMul ?? 1), by);
+      this.takeDamage(this.maxHp * FIRE_DPS_FRACTION * dt * (by?.mods.fireDamageMul ?? 1), by, null, false, false, true);
       if (!this.alive) return;
     }
     if (this.flooding > 0) {
       this.flooding -= dt;
-      this.takeDamage(this.maxHp * FLOOD_DPS_FRACTION * dt, this.floodAttacker);
+      this.takeDamage(this.maxHp * FLOOD_DPS_FRACTION * dt, this.floodAttacker, null, false, false, true);
     }
   }
 
@@ -1780,12 +1818,13 @@ export class Ship {
       return;
     }
     this.alive = false;
+    if (this.stepper?.copy) this.withdrawn = true;
     this.hp = 0;
     this.deathTime = 0;
     this.stats.deaths++;
     this.extinguish();
     const credited = killer?.summonOwner ?? killer;
-    if (credited && credited.team !== this.team) credited.stats.kills++;
+    if (credited && credited.team !== this.team && !this.stepper?.copy) credited.stats.kills++;
     this.game.onShipSunk(this, credited ?? null);
   }
 
@@ -1816,6 +1855,7 @@ export class Ship {
     this.shiftQueued = null;
     const spec = this.spec;
     this.alive = true;
+    clearStepper(this);
     this.withdrawn = false;
     this.detonated = false;
     this.hp = this.maxHp;
@@ -1889,6 +1929,7 @@ export class Ship {
 
   withdraw(): void {
     if (!this.alive) return;
+    clearStepper(this);
     this.alive = false;
     this.withdrawn = true;
     this.hp = 0;

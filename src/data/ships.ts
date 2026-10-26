@@ -1,3 +1,4 @@
+import { AIRCRAFT_HP_BUFF, AIRCRAFT_INTERVAL_MUL, EXTRA_MAIN_BUFF, MAIN_DAMAGE_BUFF, WEAK_SKILL_SHIPS } from './Balance';
 import { HP_SCALE, RANGE_SCALE, RELOAD_SCALE } from '../config';
 import type { BattleEra, Era, ShipSpec } from '../core/types';
 import { ANIME, ANIME_FORMS, ANIME_SUMMONS } from './anime';
@@ -24,6 +25,16 @@ const TURN_SCALE = 0.75;
 const RUDDER_SCALE = 0.5;
 const ACCEL_SCALE = 0.6;
 
+const RAW: ShipSpec[] = [...HISTORIC, ...TITANS, ...FANTASY, ...FANTASY_TITANS, ...MODERN, ...MODERN_TITANS, ...SCIFI, ...SCIFI_TITANS, ...ANIME, ...ANIME_FORMS, ...MISC, ...SUMMONS, ...ANIME_SUMMONS];
+const TRAVERSE_MEDIANS = new Map<string, number>();
+for (const s of RAW) {
+  const key = `${eraOf(s)}:${s.cls}`;
+  if (!s.main || s.hidden || s.cls === 'TT' || TRAVERSE_MEDIANS.has(key)) continue;
+  const values = RAW.filter(p => p.main && !p.hidden && p.cls === s.cls && eraOf(p) === eraOf(s)).map(p => p.main!.traverse).sort((a, b) => a - b);
+  const m = values.length >> 1;
+  TRAVERSE_MEDIANS.set(key, values.length % 2 ? values[m] : (values[m - 1] + values[m]) / 2);
+}
+
 function toBattleScale(s: ShipSpec): ShipSpec {
   const k = RANGE_SCALE;
   const t = FACTIONS[s.nation].trait;
@@ -38,14 +49,22 @@ function toBattleScale(s: ShipSpec): ShipSpec {
     accelTime: s.accelTime * ACCEL_SCALE,
     main: s.main && {
       ...s.main,
+      ap: s.main.ap && { ...s.main.ap, damage: s.main.ap.damage * MAIN_DAMAGE_BUFF * (WEAK_SKILL_SHIPS.has(s.id) ? EXTRA_MAIN_BUFF : 1) },
+      he: s.main.he && { ...s.main.he, damage: s.main.he.damage * MAIN_DAMAGE_BUFF * (WEAK_SKILL_SHIPS.has(s.id) ? EXTRA_MAIN_BUFF : 1) },
+      traverse: Math.max(s.main.traverse, Math.min(s.main.traverse * 1.25, TRAVERSE_MEDIANS.get(`${eraOf(s)}:${s.cls}`) ?? s.main.traverse)),
       range: s.main.range * k * (t?.rangeMul ?? 1),
       reload: s.main.reload * RELOAD_SCALE,
       dispersion: s.main.dispersion * DISPERSION_SCALE * (t?.dispersionMul ?? 1),
     },
-    secondaries: s.secondaries?.map((sec) => ({ ...sec, range: sec.range * k, reload: sec.reload * RELOAD_SCALE })),
+    secondaries: s.secondaries?.map((sec) => ({ ...sec, shell: { ...sec.shell, damage: sec.shell.damage * MAIN_DAMAGE_BUFF }, range: sec.range * k, reload: sec.reload * RELOAD_SCALE })),
     torpedoes: s.torpedoes && { ...s.torpedoes, range: s.torpedoes.range * k, detect: s.torpedoes.detect * k, reload: s.torpedoes.reload * RELOAD_SCALE },
     missiles: s.missiles && { ...s.missiles, range: s.missiles.range * k, reload: s.missiles.reload * RELOAD_SCALE },
-    air: s.air && { ...s.air, range: s.air.range * k },
+    air: s.air && {
+      ...s.air, range: s.air.range * k, launchCooldown: s.air.launchCooldown * AIRCRAFT_INTERVAL_MUL,
+      torpedo: { ...s.air.torpedo, hp: s.air.torpedo.hp * AIRCRAFT_HP_BUFF, restore: s.air.torpedo.restore * AIRCRAFT_INTERVAL_MUL },
+      dive: { ...s.air.dive, hp: s.air.dive.hp * AIRCRAFT_HP_BUFF, restore: s.air.dive.restore * AIRCRAFT_INTERVAL_MUL },
+      fighter: { ...s.air.fighter, hp: s.air.fighter.hp * AIRCRAFT_HP_BUFF, restore: s.air.fighter.restore * AIRCRAFT_INTERVAL_MUL },
+    },
     aa: { ...s.aa, range: s.aa.range * k },
     consumables: s.consumables.map((c) => ({
       ...c,
@@ -55,7 +74,7 @@ function toBattleScale(s: ShipSpec): ShipSpec {
 }
 
 /** Every spec, summon-only ones included. */
-export const ALL: ShipSpec[] = [...HISTORIC, ...TITANS, ...FANTASY, ...FANTASY_TITANS, ...MODERN, ...MODERN_TITANS, ...SCIFI, ...SCIFI_TITANS, ...ANIME, ...ANIME_FORMS, ...MISC, ...SUMMONS, ...ANIME_SUMMONS].map(toBattleScale);
+export const ALL: ShipSpec[] = RAW.map(toBattleScale);
 
 /** Every ship a captain can sail, in every era (summon-only hulls are left out). */
 export const SHIPS: ShipSpec[] = ALL.filter((s) => !s.hidden);

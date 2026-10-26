@@ -1,3 +1,4 @@
+import { canTrack } from '../../core/Targeting';
 import type { Game } from '../../core/Game';
 import { bearingTo, forwardX, forwardZ } from '../../core/math';
 import type { MissileLook, MissileProfile, SkillSpec } from '../../core/types';
@@ -267,7 +268,7 @@ export function anyShipAt(ship: Ship, game: Game, reach: number): Ship | null {
   let best: Ship | null = null;
   let bd = 500;
   for (const s of game.ships) {
-    if (s === ship || !s.alive || s.deep || s.mods.untargetable) continue;
+    if (s === ship || !s.alive || s.deep || (s.team !== ship.team ? !canTrack(ship, s) : s.mods.untargetable)) continue;
     const d = Math.hypot(s.pos.x - p.x, s.pos.z - p.z);
     if (d < bd) {
       bd = d;

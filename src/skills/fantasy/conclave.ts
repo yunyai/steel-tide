@@ -1,3 +1,4 @@
+import { canTrack } from '../../core/Targeting';
 import { dist2D, forwardX, forwardZ } from '../../core/math';
 import type { Ship } from '../../ships/Ship';
 import {
@@ -245,7 +246,7 @@ export const CONCLAVE_SKILLS: SkillDef[] = [
       activate(ship, game, st) {
         const t = reticleTarget(ship, game, 5000);
         if (!t) return false;
-        const victims = [t, ...game.ships.filter((s) => s !== t && s.alive && s.team !== ship.team && !s.mods.untargetable && dist(s, t) < 600).sort((a, b) => dist(a, t) - dist(b, t)).slice(0, 2)];
+        const victims = [t, ...game.ships.filter((s) => s !== t && canTrack(ship, s) && dist(s, t) < 600).sort((a, b) => dist(a, t) - dist(b, t)).slice(0, 2)];
         for (const s of victims) {
           disarm(s, 6);
           silence(s, 6);

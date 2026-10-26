@@ -1,0 +1,25 @@
+{
+  "mapped": true,
+  "decoded": [
+    {
+      "url": "/audio/sonniss-explosion.m4a",
+      "seconds": 1.85
+    },
+    {
+      "url": "/audio/sonniss-hit.m4a",
+      "seconds": 1.45
+    },
+    {
+      "url": "/audio/sonniss-splash.m4a",
+      "seconds": 1.7
+    },
+    {
+      "url": "/audio/sonniss-depth.m4a",
+      "seconds": 2.056
+    }
+  ],
+  "playedSamples": true,
+  "voices": 4,
+  "cleaned": true,
+  "provenance": true
+}

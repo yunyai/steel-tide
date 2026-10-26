@@ -85,6 +85,7 @@ export class NavalBattle implements ActiveBattle {
     local: Ship | undefined = game.humans()[0],
   ) {
     const { menu, menuLayer, renderer, hudLayer, input, canvas } = shell;
+    audio.beginBattle();
     menu.hide();
     menuLayer.style.pointerEvents = 'none';
     this.scene = new NavalScene(renderer, game);
@@ -117,6 +118,8 @@ export class NavalBattle implements ActiveBattle {
     };
     this.off.push(
       game.events.on('gameOver', (g) => {
+        audio.stopBattle();
+        this.shell.input.capture = false;
         this.ended = true;
         this.reportIn = 3.5;
         const rush = game.rush;
@@ -125,6 +128,11 @@ export class NavalBattle implements ActiveBattle {
         const win = g.winner !== -1 && g.winner === me?.team;
         audio.ui(win || config.type === 'freeplay' ? 'victory' : 'defeat');
         link?.over();
+      }),
+      game.events.on('blink', e => {
+        if(!e.dodge) return;
+        const pc=this.pcs.find(p=>p.ship===e.ship);
+        if(pc){pc.notice='SIDESTEP';pc.noticeTime=0.35;}
       }),
       game.events.on('skill', (a) => {
         const pc = this.pcs.find((p) => p.ship === a.ship);
@@ -193,6 +201,7 @@ export class NavalBattle implements ActiveBattle {
   }
 
   dispose(): void {
+    audio.stopBattle();
     const { hudLayer, overlayLayer, renderer, input, menuLayer } = this.shell;
     for (const f of this.off) f();
     for (const h of this.huds) h.dispose();
@@ -235,6 +244,7 @@ export class NavalBattle implements ActiveBattle {
   private setPaused(paused: boolean): void {
     if (this.ended || this.paused === paused) return;
     this.paused = paused;
+    this.shell.input.capture = !paused;
     if (paused) {
       this.pausedAt = performance.now();
       this.shell.input.releaseLock();

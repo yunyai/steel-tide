@@ -6,6 +6,7 @@ import type { Ship } from '../ships/Ship';
  */
 export function captainName(s: Ship, me: Ship | null = null): string {
   // The hull's own name, even mid Titan Shift: the captain is the character, not the form.
+  if (s.stepper?.copy) return `Afterimage ${s.stepper.slot + 1}`;
   const ship = s.base.cls === 'AK' ? s.name : s.base.name;
   if (s === me) return `${ship} (you)`;
   if (s.humanIndex >= 0 && s.game.config.mode === 'lan') return `${s.name} (${ship})`;

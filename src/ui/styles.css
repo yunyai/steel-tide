@@ -3732,3 +3732,60 @@ select {
     animation: none;
   }
 }
+
+/* Fleet and battle controls share the existing naval instrument palette. */
+.hangar-bottom { grid-column: 1 / -1; min-width: 0; }
+.hangar-foot { flex-wrap: wrap; }
+.hangar-bottom > .error:empty { display: none; }
+.error { color: var(--amber); }
+.fleet-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.fleet-editor { min-width: 0; }
+.fleet-editor h3 { margin: 16px 0 8px; font-family: var(--display); }
+.fleet-editor .seg { flex-wrap: wrap; }
+.fleet-detail { max-height: 280px; overflow: auto; padding: 4px 8px 0 0; }
+.fleet-detail select { width: 100%; min-width: 0; }
+.fleet-detail select[multiple] { min-height: 120px; padding: 6px; }
+.fleet-detail option { padding: 5px 8px; }
+.fleet-detail .field { margin-top: 8px; }
+.lan-room { align-items: start; }
+.lan-teams > * { min-width: 0; }
+.lan-member { flex-wrap: wrap; }
+.status-row { flex-wrap: wrap; max-height: 74px; overflow: auto; }
+.status-row span { flex: 0 1 auto; }
+.skillbar.titan { flex-wrap: wrap; row-gap: 4px; }
+.skillbar.titan .sk { flex-shrink: 0; }
+.picker { max-height: 94vh; display: flex; flex-direction: column; }
+.picker-body { min-height: 0; overflow: auto; }
+.picker-detail { min-width: 0; overflow: auto; padding-right: 8px; }
+.picker .sheet-actions { flex: none; flex-wrap: wrap; }
+.roster > .btn { margin: 0 12px 10px; }
+.slot.ready .info { color: var(--cyan); }
+.slot .info { overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+::selection { background: var(--cyan-dim); color: var(--text); }
+@media (max-width: 1300px) {
+  .cockpit.titan { width: min(740px, 76vw); }
+  .skillbar.titan .sk { width: 53px; }
+  .skillbar.titan .sk.ult { width: 70px; }
+}
+@media (max-height: 760px) {
+  .status-row { max-height: 48px; }
+  .cockpit.titan .skillbar { gap: 3px; }
+  .picker-roster { max-height: 44vh; }
+}
+@media (max-width: 760px) {
+  .fleet-controls { grid-template-columns: minmax(0, 1fr); }
+  .hangar-foot .grow { display: none; }
+  .hangar-foot { gap: 8px; padding: 10px 0; }
+  .status-row { max-height: 48px; }
+}
+
+.naval-setup { display: flex; flex-direction: column; height: min(900px, 92vh); overflow: hidden; }
+.naval-setup > .tabs, .naval-setup > .sheet-actions { flex: none; }
+.setup-body { flex: 1; overflow: auto; min-height: 0; padding-right: 8px; }
+@media (max-height: 800px) {
+  .title-screen { justify-content: flex-start; overflow: auto; padding-top: 28px; padding-bottom: 28px; }
+  .title-mark { font-size: clamp(3.6rem, 12vh, 6rem); }
+  .title-sub { margin: 18px 0; }
+  .title-actions .go { padding-top: 10px; padding-bottom: 10px; }
+}

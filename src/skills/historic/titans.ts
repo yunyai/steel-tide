@@ -1,3 +1,4 @@
+import { canTrack } from '../../core/Targeting';
 import { distToHull } from '../../core/hull';
 import { DEG, bearingTo, forwardX, forwardZ, wrapAngle } from '../../core/math';
 import type { TorpedoSpec } from '../../core/types';
@@ -389,7 +390,7 @@ export const TITAN_SKILLS: SkillDef[] = [
       activate(ship, game, st) {
         const p = aimPoint(ship, 6000);
         const near = game.ships
-          .filter((s) => s.alive && s.team !== ship.team && !s.mods.untargetable && !s.submerged)
+          .filter((s) => canTrack(ship, s) && !s.submerged)
           .sort((a, b) => Math.hypot(a.pos.x - p.x, a.pos.z - p.z) - Math.hypot(b.pos.x - p.x, b.pos.z - p.z))
           .slice(0, 3);
         for (let i = 0; i < 12; i++) {

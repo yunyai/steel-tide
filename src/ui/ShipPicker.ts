@@ -1,3 +1,4 @@
+import { randomShip } from '../core/FleetSelection';
 import type { BattleEra, Era, ShipSpec } from '../core/types';
 import { ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
 import { CLASS_LABEL, shipsIn, shipsOf } from '../data/ships';
@@ -102,6 +103,10 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
       }),
     );
     const classes = TABS.find((t) => t.id === tab)!.classes;
+    if (!here.includes(spec) || !classes.includes(spec.cls)) {
+      spec = here.find(s => classes.includes(s.cls))!;
+      renderDetail();
+    }
     list.replaceChildren(
       ...here
         .filter((s) => classes.includes(s.cls))
@@ -134,7 +139,15 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
     h('h2', {}, 'Change ship'),
     lede,
     h('div', { class: 'picker-body' }, h('nav', { class: 'picker-roster', 'aria-label': 'Ships' }, eraTabs, classTabs, list), detail),
-    h('div', { class: 'sheet-actions' }, back),
+    h('div', { class: 'sheet-actions' }, act('Random ship', 'btn-quiet', () => {
+      const s = randomShip(o.era, Math.random);
+      if (!s) return;
+      spec = s;
+      era = eraOf(s);
+      tab = tabOf(s.cls);
+      renderList();
+      renderDetail();
+    }), back),
   );
   overlay.append(sheet);
   queueMicrotask(() => list.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true }));

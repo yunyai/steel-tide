@@ -1,3 +1,5 @@
+import { fleetEditor } from './FleetEditor';
+import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId, SHIFT_SURGE, SHIFT_TEMPOS, type ShiftTempo } from '../config';
 import { type BattleConfig, type BattleType, type DifficultyId, defaultAssist, type PlayerConfig } from '../core/BattleSetup';
 import type { BattleEra, Era, ShipClass, ShipSpec } from '../core/types';
@@ -314,13 +316,24 @@ export class Menu {
     if (kind === 'battle') {
       const counts = (max: number) => Array.from({ length: max + 1 }, (_, n) => ({ value: n, label: String(n) }));
       const fa = this.freeAi;
-      shipCount.push(this.field('Ships per team', this.seg([3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: String(n) })), () => d.teamSize, (v) => (d.teamSize = v)), 'A titan brings two extra enemy ships to keep things fair.'));
+      shipCount.push(this.field('Ships per team', this.seg([3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: String(n) })), () => d.teamSize, (v) => { d.teamSize = v; renderFleets(); }), 'A titan brings two extra enemy ships to keep things fair.'));
       aiCount.push(
-        this.field('AI allies', this.seg(counts(7), () => fa[0], (v) => (fa[0] = v)), 'AI ships sailing with you.'),
-        this.field('AI enemies', this.seg(counts(8), () => fa[1], (v) => (fa[1] = v)), 'None leaves the sea to you. A titan brings two extra enemy ships when there are any.'),
+        this.field('AI allies', this.seg(counts(7), () => fa[0], (v) => { fa[0] = v; renderFleets(); }), 'AI ships sailing with you.'),
+        this.field('AI enemies', this.seg(counts(8), () => fa[1], (v) => { fa[1] = v; renderFleets(); }), 'None leaves the sea to you. A titan brings two extra enemy ships when there are any.'),
       );
     }
+    const fleetControls = h('div', { class: 'fleet-controls' });
+    const renderFleets = () => {
+      fleetControls.replaceChildren();
+      if (kind !== 'battle') return;
+      const counts = d.type === 'freeplay' ? this.freeAi : [d.teamSize - 1, d.teamSize];
+      for (const t of [0, 1] as const) fleetControls.append(fleetEditor(t === 0 ? 'Allied AI' : 'Enemy AI', d.era ?? 'historic', true, d.aiSelection?.[t], counts[t], value => {
+        d.aiSelection ??= [{ mode: 'auto' }, { mode: 'auto' }];
+        d.aiSelection[t] = value;
+      }));
+    };
     const notes = () => {
+      renderFleets();
       typeNote.textContent =
         d.type === 'domination'
           ? 'Hold capture zones to earn points; sinking ships also swings the score. First to 1000 wins. Sunk ships return to the fight after 8 seconds.'
@@ -367,6 +380,7 @@ export class Menu {
             () => d.era ?? 'historic',
             (v) => {
               d.era = v;
+              renderFleets();
               eraNote.textContent = eraBlurb(v);
               tempo.hidden = !shifting(v);
               // The captain's ship has to come from the era too.
@@ -417,7 +431,7 @@ export class Menu {
       ),
     );
     if (kind === 'battle') {
-      fields.push(...shipCount, ...aiCount);
+      fields.push(...shipCount, ...aiCount, fleetControls);
     } else {
       fields.push(
         this.field(
@@ -459,9 +473,9 @@ export class Menu {
     const next = this.act('Choose ship', kind === 'rush' ? 'btn-amber' : 'btn-primary', () => this.showHangar(kind));
     const el = h(
       'div',
-      { class: 'sheet panel setup' },
+      { class: 'sheet panel setup naval-setup' },
       tabs,
-      ...fields,
+      h('div', { class: 'setup-body' }, ...fields),
       h('div', { class: 'sheet-actions' }, this.act('Back', 'btn-quiet', () => this.showTitle()), next),
     );
     this.mount(el);
@@ -617,7 +631,19 @@ export class Menu {
     roster.append(h('h3', {}, eras.length > 1 ? 'Hangar' : `${ERA_LABEL[eras[0]]} hangar`));
     // Browsing from the title: the hangar and the garage are one screen with two halves.
     if (!flow) roster.append(kindSwitch('ships', () => {}, () => this.showGarage(null), () => this.hooks.click()));
-    roster.append(eraTabs, classTabs, list);
+    const random = this.act('Random ship', 'btn-quiet', () => {
+      const chosen = randomShip(lan?.era ?? (flow ? d.era ?? 'historic' : 'mixed'), Math.random);
+      if (!chosen) return;
+      spec = chosen;
+      pc.shipId = chosen.id;
+      this.era = eraOf(chosen);
+      this.tab = tabOf(chosen.cls);
+      formLook = false;
+      this.hooks.preview(chosen, 0);
+      renderRoster();
+      renderDossier();
+    });
+    roster.append(random, eraTabs, classTabs, list);
     renderRoster();
     renderDossier();
 
@@ -637,10 +663,13 @@ export class Menu {
       pc.device = devSel.value as InputDeviceId;
       syncAim();
     };
+    const startError = h('p', { class: 'note error', role: 'alert' });
     const start = () => {
       d.seed = Math.floor(Math.random() * 1e9);
       const config = structuredClone(d);
       if (config.type === 'freeplay') config.ai = [this.freeAi[0], this.freeAi[1]];
+      const error = selectionError(config.aiSelection, config.era, config.titans !== false, config.ai);
+      if (error) { startError.textContent = error; return; }
       this.hooks.start(config);
     };
     const foot = h(
@@ -666,7 +695,7 @@ export class Menu {
         (primary = this.act('Battle', 'btn-primary', () => this.showOrders('battle'))),
       );
     }
-    const el = h('div', { class: 'hangar' }, roster, h('div', { class: 'spacer' }), dossier, foot);
+    const el = h('div', { class: 'hangar' }, roster, h('div', { class: 'spacer' }), dossier, h('div', { class: 'hangar-bottom' }, startError, foot));
     this.mount(el);
     primary.focus({ preventScroll: true });
   }

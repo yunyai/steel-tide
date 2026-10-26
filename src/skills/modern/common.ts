@@ -1,3 +1,4 @@
+import { canTrack } from '../../core/Targeting';
 import type { Game } from '../../core/Game';
 import type { SkillSpec, SquadronType } from '../../core/types';
 import type { Ship } from '../../ships/Ship';
@@ -51,5 +52,5 @@ export function dropLocks(ship: Ship, game: Game): void {
 /** Enemies within `r` of a point, nearest first. */
 export function enemiesAround(ship: Ship, game: Game, x: number, z: number, r: number): Ship[] {
   const d = (s: Ship) => Math.hypot(s.pos.x - x, s.pos.z - z);
-  return game.ships.filter((s) => s.alive && s.team !== ship.team && !s.mods.untargetable && d(s) < r).sort((a, b) => d(a) - d(b));
+  return game.ships.filter((s) => canTrack(ship, s) && d(s) < r).sort((a, b) => d(a) - d(b));
 }

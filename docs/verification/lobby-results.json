@@ -1,0 +1,56 @@
+[
+  {
+    "width": 1280,
+    "height": 720,
+    "focusRestored": true,
+    "tempo": "long",
+    "ai": [
+      [
+        "queenElizabeth",
+        "queenElizabeth"
+      ],
+      [
+        "fletcher",
+        "fletcher"
+      ]
+    ],
+    "turns": 7,
+    "errors": []
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "focusRestored": true,
+    "tempo": "long",
+    "ai": [
+      [
+        "queenElizabeth",
+        "queenElizabeth"
+      ],
+      [
+        "fletcher",
+        "fletcher"
+      ]
+    ],
+    "turns": 6,
+    "errors": []
+  },
+  {
+    "width": 2560,
+    "height": 1080,
+    "focusRestored": true,
+    "tempo": "long",
+    "ai": [
+      [
+        "queenElizabeth",
+        "queenElizabeth"
+      ],
+      [
+        "fletcher",
+        "fletcher"
+      ]
+    ],
+    "turns": 7,
+    "errors": []
+  }
+]

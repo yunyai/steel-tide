@@ -365,6 +365,11 @@ export const FACTIONS: Record<Nation, Faction> = {
     },
   },
 
+  fold: {
+    id: 'fold', era: 'misc', label: 'The Fold', short: 'Fold',
+    focus: 'Phase warships that fold distance into destructive steps.',
+    trait: { name: 'Fold Drive', description: 'Distances fold around the reticle. Every arrival opens another angle of attack.' },
+  },
   abyss: {
     id: 'abyss',
     era: 'misc',

@@ -80,6 +80,7 @@ export class GroundBattle implements ActiveBattle {
     local: Vehicle | undefined = game.humans()[0],
   ) {
     const { menu, menuLayer, renderer, hudLayer, input, canvas } = shell;
+    audio.beginBattle('ground');
     menu.hide();
     menuLayer.style.pointerEvents = 'none';
     this.scene = new GroundScene(renderer, game);
@@ -109,6 +110,8 @@ export class GroundBattle implements ActiveBattle {
     this.scene.skillFx.onShake = shake;
     this.off.push(
       game.events.on('gameOver', (g) => {
+        audio.stopBattle();
+        this.shell.input.capture = false;
         this.ended = true;
         this.reportIn = 3.5;
         const win = g.winner !== -1 && g.winner === this.mine?.team;
@@ -166,6 +169,7 @@ export class GroundBattle implements ActiveBattle {
   }
 
   dispose(): void {
+    audio.stopBattle();
     const { hudLayer, overlayLayer, renderer, input, menuLayer } = this.shell;
     for (const f of this.off) f();
     for (const hud of this.huds) hud.dispose();
@@ -193,6 +197,7 @@ export class GroundBattle implements ActiveBattle {
   private setPaused(paused: boolean): void {
     if (this.ended || this.paused === paused) return;
     this.paused = paused;
+    this.shell.input.capture = !paused;
     if (paused) {
       this.pausedAt = performance.now();
       this.shell.input.releaseLock();

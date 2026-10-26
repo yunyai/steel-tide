@@ -1,3 +1,4 @@
+import { canTrack } from '../core/Targeting';
 import type { Game } from '../core/Game';
 import { distToHull } from '../core/hull';
 import { DEG, approachAngle, bearingTo, dist2D, forwardX, forwardZ } from '../core/math';
@@ -148,7 +149,8 @@ export class MissileSystem {
       // Each missile has its own clock: time warps slow only the rounds inside them.
       const dt = frame * g.fields.timeScale(m.team, m.x, m.z);
       m.age += dt;
-      if (m.target && m.target.alive && !m.target.submerged && !m.target.mods.banished) {
+      if (m.target && (!canTrack(m.owner, m.target) || m.target.submerged)) m.target = null;
+      if (m.target) {
         m.tx = m.target.pos.x;
         m.tz = m.target.pos.z;
       }
@@ -261,7 +263,7 @@ export class MissileSystem {
     let best: Ship | null = null;
     let bd = 400;
     for (const s of this.game.ships) {
-      if (!s.alive || s.team === m.team || s.submerged || s.mods.banished) continue;
+      if (!canTrack(m.owner, s) || s.submerged) continue;
       const d = dist2D(m.tx, m.tz, s.pos.x, s.pos.z);
       if (d < bd) {
         bd = d;
@@ -318,7 +320,7 @@ export class MissileSystem {
     const dmg = s.takeDamage(m.damage * fall * mul * m.owner.critMul(s), m.owner, m.skill);
     if (g.rng() < m.fire) s.startFire(Math.floor(g.rng() * 4), m.owner);
     if (m.flood > 0 && g.rng() < m.flood) s.startFlood(m.owner);
-    if (m.onHit && s.alive) m.onHit(s);
+    if (m.onHit && s.alive && (s.stepper?.phaseUntil ?? 0) <= g.time) m.onHit(s);
     g.events.emit('shellHit', { attacker: m.owner, target: s, outcome: 'missile', damage: dmg, x: m.x, y: m.y, z: m.z, caliber: 530, ammo: 'HE' });
   }
 }

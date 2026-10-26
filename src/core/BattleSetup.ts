@@ -1,3 +1,4 @@
+import { selectedAI, selectionError, type TeamAISelection } from './FleetSelection';
 import type { InputDeviceId, ShiftTempo } from '../config';
 import { SHIPS, SHIP_BY_ID, shipsIn } from '../data/ships';
 import { pick } from './math';
@@ -45,6 +46,9 @@ export interface BattleConfig {
   era?: BattleEra;
   /** AI ships per fleet, besides its captains (0..8). When set it replaces `teamSize`. */
   ai?: [number, number];
+  aiSelection?: TeamAISelection;
+  /** Server-resolved bot picks, in team/AI slot order, shared by all peers. */
+  resolvedAI?: [string[], string[]];
   /** Free play: whether captains may change into a titan (allowed unless false). */
   titans?: boolean;
   /** How Titan Shift forms run (staggered by default; see SHIFT_TEMPOS). */
@@ -90,6 +94,8 @@ export const MAX_HUMANS_PER_TEAM = 8;
 
 /** Builds mirrored team compositions; humans replace a slot of their ship's class. */
 export function buildRoster(config: BattleConfig, rng: () => number): RosterEntry[] {
+  const error = selectionError(config.aiSelection, config.era, config.titans !== false, config.ai);
+  if (error) throw new Error(error);
   const size = Math.max(1, Math.min(8, config.teamSize));
   const out: RosterEntry[] = [];
   const humansByTeam: [number[], number[]] = [[], []];
@@ -121,9 +127,13 @@ export function buildRoster(config: BattleConfig, rng: () => number): RosterEntr
       if (idx < 0) continue;
       slots[idx] = { team, spec, humanIndex: hi, name: config.players[hi].name ?? `P${hi + 1}` };
     }
+    let botIndex = 0;
     groups.forEach((g, i) => {
       if (slots[i]) return;
-      slots[i] = { team, spec: randomOf(g, rng, config.era), humanIndex: -1, name: takeName() };
+      const chosen = selectedAI(config.aiSelection?.[team], botIndex, config.era ?? 'historic', config.titans !== false, rng, () => randomOf(g, rng, config.era));
+      const id = config.resolvedAI?.[team][botIndex++];
+      const spec = id && Object.hasOwn(SHIP_BY_ID, id) ? SHIP_BY_ID[id] : chosen;
+      slots[i] = { team, spec, humanIndex: -1, name: takeName() };
     });
     out.push(...(slots as RosterEntry[]));
   }

@@ -1,3 +1,4 @@
+import { canTrack } from '../../core/Targeting';
 import { bearingTo, forwardX, forwardZ } from '../../core/math';
 import type { Ship } from '../../ships/Ship';
 import {
@@ -358,7 +359,7 @@ export const JP_SF_SKILLS: SkillDef[] = [
           const ez = ship.pos.z + forwardZ(b) * 2500;
           const near = (s: Ship) => (s.pos.x - ship.pos.x) * (s.pos.x - ship.pos.x) + (s.pos.z - ship.pos.z) * (s.pos.z - ship.pos.z);
           const hit = enemiesOnLine(ship, game, ship.pos.x, ship.pos.z, ex, ez, 40)
-            .filter((s) => !s.submerged && !s.mods.untargetable)
+            .filter((s) => !s.submerged && canTrack(ship, s))
             .sort((a, c) => near(a) - near(c))[0];
           game.missiles.launch(ship, hit?.pos.x ?? ex, hit?.pos.z ?? ez, i * 0.04, 5000, { profile: 'skim', speed: 380, look: 'drone', blast: 40, fire: 0, target: hit ?? null, skill: st.spec, onHit: blind, hp: 300 });
         }

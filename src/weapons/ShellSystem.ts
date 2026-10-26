@@ -329,6 +329,7 @@ export class ShellSystem {
       // A citadel hit that sinks the ship sets off its magazines.
       if (!ship.alive && res.outcome === 'citadel' && !s.secondary) ship.detonate(s.owner);
     }
+    if ((ship.stepper?.phaseUntil ?? 0) > g.time) return;
     const attacker = s.owner;
     attacker.stats.hits++;
     if (s.onHit && ship.alive) s.onHit(ship, wx, wz);

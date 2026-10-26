@@ -1,3 +1,4 @@
+import { contactVisible } from '../core/Targeting';
 import { type Color, type Object3D, type PerspectiveCamera, Scene } from 'three';
 import { MAP_HALF } from '../config';
 import type { Game } from '../core/Game';
@@ -210,7 +211,7 @@ export class NavalScene implements BattleScene {
     }
     for (const [s, v] of this.views) {
       if (v.dome) v.dome.visible = v.root.visible && v.glowing;
-      this.skillFx.visible(s, v.root.visible);
+      this.skillFx.visible(s, v.root.visible && (team === -1 || contactVisible(s, team)));
     }
   }
 

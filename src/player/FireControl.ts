@@ -42,7 +42,7 @@ export function raycast(game: Game, team: Team, o: Vector3, d: Vector3, maxDist:
 
   // Enemy hulls, as boxes in each ship's own frame (x forward, z starboard).
   for (const s of game.ships) {
-    if (s === skip || !s.alive || s.team === team || s.deep) continue;
+    if (s === skip || !s.alive || s.team === team || s.mods.banished) continue;
     const p = s.renderPos;
     const reach = s.spec.length / 2 + 20;
     // Cheap reject: the ray must pass near the ship's position in plan view.

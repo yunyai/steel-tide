@@ -40,6 +40,7 @@ export interface GroundShake {
 }
 
 export class GroundFx {
+  private visualQuality = quality();
   private off: (() => void)[] = [];
   private acc = new Map<string, number>();
   /** Camera positions this frame (level of detail). */
@@ -361,7 +362,7 @@ export class GroundFx {
 
   update(dt: number): void {
     const g = this.game;
-    const q = quality().particles;
+    const q = this.visualQuality.particles;
     for (const v of g.vehicles) {
       if (v.withdrawn) continue;
       const d = this.near(v.renderX, v.renderZ);

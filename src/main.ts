@@ -1,3 +1,4 @@
+import { MenuNavigation } from './ui/MenuNavigation';
 // Deterministic maths first, before any module computes anything: LAN peers must agree bit for bit.
 import './core/installDetMath';
 import './ui/styles.css';
@@ -24,6 +25,7 @@ import { applyPalette } from './ui/palette';
 // whichever battle is on screen (see app/).
 
 applyPalette();
+void audio.prepare();
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ui = document.getElementById('ui')!;
@@ -105,11 +107,13 @@ const unlockAudio = () => {
 window.addEventListener('pointerdown', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
 
+const menuNavigation = new MenuNavigation();
 let last = performance.now();
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   input.pollPads();
+  menuNavigation.update(input, now);
   if (!lan.frame()) {
     if (battle) battle.tick(dt);
     else showcase.render(renderer.gl, dt);

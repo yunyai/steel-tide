@@ -21,6 +21,9 @@ export interface DisplaySettings {
 export interface SoundSettings {
   master: number;
   effects: number;
+  weapons: number;
+  abilities: number;
+  ambience: number;
   ui: number;
 }
 
@@ -65,9 +68,12 @@ const displayStore = store<DisplaySettings>('steel-tide.display', { colourBlind:
   perf: v.perf === true,
 }));
 
-const soundStore = store<SoundSettings>('steel-tide.sound', { master: 0.75, effects: 1, ui: 1 }, (v) => ({
+const soundStore = store<SoundSettings>('steel-tide.sound', { master: 0.75, effects: 1, weapons: 1, abilities: 1, ambience: 1, ui: 1 }, (v) => ({
   master: unit(v.master, 0.75),
   effects: unit(v.effects, 1),
+  weapons: unit(v.weapons, 1),
+  abilities: unit(v.abilities, 1),
+  ambience: unit(v.ambience, 1),
   ui: unit(v.ui, 1),
 }));
 
