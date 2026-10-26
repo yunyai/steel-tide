@@ -655,7 +655,7 @@ export const MODERN_TITAN_SKILLS: SkillDef[] = [
       id: 'emptyFort',
       name: 'Empty Fort',
       short: 'EMPTY FORT',
-      description: 'Throw open the gates: 6 s untargetable, every lock on you drops, and enemies within 1.5 km, suspecting a trap, flee for 3 s.',
+      description: 'Throw open the gates: 6 s cloaked, breaking locks outside 500 m proximity detection. Enemies within 1.5 km, suspecting a trap, flee for 3 s.',
       cooldown: 26,
       duration: 6,
       accent: 0xf0e8d0,
@@ -667,7 +667,7 @@ export const MODERN_TITAN_SKILLS: SkillDef[] = [
         buff(ship, st.spec.id, st.spec.duration, (m) => {
           m.untargetable = true;
         });
-        dropLocks(ship, game);
+        dropLocks(ship, game, 'stealth');
         for (const s of enemiesWithin(ship, game, 1500, false)) fear(s, ship.pos.x, ship.pos.z, 3);
       },
       aiShouldUse(ship, game) {

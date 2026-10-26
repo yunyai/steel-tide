@@ -25,20 +25,20 @@ describe('shared contact eligibility', () => {
   it('suppresses smoke locks and restores them during search, then loses them on expiry', () => {
     const g = emptyGame();
     const me = place(g, 'gato', 0, 0, 0);
-    const foe = place(g, 'gato', 1, 0, -500);
-    g.smokes.push({ x: 0, z: -500, r: 300, life: 60, team: 1 });
+    const foe = place(g, 'gato', 1, 0, -600);
+    g.smokes.push({ x: 0, z: -600, r: 300, life: 60, team: 1 });
     run(g, 0.1);
-    expect(me.lockAt(0, -500, 700)).toBe(null);
+    expect(me.lockAt(0, -600, 700)).toBe(null);
     const search = me.consumables.findIndex(c => c.spec.type === 'search');
     expect(activateConsumable(me, search)).toBe(true);
     foe.depthState = 2;
     me.consumables[search].active = 30;
     run(g, 12);
     expect(foe.deep).toBe(true);
-    expect(me.lockAt(0, -500, 700)).toBe(foe);
+    expect(me.lockAt(0, -600, 700)).toBe(foe);
     me.consumables[search].active = 0;
     run(g, 1);
-    expect(me.lockAt(0, -500, 700)).toBe(null);
+    expect(me.lockAt(0, -600, 700)).toBe(null);
   });
 
   it.each(['mouse', 'pad0'] as const)('%s locks only detected submarine contacts', device => {

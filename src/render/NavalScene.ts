@@ -14,6 +14,7 @@ import { quality } from './Quality';
 import type { BattleScene, Renderer, Viewport } from './Renderer';
 import { ShipView, warmGeometry } from './ShipModel';
 import { SkillFx } from './SkillFx';
+import { shipViewMode } from './Visibility';
 
 /** The shore map covers the battle area plus a margin. */
 const SHORE_HALF = MAP_HALF + 500;
@@ -197,17 +198,7 @@ export class NavalScene implements BattleScene {
   private visibility(team: Team | -1): void {
     for (const [s, v] of this.views) {
       v.side(team === -1 ? s.team === 0 : s.team === team);
-      if (team === -1) {
-        v.setMode(s.mods.banished ? 'hidden' : s.submerged ? (s.team === 0 ? 'ally' : 'enemy') : 'normal');
-        continue;
-      }
-      // Every ship is always drawn; submarines under the surface show as a ghost in their side's colour.
-      if (!s.alive) v.setMode(s.withdrawn ? 'hidden' : 'normal');
-      // Banished: gone from the world; its own side sees where it will return.
-      else if (s.mods.banished) v.setMode(s.team === team ? 'cloak' : 'hidden');
-      else if (s.mods.untargetable) v.setMode('cloak');
-      else if (s.submerged) v.setMode(s.team === team ? 'ally' : 'enemy');
-      else v.setMode('normal');
+      v.setMode(shipViewMode(s, team));
     }
     for (const [s, v] of this.views) {
       if (v.dome) v.dome.visible = v.root.visible && v.glowing;

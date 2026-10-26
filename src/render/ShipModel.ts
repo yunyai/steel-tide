@@ -169,6 +169,7 @@ function splitHull(g: BufferGeometry, cut: number): [BufferGeometry, BufferGeome
 const ghostMaterials = {
   ally: new MeshBasicMaterial({ color: 0x5fe3c0, transparent: true, opacity: 0.32, depthWrite: false, depthTest: false }),
   enemy: new MeshBasicMaterial({ color: 0xff5a4a, transparent: true, opacity: 0.32, depthWrite: false, depthTest: false }),
+  nearbySub: new MeshBasicMaterial({ color: 0xffb36b, transparent: true, opacity: 0.7, depthWrite: false, depthTest: false }),
 };
 /** Cloaked (untargetable) hulls: still in plain sight, but a shimmering violet glass. */
 const cloakMaterial = new MeshBasicMaterial({ color: 0xb48cff, transparent: true, opacity: 0.35, depthWrite: false, blending: AdditiveBlending });
@@ -947,7 +948,7 @@ export function warmGeometry(spec: ShipSpec): boolean {
   return true;
 }
 
-export type ViewMode = 'normal' | 'ally' | 'enemy' | 'cloak' | 'hidden';
+export type ViewMode = 'normal' | 'ally' | 'enemy' | 'nearbySub' | 'cloak' | 'hidden';
 
 /** Heel from flooding and lost buoyancy, at most (destroyers list further). */
 const MAX_LIST = 4 * DEG;
@@ -1363,7 +1364,7 @@ export class ShipView {
     this.root.visible = mode !== 'hidden';
     if (this.pennant) this.pennant.visible = mode === 'normal' && this.mastFall < 0.15;
     for (const e of this.emitters) e.mesh.visible = mode === 'normal' && !this.split;
-    const ghost: Material | null = mode === 'ally' ? ghostMaterials.ally : mode === 'enemy' ? ghostMaterials.enemy : mode === 'cloak' ? cloakMaterial : null;
+    const ghost: Material | null = mode === 'ally' ? ghostMaterials.ally : mode === 'enemy' ? ghostMaterials.enemy : mode === 'nearbySub' ? ghostMaterials.nearbySub : mode === 'cloak' ? cloakMaterial : null;
     for (const m of this.meshes) {
       m.material = ghost ?? this.home.get(m) ?? this.material;
       m.renderOrder = mode === 'normal' ? 0 : 10;

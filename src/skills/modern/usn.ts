@@ -1,4 +1,5 @@
 import { dist2D } from '../../core/math';
+import { canTrack } from '../../core/Targeting';
 import { homingSpread } from '../historic/light';
 import {
   aimPoint,
@@ -130,7 +131,7 @@ export const USN_SKILLS: SkillDef[] = [
       id: 'stealthProfile',
       name: 'Stealth Profile',
       short: 'STEALTH',
-      description: '10 s: the tumblehome hull all but vanishes from radar. Missiles, homing torpedoes and skill locks lose you, and guns laid on you scatter 1.6x wider.',
+      description: '10 s: the tumblehome hull all but vanishes from radar. Outside 500 m proximity detection, missiles, homing torpedoes and skill locks lose you. Guns laid on you scatter 1.6x wider.',
       cooldown: 26,
       duration: 10,
       accent: 0x8090a0,
@@ -138,14 +139,14 @@ export const USN_SKILLS: SkillDef[] = [
     },
     {
       activate(ship, game) {
-        dropLocks(ship, game);
+        dropLocks(ship, game, 'stealth');
       },
       update(ship, game, dt, st) {
         buff(ship, st.spec.id, 0.3, (m) => {
           m.lockRange = 1;
           m.scatterTakenMul *= 1.6;
         });
-        if (every(st, dt, 0.5)) dropLocks(ship, game);
+        if (every(st, dt, 0.5)) dropLocks(ship, game, 'stealth');
       },
       aiShouldUse(ship, game) {
         return underFire(ship, game, 800) >= 4;
@@ -420,7 +421,7 @@ export const USN_SKILLS: SkillDef[] = [
         return undefined;
       },
       aiShouldUse(ship, _g, target) {
-        return within(ship, target, 1400) && !target.mods.untargetable;
+        return within(ship, target, 1400) && canTrack(ship, target);
       },
     },
   ),

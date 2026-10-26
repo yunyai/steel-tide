@@ -26,16 +26,10 @@ export function alliesWithin(ship: Ship, game: Game, r: number): Ship[] {
   return game.ships.filter((s) => s.alive && s.team === ship.team && dist(s, ship) < r);
 }
 
-/** A hull that only lets itself be locked from close in (Silent Service) is out of reach. */
-function lockable(ship: Ship, s: Ship): boolean {
-  return s.mods.lockRange <= 0 || dist(s, ship) <= s.mods.lockRange;
-}
-
 export function nearestEnemy(ship: Ship, game: Game, r: number, targetable = true): Ship | null {
   let best: Ship | null = null;
   let bd = r;
   for (const s of enemiesWithin(ship, game, r, targetable)) {
-    if (targetable && !lockable(ship, s)) continue;
     const d = dist(s, ship);
     if (d < bd) {
       bd = d;

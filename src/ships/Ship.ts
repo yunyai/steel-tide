@@ -868,7 +868,6 @@ export class Ship {
     let bd = r;
     for (const s of this.game.ships) {
       if (!canTrack(this, s)) continue;
-      if (s.mods.lockRange > 0 && dist2D(s.pos.x, s.pos.z, this.pos.x, this.pos.z) > s.mods.lockRange) continue;
       const d = dist2D(s.pos.x, s.pos.z, x, z) - s.spec.length * 0.3;
       if (d < bd) {
         bd = d;

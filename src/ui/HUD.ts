@@ -1,4 +1,4 @@
-import { canTrack, contactVisible, revealedTo } from '../core/Targeting';
+import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
 import { Vector3 } from 'three';
 import { BATTLE_TIME_LIMIT, DOMINATION_WIN_SCORE, KNOT, SPEED_SCALE } from '../config';
@@ -768,7 +768,10 @@ export class HUD {
     if (me.mods.feared) st.push(['Feared', '', glyph('fear')]);
     if (me.mods.rooted) st.push(['Rooted', '', glyph('root')]);
     if (me.mods.healBlock) st.push(['No repairs', '', glyph('skull')]);
-    if (revealedTo(me, enemy)) st.push(['Revealed', '', glyph('eye')]);
+    const exposure = revealSource(me, enemy);
+    const proximity = proximityContact(me, enemy);
+    if (exposure) st.push([exposure === 'sonar' ? 'Sonar revealed' : exposure === 'proximity' ? (proximity === 'forced' ? 'Proximity revealed' : 'Nearby detection') : 'Ability revealed', '', glyph('eye')]);
+    else if (proximity === 'submarine') st.push(['Nearby silhouette', '', glyph('eye')]);
     if (me.guard) st.push([me.guard.left > 1 ? `Warded ×${me.guard.left}` : 'Warded', 'buff', glyph('rune')]);
     if (me.mods.undying || me.lastStand) st.push(['Undying', 'buff', glyph('skull')]);
     if (me.mods.marked) st.push(['Marked', '', glyph('strike')]);
@@ -780,7 +783,7 @@ export class HUD {
     if (me.rudderJam > 0) st.push(['Steering gear', '', '']);
     if (me.engineDown > 0) st.push(['Engine', '', '']);
     if (me.mods.invulnerable) st.push(['Invulnerable', 'buff', glyph('shield')]);
-    if (me.mods.untargetable && !me.mods.banished) st.push(['Untargetable', 'buff', glyph('cloak')]);
+    if (me.mods.untargetable && !me.mods.banished) st.push([exposure ? 'Cloak exposed' : 'Untargetable', exposure ? '' : 'buff', glyph('cloak')]);
     if (me.fireProof) st.push(['Fireproof', 'buff', glyph('wrench')]);
     if(me.stepper) {
       const a=me.stepper;
@@ -793,8 +796,8 @@ export class HUD {
     if (me.effects.some((f) => f.id === 'pickup:fury')) st.push(['Fury', 'buff', glyph('fire')]);
     if (g.exposed[team] > 0) st.push(['Enemies exposed', 'buff', glyph('reveal')]);
     if (g.exposed[enemy] > 0) st.push(['You are exposed', '', glyph('reveal')]);
-    if (g.inSmoke(me.pos.x, me.pos.z)) st.push(['Smoke concealment', 'buff', '']);
-    if (me.submerged && !revealedTo(me, enemy)) st.push(['Depth concealment', 'buff', glyph('cloak')]);
+    if (g.inSmoke(me.pos.x, me.pos.z)) st.push([exposure ? 'Smoke exposed' : 'Smoke concealment', exposure ? '' : 'buff', '']);
+    if (me.submerged && !exposure) st.push(['Depth concealment', 'buff', glyph('cloak')]);
     for (const c of me.consumables) if (c.spec.type === 'search' && c.active > 0) {
       const r = c.spec.power ?? 0;
       const n = g.ships.filter(s => s.alive && s.team !== team && dist2D(s.pos.x, s.pos.z, me.pos.x, me.pos.z) <= r).length;

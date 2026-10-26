@@ -1,4 +1,4 @@
-import { canTrack } from '../../core/Targeting';
+import { canTrack, proximityContact } from '../../core/Targeting';
 import type { Game } from '../../core/Game';
 import type { SkillSpec, SquadronType } from '../../core/types';
 import type { Ship } from '../../ships/Ship';
@@ -38,15 +38,20 @@ export function airStrike(ship: Ship, game: Game, type: SquadronType, target: Sh
   return sq;
 }
 
-/** Missiles and homing torpedoes guided onto `ship` lose it. */
-export function dropLocks(ship: Ship, game: Game): void {
+/** Countermeasures break guidance; stealth cannot shake a forced proximity contact. */
+export function dropLocks(ship: Ship, game: Game, reason: 'countermeasure' | 'stealth' = 'countermeasure'): void {
   for (const m of game.missiles.missiles) {
     if (!m.alive || m.target !== ship) continue;
+    if (reason === 'stealth' && proximityContact(ship, m.team) === 'forced') continue;
     m.target = null;
     m.tx += (game.rng() - 0.5) * 600;
     m.tz += (game.rng() - 0.5) * 600;
   }
-  for (const t of game.torps.torps) if (t.alive && t.homing === ship) t.homing = null;
+  for (const t of game.torps.torps) {
+    if (!t.alive || t.homing !== ship) continue;
+    if (reason === 'stealth' && proximityContact(ship, t.team) === 'forced') continue;
+    t.homing = null;
+  }
 }
 
 /** Enemies within `r` of a point, nearest first. */
