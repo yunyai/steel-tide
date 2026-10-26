@@ -449,8 +449,9 @@ export class PlayerController {
       const progress = clamp(f.elapsed / 3, 0, 1);
       const pan = this.reduceMotion ? 0 : progress * progress * (3 - 2 * progress);
       const cross = !!s.stepper?.cross;
-      // Flicker drifts out around the strikes; Cross sweeps in toward the convergence.
-      const yaw = this.stepPan.yaw + pan * (cross ? 0.32 : -0.28);
+      // Cross keeps orbiting through the finisher while its inward dolly eases to a stop.
+      const orbit = this.reduceMotion ? 0 : cross ? progress : pan;
+      const yaw = this.stepPan.yaw + orbit * (cross ? 0.7 : -0.28);
       const distance = 1800 + pan * (cross ? -150 : 100);
       this.stepView.set(f.x-Math.sin(yaw)*distance,1400+pan*(cross?-180:60),f.z+Math.cos(yaw)*distance);
       tmpV.set(f.x,0,f.z);
