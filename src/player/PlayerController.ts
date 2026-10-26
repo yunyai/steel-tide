@@ -89,6 +89,10 @@ export class PlayerController {
   private stepCamera = false;
   private stepReturn = 0;
   private stepView = new Vector3();
+  private stepPan: { state: object; yaw: number } | null = null;
+  private stepRotation = new Quaternion();
+  private stepFov = BASE_FOV;
+  private readonly reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   private padTimers = { thr: 0, rud: 0 };
   /** A shoulder button was used as a skill modifier since it went down (so its release does not switch weapons). */
   private padChord = false;
@@ -141,7 +145,7 @@ export class PlayerController {
   }
 
   get zoom(): boolean {
-    return this.zoomToggle || this.zoomHold;
+    return (this.zoomToggle || this.zoomHold) && !this.stepCamera;
   }
 
   /** Mouse captains pitch the view directly; everyone else sets a range and the view follows it. */
@@ -427,7 +431,7 @@ export class PlayerController {
     const cam = this.camera;
     const t = this.game.renderTime;
     const citadel=s.architect?.ultimate?.kind==='citadel';
-    if(own&&citadel){
+    if(own&&s.alive&&!this.game.over&&citadel){
       this.stepCamera=true;
       this.stepView.set(s.renderPos.x-Math.sin(this.yaw)*1900,Math.max(1050,s.renderPos.y+1050),s.renderPos.z+Math.cos(this.yaw)*1900);
       this.stepView.y=Math.max(this.stepView.y,this.game.map.heightAt(this.stepView.x,this.stepView.z)+200);
@@ -435,19 +439,38 @@ export class PlayerController {
       cam.fov=65;this.mag=1;cam.updateProjectionMatrix();cam.updateMatrixWorld();this.assist=null;return;
     }
     const f = s.stepper?.cross ?? s.stepper?.flicker;
-    if (f && own) {
-      if (!this.stepCamera) {
-        this.stepCamera=true;
-        this.stepView.set(f.x-Math.sin(this.yaw)*1800,1400,f.z+Math.cos(this.yaw)*1800);
-        this.stepView.y=Math.max(this.stepView.y,this.game.map.heightAt(this.stepView.x,this.stepView.z)+200);
+    if (f && own && s.alive && !this.game.over) {
+      if (this.stepPan?.state !== f) {
+        // Hold the cast's bearing: teleports and camera input must not whip the shot around.
+        this.stepPan = { state: f, yaw: this.yaw };
       }
+      this.stepCamera = true;
+      this.stepReturn = 0;
+      const progress = clamp(f.elapsed / 3, 0, 1);
+      const pan = this.reduceMotion ? 0 : progress * progress * (3 - 2 * progress);
+      const cross = !!s.stepper?.cross;
+      // Flicker drifts out around the strikes; Cross sweeps in toward the convergence.
+      const yaw = this.stepPan.yaw + pan * (cross ? 0.32 : -0.28);
+      const distance = 1800 + pan * (cross ? -150 : 100);
+      this.stepView.set(f.x-Math.sin(yaw)*distance,1400+pan*(cross?-180:60),f.z+Math.cos(yaw)*distance);
+      tmpV.set(f.x,0,f.z);
+      this.clearTerrain(tmpV,this.stepView);
+      this.stepView.y=Math.max(this.stepView.y,this.game.map.heightAt(this.stepView.x,this.stepView.z)+200);
       cam.position.copy(this.stepView);this.camPos.copy(this.stepView);
-      cam.lookAt(f.x,0,f.z);cam.fov=65;this.mag=1;
+      cam.lookAt(f.x,0,f.z);cam.fov=65-(cross?pan*3:0);this.mag=1;
+      this.fovKick *= Math.exp(-dt * 4);
+      this.assist = null;
+      this.shellCam.update(dt, false);
       cam.updateProjectionMatrix();cam.updateMatrixWorld();
       return;
     }
-    if(this.stepCamera){this.stepCamera=false;this.stepReturn=0.5;}
+    if(this.stepCamera){
+      this.stepCamera=false;this.stepReturn=0.5;this.stepPan=null;
+      this.stepRotation.copy(cam.quaternion);this.stepFov=cam.fov;
+    }
     this.stepReturn=Math.max(0,this.stepReturn-dt);
+    const left = this.stepReturn / 0.5;
+    const returnBlend = 1 - left * left * (3 - 2 * left);
     const p = s.renderPos;
     const target = tmpV;
     const viewYaw = this.yaw + this.freeYaw;
@@ -472,7 +495,8 @@ export class PlayerController {
       this.clearTerrain(p, target);
     }
     const snap = this.stepReturn<=0 && this.camPos.distanceToSquared(target) > 1500 * 1500;
-    if (snap) this.camPos.copy(target);
+    if (this.stepReturn > 0) this.camPos.lerpVectors(this.stepView,target,returnBlend);
+    else if (snap) this.camPos.copy(target);
     else this.camPos.lerp(target, 1 - Math.exp(-dt * 14));
     const floor = Math.max(waveHeight(this.camPos.x, this.camPos.z, t) + 3, this.game.map.heightAt(this.camPos.x, this.camPos.z) + 8);
     if (this.camPos.y < floor) this.camPos.y = floor;
@@ -514,6 +538,11 @@ export class PlayerController {
     this.fovKick *= Math.exp(-dt * 4);
     cam.fov = (2 * Math.atan(Math.tan((BASE_FOV * Math.PI) / 360) / this.mag) * 180) / Math.PI + this.fovKick;
     this.rideShell(dt, own);
+    if (this.stepReturn > 0) {
+      tmpQ.copy(cam.quaternion);
+      cam.quaternion.slerpQuaternions(this.stepRotation, tmpQ, returnBlend);
+      cam.fov = this.stepFov + (cam.fov - this.stepFov) * returnBlend;
+    }
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
 
