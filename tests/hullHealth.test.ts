@@ -14,7 +14,7 @@ it('keeps destroyed platform capacity gray until rebuilding restores it',()=>{
   s.architect!.slots[0].entity!.takeDamage(1e9,null,null,false,true);
   expect(hullHealthDisplay(s).reserved).toBe(200000);
   expect(hullHealthDisplay(s).platformMaxHp).toBe(200000);
-  run(g,12);expect(hullHealthDisplay(s).reserved).toBe(100000);
+  run(g,5);expect(hullHealthDisplay(s).reserved).toBe(100000);
 });
 it('uses ordinary max HP for other ships and for uninitialized scaled Architect hulls',()=>{
   const g=emptyGame(),s=place(g,'iowa',0,0,0);

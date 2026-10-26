@@ -38,7 +38,9 @@ it('does not create hull-equivalent health through repeated damaged recall and d
 it('rebuilding redistributes hull-equivalent health without adding current HP',()=>{
   const {g,s}=setup();s.activateSkill(0);run(g,2);
   const slot=s.architect!.slots[0];slot.entity!.takeDamage(1e9,null,null,false,true);
-  const before=s.hp,pool=architectPool(s).hp;run(g,12);
+  const before=s.hp,pool=architectPool(s).hp;run(g,4.9);
+  expect(slot.state).toBe('destroyed');expect(s.hp).toBe(before);
+  run(g,.1);
   expect(slot.state).toBe('docked');expect(s.hp).toBe(before);expect(s.maxHp).toBe(2400000);
   expect(architectPool(s).hp).toBe(pool);
   expect(slot.hp).toBeGreaterThan(0);expect(slot.hp).toBeLessThanOrEqual(200000);

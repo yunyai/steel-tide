@@ -27,8 +27,8 @@ describe('Architect arsenal',()=>{
     const slots=s.architect!.slots.slice(0,2);
     expect(slots.every(a=>a.state==='deployed')).toBe(true);
     expect(slots.every(a=>a.entity?.maxHp===200000)).toBe(true);
-    expect(slots[0].entity!.turrets[0].reload).toBeGreaterThan(1);
-    expect(slots[1].entity!.turrets[0].reload).toBeGreaterThan(.3);
+    expect(slots[0].entity!.turrets[0].reload).toBeGreaterThan(.6);
+    expect(slots[1].entity!.turrets[0].reload).toBeGreaterThan(.1);
     expect(g.ai.has(slots[0].entity!)).toBe(false);
   });
   it('fails blocked placement atomically without spending cooldown',()=>{
@@ -45,13 +45,13 @@ describe('Architect arsenal',()=>{
     expect(s.turrets[0].disabled).toBe(0);expect(s.turrets[0].reload).toBeGreaterThan(2.9);
     run(g,3);expect(slot.hp).toBeGreaterThan(20000);expect(slot.hp).toBeLessThanOrEqual(200000);
   });
-  it('rebuilds destroyed platforms after twelve seconds without kill or score rewards',()=>{
+  it('rebuilds destroyed platforms after five seconds without kill or score rewards',()=>{
     const {g,s,t}=deploy();const slot=s.architect!.slots[0],m=slot.entity!;
     t.hp=t.maxHp*0.5;const hp=t.hp,meter=t.meter;
     m.takeDamage(10000000,t,null,false,true);
     expect(slot.state).toBe('destroyed');expect(t.stats.kills).toBe(0);expect(t.hp).toBe(hp);expect(g.score).toEqual([0,0]);
     expect(t.meter).toBeGreaterThanOrEqual(meter);
-    run(g,11.9);expect(slot.state).toBe('destroyed');
+    run(g,4.9);expect(slot.state).toBe('destroyed');
     run(g,0.1);expect(slot.state).toBe('docked');expect(slot.hp).toBeGreaterThan(0);expect(slot.hp).toBeLessThanOrEqual(200000);
   });
   it('credits actual platform damage once to the owner and charges its ultimate',()=>{
@@ -124,7 +124,7 @@ describe('Architect ultimates',()=>{
     const {g,s}=arena();s.meter=1;
     g.map.heightAt=()=>10;
     expect(s.activateSkill(7)).toBe(false);expect(s.skills[7].meter).toBe(1);
-    for(const a of s.architect!.slots.slice(0,9)){a.state='destroyed';a.hp=0;a.rebuild=12;}
+    for(const a of s.architect!.slots.slice(0,9)){a.state='destroyed';a.hp=0;a.rebuild=5;}
     expect(s.activateSkill(6)).toBe(false);expect(s.skills[6].meter).toBe(1);
   });
   it('fires eight Killbox waves for 960k total at its fixed center',()=>{

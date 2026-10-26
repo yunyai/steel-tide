@@ -150,7 +150,7 @@ function setModuleReloadScale(slot:ModuleSlot,scale:number):void {
   slot.reloadScale=scale;
 }
 function platformReloadScale(slot:ModuleSlot):number {
-  return slot.state==='citadel'?.375:slot.state==='deployed'?.75:1;
+  return slot.state==='citadel'?.25:slot.state==='deployed'?.5:1;
 }
 export function commandedBurst(s:Ship,spec:SkillSpec):boolean {
   let count=0;
@@ -172,7 +172,7 @@ export function commandedBurst(s:Ship,spec:SkillSpec):boolean {
 export function destroyPlatform(m:Ship):void {
   const tag=m.architectPlatform;if(!tag)return;
   const a=tag.owner.architect;if(!a||a.clearing)return;
-  const slot=a.slots[tag.index];slot.hp=0;slot.state='destroyed';slot.rebuild=12;slot.entity=null;slot.path=null;slot.disabled=0;
+  const slot=a.slots[tag.index];slot.hp=0;slot.state='destroyed';slot.rebuild=5;slot.entity=null;slot.path=null;slot.disabled=0;
   disableDocked(tag.owner,slot);
   m.game.events.emit('architectCommand',{ship:tag.owner,kind:'destroy'});
 }
@@ -249,7 +249,7 @@ export function preparePlatform(m:Ship):void {
   m.mods.damageMul*=s.mods.damageMul;m.mods.apDamageMul*=s.mods.apDamageMul;m.mods.reloadMul*=s.mods.reloadMul;
   setModuleReloadScale(slot,platformReloadScale(slot));
   if(slot.state==='deployed'||slot.state==='citadel'){
-    m.mods.damageMul*=2;m.mods.reloadMul*=slot.reloadScale;
+    m.mods.damageMul*=3;m.mods.reloadMul*=slot.reloadScale;
   }
   m.control.fire=false;
   if(slot.state!=='deployed'&&slot.state!=='citadel')return;
