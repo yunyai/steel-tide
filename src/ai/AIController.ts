@@ -1,3 +1,4 @@
+import { canTrack } from '../core/Targeting';
 import { CAP_RADIUS, KNOT, MAP_HALF, RANGE_SCALE, SPEED_SCALE } from '../config';
 import type { Game } from '../core/Game';
 import { Pickups } from '../core/Pickups';
@@ -47,6 +48,12 @@ export class AIController {
   update(dt: number): void {
     const ship = this.ship;
     const c = ship.control;
+    if (this.target && !canTrack(ship, this.target)) {
+      this.target = null;
+      this.think = 0;
+      c.fire = false;
+      c.targetId = -1;
+    }
     this.think -= dt;
     if (this.think <= 0) {
       this.think = this.game.difficulty.think * (0.8 + this.game.rng() * 0.4);
@@ -103,14 +110,13 @@ export class AIController {
     const ship = this.ship;
     if (this.leader && this.leader.alive) {
       const lt = this.leader.control.targetId;
-      const t = this.game.ships.find((s) => s.id === lt && s.alive && !s.mods.untargetable);
+      const t = this.game.ships.find((s) => s.id === lt && canTrack(ship, s));
       if (t) return t;
     }
     let best: Ship | null = null;
     let bestScore = Infinity;
     for (const s of this.game.ships) {
-      if (!s.alive || s.team === ship.team || s.mods.untargetable) continue;
-      if (s.deep && !ship.consumables.some((c) => c.spec.type === 'depthCharges')) continue;
+      if (!canTrack(ship, s)) continue;
       const d = dist2D(ship.pos.x, ship.pos.z, s.pos.x, s.pos.z);
       // Prefer close, damaged targets; stick with the current one.
       let score = d * (0.6 + 0.4 * (s.hp / s.maxHp));

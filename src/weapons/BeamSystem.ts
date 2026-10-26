@@ -1,3 +1,4 @@
+import { incomingStep } from '../skills/misc/StepperRuntime';
 import { MAP_HALF } from '../config';
 import type { Game } from '../core/Game';
 import { distToHull, segmentHitsHull } from '../core/hull';
@@ -231,6 +232,7 @@ export class BeamSystem {
     const mul = b.owner.mods.damageMul * (b.skill.ult ? b.owner.mods.ultDamageMul : 1);
     for (const { s } of hits) {
       b.touching.push(s);
+      if (incomingStep(s,b.owner,false,false,false)) continue;
       if (b.strike > 0 && !b.struck.has(s.id)) {
         b.struck.add(s.id);
         s.takeDamage(b.strike * mul, b.owner, b.skill);

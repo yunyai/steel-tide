@@ -18,16 +18,18 @@ export function html(markup: string): HTMLElement {
 }
 
 /** A row of toggle buttons, one pressed. */
-export function seg<T extends string | number>(options: { value: T; label: string }[], get: () => T, set: (v: T) => void, click: () => void = () => {}): HTMLElement {
+export function seg<T extends string | number>(options: { value: T; label: string }[], get: () => T, set: (v: T) => void, click: () => void = () => {}, key = ''): HTMLElement {
   const wrap = h('div', { class: 'seg', role: 'group' });
   const render = () => {
     wrap.replaceChildren(
       ...options.map((o) => {
-        const b = h('button', { 'aria-pressed': String(get() === o.value) }, o.label);
+        const b = h('button', { 'aria-pressed': String(get() === o.value), 'data-value': String(o.value), ...(key ? { 'data-k': `${key}-${o.value}` } : {}) }, o.label);
         b.onclick = () => {
+          const focused = document.activeElement === b;
           click();
           set(o.value);
           render();
+          if (focused) wrap.querySelector<HTMLElement>(`[data-value="${CSS.escape(String(o.value))}"]`)?.focus({ preventScroll: true });
         };
         return b;
       }),

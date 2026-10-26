@@ -104,6 +104,7 @@ export interface BattleScene {
 /** Owns the WebGL context, the post-processing and the shared particles; draws the battle scene attached. */
 export class Renderer {
   readonly gl: WebGLRenderer;
+  private visualQuality = quality();
   /** The battle on screen, if any. */
   battle: BattleScene | null = null;
   private empty = new Scene();
@@ -131,7 +132,7 @@ export class Renderer {
   }
 
   resize(): void {
-    this.gl.setPixelRatio(Math.min(window.devicePixelRatio, quality().pixelRatio));
+    this.gl.setPixelRatio(Math.min(window.devicePixelRatio, this.visualQuality.pixelRatio));
     this.gl.setSize(window.innerWidth, window.innerHeight, false);
   }
 
@@ -148,7 +149,7 @@ export class Renderer {
 
   /** The viewport's composer, rebuilt when its size or the quality preset changes; null draws directly. */
   private post(i: number, scene: Scene, camera: PerspectiveCamera, w: number, h: number): Post | null {
-    const q = quality();
+    const q = this.visualQuality;
     if (!q.bloom) return null;
     const pr = this.gl.getPixelRatio();
     const key = `${w}x${h}@${pr}/${q.samples}`;
@@ -187,10 +188,11 @@ export class Renderer {
   /** Put a battle's scene on screen (the scene builds itself against this renderer first). */
   attach(battle: BattleScene): void {
     if (this.battle !== battle) this.detach();
+    this.visualQuality = quality();
     this.battle = battle;
     this.resize();
     this.fogScale = -1;
-    this.setFogScale(quality().viewFog);
+    this.setFogScale(this.visualQuality.viewFog);
     this.flashK = this.aberr = 0;
   }
 
@@ -250,7 +252,7 @@ export class Renderer {
       vp.camera.updateProjectionMatrix();
       if (b) {
         b.prepare(vp, h * pr);
-        this.setFogScale((vp.fogScale ?? 1) * quality().viewFog);
+        this.setFogScale((vp.fogScale ?? 1) * this.visualQuality.viewFog);
       }
       const post = b ? this.post(i, b.scene, vp.camera, w, h) : null;
       if (post) {

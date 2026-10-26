@@ -1,0 +1,32 @@
+[
+  {
+    "width": 1280,
+    "height": 720,
+    "errors": [],
+    "queenElizabeth": "Queen Elizabeth",
+    "random": "Satoru Gojo",
+    "hangarRandom": "Stalingrad",
+    "controllerFocus": true,
+    "overflow": false
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "errors": [],
+    "queenElizabeth": "Queen Elizabeth",
+    "random": "Kyojuro Rengoku",
+    "hangarRandom": "Iowa",
+    "controllerFocus": true,
+    "overflow": false
+  },
+  {
+    "width": 2560,
+    "height": 1080,
+    "errors": [],
+    "queenElizabeth": "Queen Elizabeth",
+    "random": "Katsuki Bakugo",
+    "hangarRandom": "Warspite",
+    "controllerFocus": true,
+    "overflow": false
+  }
+]

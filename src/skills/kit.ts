@@ -1,3 +1,4 @@
+import { canTrack } from '../core/Targeting';
 import { MAP_HALF } from '../config';
 import type { Game } from '../core/Game';
 import { distToHull, segmentHitsHull } from '../core/hull';
@@ -18,7 +19,7 @@ export function dist(a: Ship, b: Ship): number {
 
 /** Enemies within `r`; skills that pick targets pass over untargetable (cloaked) ships unless `all`. */
 export function enemiesWithin(ship: Ship, game: Game, r: number, targetable = true): Ship[] {
-  return game.ships.filter((s) => s.alive && s.team !== ship.team && (!targetable || !s.mods.untargetable) && dist(s, ship) < r);
+  return game.ships.filter((s) => s.alive && s.team !== ship.team && (!targetable || canTrack(ship, s)) && dist(s, ship) < r);
 }
 
 export function alliesWithin(ship: Ship, game: Game, r: number): Ship[] {
@@ -49,7 +50,7 @@ export function enemyNear(ship: Ship, game: Game, x: number, z: number, r: numbe
   let best: Ship | null = null;
   let bd = r;
   for (const s of game.ships) {
-    if (!s.alive || s.team === ship.team || s.mods.untargetable || !lockable(ship, s)) continue;
+    if (!canTrack(ship, s)) continue;
     const d = distToHull(s, x, z);
     if (d < bd) {
       bd = d;
@@ -127,7 +128,7 @@ export function chainLightning(
     let best: Ship | null = null;
     let bd = range;
     for (const s of game.ships) {
-      if (!s.alive || s.team === ship.team || s.deep || struck.includes(s)) continue;
+      if (!canTrack(ship, s) || s.deep || struck.includes(s)) continue;
       const d = Math.hypot(s.pos.x - fx, s.pos.z - fz);
       if (d < bd) {
         bd = d;

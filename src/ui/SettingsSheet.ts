@@ -65,7 +65,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
     field(
       'Quality',
       pick<QualityId>((Object.keys(QUALITIES) as QualityId[]).map((k) => ({ value: k, label: QUALITIES[k].label })), () => quality().id, (v) => setQuality(v)),
-      'Ultra Low has the lowest detail and the longest view distance, for seeing ships far out through the haze or running on weak machines. Low turns off shadows and post effects. Medium and High add bloom, colour grading and anti-aliasing. Changes apply from the next battle.',
+      'All presets show the same combat contacts, telegraphs and projectiles at the same view distance. Higher presets add resolution, water detail, scenery, shadows and bloom. Changes apply from the next battle.',
     ),
     field(
       'Performance readout',
@@ -81,7 +81,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
     ),
   ];
 
-  const volume = (label: string, key: 'master' | 'effects' | 'ui', note?: string) =>
+  const volume = (label: string, key: 'master' | 'effects' | 'weapons' | 'abilities' | 'ambience' | 'ui', note?: string) =>
     field(
       label,
       pick(
@@ -97,8 +97,20 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
 
   const soundTab = () => [
     volume('Master volume', 'master'),
-    volume('Effects', 'effects', 'Guns, engines, the sea and everything else in the battle.'),
+    volume('Battle volume', 'effects', 'Retains your saved effects volume; scales all battle categories.'),
+    volume('Weapons', 'weapons'),
+    volume('Abilities', 'abilities'),
+    volume('Sea and engines', 'ambience'),
     volume('Interface', 'ui', 'Menu clicks and alerts.'),
+    h('div', { class: 'audio-credits' },
+      h('h3', {}, 'Audio credits'),
+      h('p', { class: 'note' }, 'All game audio uses recordings from Helton Yan (CC BY 4.0), Kenney (CC0) and Sonniss GameAudioGDC contributors. Weapons, abilities, interface cues and naval/ground ambience and engines are excerpted, edited and normalized for this game. Full contributor credits, source files and licenses are linked below.'),
+      h('a', { href: 'https://heltonyan.itch.io/retroanimesfx', target: '_blank', rel: 'noopener noreferrer' }, 'Helton Yan'), ' · ',
+      h('a', { href: 'https://creativecommons.org/licenses/by/4.0/', target: '_blank', rel: 'noopener noreferrer' }, 'CC BY 4.0'), ' · ',
+      h('a', { href: 'https://kenney.nl/assets/sci-fi-sounds', target: '_blank', rel: 'noopener noreferrer' }, 'Kenney'), ' · ',
+      h('a', { href: 'https://sonniss.com/gameaudiogdc/', target: '_blank', rel: 'noopener noreferrer' }, 'Sonniss contributors'), ' · ',
+      h('a', { href: '/audio/CREDITS.md', target: '_blank', rel: 'noopener noreferrer' }, 'Full credits and modifications'),
+    ),
   ];
 
   const controlsTab = () => [

@@ -1,3 +1,4 @@
+import { canTrack } from '../../core/Targeting';
 import { bearingTo } from '../../core/math';
 import type { Ship } from '../../ships/Ship';
 import {
@@ -358,7 +359,7 @@ export const SILVERWOOD_SKILLS: SkillDef[] = [
       activate(ship, game, st) {
         const p = aimPoint(ship, 7000);
         const prey = game.ships
-          .filter((s) => s.alive && s.team !== ship.team && !s.deep && !s.mods.untargetable && Math.hypot(s.pos.x - p.x, s.pos.z - p.z) < 3000)
+          .filter((s) => canTrack(ship, s) && !s.deep && Math.hypot(s.pos.x - p.x, s.pos.z - p.z) < 3000)
           .sort((a, b) => Math.hypot(a.pos.x - p.x, a.pos.z - p.z) - Math.hypot(b.pos.x - p.x, b.pos.z - p.z))
           .slice(0, 5);
         if (!prey.length || !ship.spec.air) return false;

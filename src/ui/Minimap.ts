@@ -1,3 +1,4 @@
+import { contactVisible } from '../core/Targeting';
 import { MAP_HALF, CAP_RADIUS } from '../config';
 import { PORT_RADIUS } from '../modes/Convoy';
 import type { Game } from '../core/Game';
@@ -173,10 +174,19 @@ export class Minimap {
       }
     }
 
+    for (const search of this.pc.ship.consumables) {
+      if (search.spec.type !== 'search' || search.active <= 0) continue;
+      c.beginPath();
+      c.arc(this.toPx(this.pc.ship.pos.x), this.toPx(this.pc.ship.pos.z), (search.spec.power ?? 0) * k, 0, Math.PI * 2);
+      c.strokeStyle = '#4de8ff';
+      c.setLineDash([5, 4]);
+      c.stroke();
+      c.setLineDash([]);
+    }
     // Ships.
     const base = 4.5 * (s / 230);
     for (const sh of g.ships) {
-      if (!sh.alive) continue;
+      if (!contactVisible(sh, this.team)) continue;
       const ally = sh.team === this.team;
       const x = this.toPx(sh.pos.x);
       const y = this.toPx(sh.pos.z);

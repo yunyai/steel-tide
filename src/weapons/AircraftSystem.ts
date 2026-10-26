@@ -1,3 +1,4 @@
+import { canTrack } from '../core/Targeting';
 import { KNOT, RANGE_SCALE, SPEED_SCALE } from '../config';
 import type { Game } from '../core/Game';
 import { DEG, approachAngle, bearingTo, dist2D, forwardX, forwardZ, truncGaussian } from '../core/math';
@@ -152,6 +153,10 @@ export class AircraftSystem {
   update(dt: number): void {
     for (const sq of this.squadrons) {
       if (!sq.alive) continue;
+      if (sq.target && (!canTrack(sq.owner, sq.target) || sq.target.deep)) {
+        sq.target = null;
+        if (sq.state === 'attack') { sq.state = 'patrol'; sq.timer = 0; }
+      }
       sq.timer += dt;
       this.steer(sq, dt);
       this.applyAA(sq, dt);
@@ -234,7 +239,7 @@ export class AircraftSystem {
     let best: Ship | null = null;
     let bd = 3000 * RANGE_SCALE;
     for (const s of this.game.ships) {
-      if (!s.alive || s.team === sq.team || s.deep || s.mods.untargetable) continue;
+      if (!canTrack(sq.owner, s) || s.deep) continue;
       const d = dist2D(sq.tx, sq.tz, s.pos.x, s.pos.z);
       if (d < bd) {
         bd = d;
@@ -247,7 +252,7 @@ export class AircraftSystem {
   private attack(sq: Squadron): void {
     const g = this.game;
     const t = sq.target;
-    if (!t || !t.alive) {
+    if (!t || !canTrack(sq.owner, t) || t.deep) {
       sq.target = null;
       sq.state = 'patrol';
       return;

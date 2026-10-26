@@ -153,6 +153,12 @@ export class Input {
     return !!this.padNow[i]?.[b] && !this.padPrev[i]?.[b];
   }
 
+  /** A menu action must not reach the helm when that action resumes the battle. */
+  consumePadPress(i: number, b: number): void {
+    this.padPrev[i] ??= [];
+    this.padPrev[i][b] = !!this.padNow[i]?.[b];
+  }
+
   padReleased(i: number, b: number): boolean {
     return !this.padNow[i]?.[b] && !!this.padPrev[i]?.[b];
   }

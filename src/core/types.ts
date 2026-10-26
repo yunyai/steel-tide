@@ -34,7 +34,8 @@ export type Nation =
   | 'aot'
   | 'demonslayer'
   | 'mha'
-  | 'abyss';
+  | 'abyss'
+  | 'fold';
 export type AmmoType = 'AP' | 'HE';
 export type Team = 0 | 1;
 

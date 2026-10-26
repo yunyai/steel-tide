@@ -1,7 +1,8 @@
+import { canTrack } from '../../core/Targeting';
 import type { Game } from '../../core/Game';
 import { bearingTo } from '../../core/math';
 import type { Ship } from '../../ships/Ship';
-import { aimPoint, buff, enemiesWithin, hpFrac, hurt, mark, nearestEnemy, underFire, within } from '../kit';
+import { aimPoint, dist, enemyNear, buff, enemiesWithin, hpFrac, hurt, mark, nearestEnemy, underFire, within } from '../kit';
 import { airStrike } from '../modern/common';
 import { droneDive, enemiesAround, reticleTarget } from '../scifi/common';
 import { def, type SkillDef } from '../types';
@@ -231,8 +232,12 @@ export const HADAL_SKILLS: SkillDef[] = [
     },
     {
       activate(ship, game, st) {
-        const t = victim(ship, game, 3000);
-        if (!t) return false;
+        const reach = 3000 * ship.mods.reachMul;
+        const locked = game.ships.find(s => s.id === ship.control.targetId && canTrack(ship, s));
+        const aimed = enemyNear(ship, game, ship.control.aimX, ship.control.aimZ, 500);
+        const t = locked ?? aimed ?? nearestEnemy(ship, game, reach + 0.001);
+        if (!t) return ship.failSkill('Maw: no detected target within 3 km');
+        if (dist(ship, t) > reach) return ship.failSkill('Maw: target outside 3 km range');
         game.strikes.spawn(ship, { kind: 'rod', skill: st.spec, x: t.pos.x, z: t.pos.z, radius: 150, delay: 0, damage: 0, look: 'quake' });
         hurt(ship, t, t.spec.cls === 'TT' ? t.maxHp * 0.15 : t.maxHp * 4, st.spec);
       },

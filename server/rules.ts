@@ -1,3 +1,6 @@
+import { cleanAISelection, selectionError } from '../src/core/FleetSelection';
+import { buildRoster } from '../src/core/BattleSetup';
+import { makeRng } from '../src/core/math';
 import type { BattleConfig } from '../src/core/BattleSetup';
 import type { Team } from '../src/core/types';
 import { eraOf } from '../src/data/factions';
@@ -64,6 +67,9 @@ export const navalRules: BattleRules = {
     if (typeof o.titans === 'boolean') st.titans = o.titans;
     // Only eras with line ships to fill the fleets (Misc's lone titan sails in Mixed).
     if (o.era === 'mixed' || LINE_ERAS.includes(o.era as never)) st.era = o.era as LobbySettings['era'];
+    if (o.shiftTempo === 'burst' || o.shiftTempo === 'staggered' || o.shiftTempo === 'long') st.shiftTempo = o.shiftTempo;
+    const selection = cleanAISelection(o.aiSelection ?? st.aiSelection, st.era, st.titans);
+    if (selection) st.aiSelection = selection;
   },
 
   pickAllowed: shipAllowed,
@@ -99,6 +105,8 @@ export const navalRules: BattleRules = {
   holdFire: (c) => (c[3] ? [c[0], c[1], c[2], 0, c[4]] : c),
 
   startError(st, captains) {
+    const error = selectionError(st.aiSelection, st.era, st.titans, st.ai);
+    if (error) return error;
     // Every other battle is decided by one fleet running out of ships (or never meeting one).
     if (st.type === 'freeplay') return null;
     const empty = ([0, 1] as Team[]).find((t) => st.ai[t] === 0 && !captains.some((c) => c.team === t));
@@ -106,13 +114,15 @@ export const navalRules: BattleRules = {
   },
 
   config(st, captains, seed) {
-    return {
+    const config: BattleConfig = {
       mode: 'lan',
       type: st.type,
       mapId: st.mapId,
       // Unused once `ai` is set.
       teamSize: 1,
       ai: [st.ai[0], st.ai[1]],
+      aiSelection: st.aiSelection ? structuredClone(st.aiSelection) : undefined,
+      shiftTempo: st.shiftTempo,
       titans: st.titans,
       difficulty: st.difficulty,
       seed,
@@ -120,6 +130,9 @@ export const navalRules: BattleRules = {
       era: st.era,
       players: captains.map((c) => ({ shipId: c.pick, device: 'mouse', team: c.team, name: c.name })),
     };
+    const roster = buildRoster(config, makeRng(seed));
+    config.resolvedAI = [0, 1].map(t => roster.filter(r => r.team === t && r.humanIndex < 0).map(r => r.spec.id)) as [string[], string[]];
+    return config;
   },
 
   hostEnds: (st) => st.type === 'freeplay',

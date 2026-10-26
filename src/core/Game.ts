@@ -1,3 +1,5 @@
+import { clearStepper, syncStepCopies } from '../skills/misc/StepperRuntime';
+import { eraOf } from '../data/factions';
 import {
   BATTLE_TIME_LIMIT,
   CAP_RADIUS,
@@ -180,8 +182,8 @@ export class Game {
   pickShip(ship: Ship, specId: string): void {
     if (this.config.type !== 'freeplay' || ship.isSummon || !Object.hasOwn(SHIP_BY_ID, specId)) return;
     const spec = SHIP_BY_ID[specId];
-    if (spec.hidden) return;
-    ship.nextSpec = spec === ship.spec ? null : spec;
+    if (spec.hidden || this.config.titans === false && spec.cls === 'TT' || this.config.era && this.config.era !== 'mixed' && eraOf(spec) !== this.config.era) return;
+    ship.nextSpec = spec === ship.base ? null : spec;
   }
 
   /**
@@ -380,7 +382,9 @@ export class Game {
     for (const t of [0, 1] as Team[]) if (this.exposed[t] > 0) this.exposed[t] -= dt;
 
     for (const [ship, ai] of this.ai) if (ship.alive) ai.update(dt);
+    syncStepCopies(this);
     for (const s of this.ships) s.update(dt);
+    syncStepCopies(this);
     this.collideShips();
 
     this.shells.update(dt);
@@ -424,7 +428,7 @@ export class Game {
       if (!a.alive || a.deep || a.mods.banished) continue;
       for (let j = i + 1; j < ships.length; j++) {
         const b = ships[j];
-        if (!b.alive || b.deep || b.mods.banished) continue;
+        if (!b.alive || b.deep || b.mods.banished || a.stepper?.rush || b.stepper?.rush) continue;
         const reach = (a.spec.length + b.spec.length) / 2;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
@@ -490,7 +494,10 @@ export class Game {
   }
 
   onShipSunk(ship: Ship, killer: Ship | null): void {
+    const stepCopy = ship.stepper?.copy;
+    clearStepper(ship);
     this.events.emit('shipSunk', { ship, killer });
+    if (stepCopy) return;
     this.events.emit('explosion', { x: ship.pos.x, y: 8, z: ship.pos.z, size: 3 + ship.spec.length / 120 });
     if (killer) this.events.emit('ribbon', { ship: killer, kind: 'Destroyed', damage: 0 });
     // A kill tops up the ultimate meter (wingmen earn it for their captain), halves the cooldowns
@@ -557,6 +564,7 @@ export class Game {
 
   finish(winner: Team | -1, reason: string): void {
     this.over = true;
+    for (const s of this.ships) if (s.spec.id === 'stepper' && !s.isSummon) clearStepper(s);
     this.winner = winner;
     this.reason = reason;
     this.events.emit('gameOver', { winner, reason });

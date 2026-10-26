@@ -1,4 +1,6 @@
-import { DIFFICULTIES } from '../config';
+import { fleetEditor } from './FleetEditor';
+import { randomShip, selectionError } from '../core/FleetSelection';
+import { DIFFICULTIES, SHIFT_TEMPOS, type ShiftTempo } from '../config';
 import type { DifficultyId } from '../core/BattleSetup';
 import type { BattleEra, ShipSpec, Team } from '../core/types';
 import { ERA_LABEL } from '../data/factions';
@@ -114,6 +116,7 @@ export class Lobby {
     if (!this.visible) return;
     // Re-rendering replaces the buttons; keep keyboard focus on the same one.
     const focused = (document.activeElement as HTMLElement | null)?.dataset?.k;
+    const menuOption = (document.activeElement as HTMLElement | null)?.dataset?.menuOption;
     const typing = document.activeElement instanceof HTMLInputElement && this.root.contains(document.activeElement);
     if (typing) return this.renderStatusOnly();
     const lobby = this.net.status === 'online' ? this.net.lobby : null;
@@ -122,6 +125,7 @@ export class Lobby {
     // The default focus only on arriving at a screen, never on a refresh of the same one.
     const el = focused ? this.root.querySelector<HTMLElement>(`[data-k="${CSS.escape(focused)}"]`) : view !== this.view ? this.root.querySelector<HTMLElement>('[data-focus]') : null;
     this.view = view;
+    if (el && menuOption !== undefined) el.dataset.menuOption = menuOption;
     el?.focus({ preventScroll: true });
   }
 
@@ -240,7 +244,7 @@ export class Lobby {
     const settings = h('div', { class: 'lan-settings' });
     const mapName = MAPS.find((m) => m.id === st.mapId)?.name ?? st.mapId;
     if (host) {
-      const sg = <T extends string | number>(opts: { value: T; label: string }[], get: () => T, put: (v: T) => void) => seg(opts, get, put, () => this.hooks.click());
+      const sg = <T extends string | number>(opts: { value: T; label: string }[], get: () => T, put: (v: T) => void) => seg(opts, get, put, () => this.hooks.click(), `lobby-setting-${opts[0].label}`);
       settings.append(
         field(
           'Battle type',
@@ -253,6 +257,7 @@ export class Lobby {
         field('Map', sg(MAPS.map((m) => ({ value: m.id, label: m.name })), () => st.mapId, (v) => set({ mapId: v }))),
         field('AI skill', sg<DifficultyId>((Object.keys(DIFFICULTIES) as DifficultyId[]).map((k) => ({ value: k, label: DIFFICULTIES[k].label })), () => st.difficulty, (v) => set({ difficulty: v }))),
       );
+      settings.append(field('Titan Shift', sg<ShiftTempo>((Object.keys(SHIFT_TEMPOS) as ShiftTempo[]).map(value => ({ value, label: SHIFT_TEMPOS[value].label })), () => st.shiftTempo ?? 'staggered', shiftTempo => set({ shiftTempo }))));
       // Anime has no hangar titans (its ships become titans by Titan Shift), so the switch has nothing to gate.
       if (titansOf(st.era).length) settings.append(field('Titans', sg([{ value: 1, label: 'Allowed' }, { value: 0, label: 'Not allowed' }], () => (st.titans ? 1 : 0), (v) => set({ titans: v === 1 }))));
       if (LAN_ERAS.length > 1) settings.append(field('Era', sg<BattleEra>(LAN_ERAS.map((e) => ({ value: e, label: eraLabel(e) })), () => st.era, (v) => set({ era: v }))));
@@ -263,11 +268,14 @@ export class Lobby {
         ['AI skill', DIFFICULTIES[st.difficulty].label],
         ...(titansOf(st.era).length ? [['Titans', st.titans ? 'Allowed' : 'Not allowed'] as [string, string]] : []),
         ['Era', eraLabel(st.era)],
+        ['Titan Shift', SHIFT_TEMPOS[st.shiftTempo ?? 'staggered'].label],
       ];
       settings.append(h('dl', { class: 'lan-facts' }, ...facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));
       if (st.type === 'freeplay') settings.append(h('p', { class: 'note' }, FREEPLAY_NOTE));
     }
 
+    const poolError = selectionError(st.aiSelection, st.era, st.titans, st.ai);
+    if (poolError) settings.append(h('p', { class: 'note error', role: 'alert' }, poolError));
     const sizes = fleetSizes(l);
     const myTeam = me?.team ?? 0;
     const column = (t: Team) => {
@@ -294,6 +302,12 @@ export class Lobby {
         if (extra > 0) row.append(h('span', {}, `+ ${extra} against titans`));
         col.append(row);
       } else col.append(h('p', { class: 'lan-ai' }, ai > 0 ? `+ ${ai} AI ${ai === 1 ? 'ship' : 'ships'}` : 'No AI ships'));
+      if (host && l.state === 'waiting') col.append(fleetEditor(`${TEAM_LABEL[t]} AI`, st.era, st.titans, st.aiSelection?.[t], st.ai[t], value => {
+        const aiSelection: NonNullable<LobbySettings['aiSelection']> = structuredClone(st.aiSelection ?? [{ mode: 'auto' }, { mode: 'auto' }]);
+        aiSelection[t] = value;
+        set({ aiSelection });
+      }));
+      else if (st.aiSelection?.[t]) col.append(h('p', { class: 'note' }, `AI selection: ${st.aiSelection[t].mode}`));
       return col;
     };
 
@@ -367,6 +381,10 @@ export class Lobby {
       tag.textContent = m.ready ? 'Ready' : 'Not ready';
       if (m.ready) tag.classList.add('ready');
     }
+    if (m.id === me?.id && l.state === 'waiting') row.append(this.act('Random ship', 'btn btn-quiet', () => {
+      const s = randomShip(l.settings.era, Math.random);
+      if (s) this.pickShip(s.id);
+    }));
     row.append(icon, h('span', { class: 'who' }, name, ship), tag);
     return row;
   }

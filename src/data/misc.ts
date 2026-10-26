@@ -1,12 +1,45 @@
 import type { ShipSpec } from '../core/types';
+import { STEPPER_SKILLS } from '../skills/misc/stepper';
 import { HADAL_SKILLS } from '../skills/misc/hadal';
 import { kitOf } from '../skills/types';
 import { TITAN_REPAIR, search } from './common';
 
-// Misc: hulls that belong to no fleet and no age. For now, one titan from the trenches.
+// Misc: hulls that belong to no fleet and no age. Titans from the trenches and the folded sea.
 // Titan HP is final; ranges and reloads are scaled like every other ship.
 
 export const MISC: ShipSpec[] = [
+  {
+    id: 'stepper', name: 'Stepper', nation: 'fold', cls: 'TT', year: 2099,
+    description: 'A warship between moments: black armored sponsons orbit a white-violet phase core. Every step folds the ocean, every arrival is an attack.',
+    specialty: 'Teleport titan. Nine steps, relentless broadsides, rearward torpedoes and a twenty-hit flicker. Four fragile afterimages mirror attacks at 75% damage.',
+    hp: 1100000, length: 360, beam: 48, draft: 14, freeboard: 13,
+    maxSpeed: 36, accelTime: 40, turnRadius: 830, rudderTime: 12,
+    armor: { belt: 260, deck: 160, bow: 60, stern: 60, superstructure: 65, turret: 350, citadelInner: 60, torpedoProtection: 0.5 },
+    citadel: { length: 0.55, top: 2, width: 0.7 },
+    main: {
+      name: '406 mm phase cannons', look: 'rail',
+      turrets: [
+        { x: 115, y: 0, facing: 0, halfArc: 150, barrels: 3 },
+        { x: 78, y: 5, facing: 0, halfArc: 150, barrels: 3 },
+        { x: -78, y: 5, facing: 180, halfArc: 150, barrels: 3 },
+        { x: -115, y: 0, facing: 180, halfArc: 150, barrels: 3 },
+      ],
+      reload: 10, traverse: 18, range: 15000, dispersion: 110, barrelLength: 23,
+      ap: { caliber: 406, mass: 1225, velocity: 1100, damage: 9000, pen: 700 },
+      he: { caliber: 406, mass: 1000, velocity: 1100, damage: 4500, pen: 70, fireChance: 0.24 },
+    },
+    torpedoes: { name: 'Phase lances', launchers: [{ x: -35, side: 1, tubes: 4 },{ x: -35, side: -1, tubes: 4 }], tubes: 4, reload: 24, speed: 80, range: 9000, damage: 16000, floodChance: 0.35, spread: 8, detect: 800, look: 'lance' },
+    aa: { range: 4500, dps: 1200 }, consumables: [TITAN_REPAIR, search(9000)],
+    skills: kitOf(STEPPER_SKILLS,'stepperFlashStep','ramStep','broadStep','overStep','backStep','sideStep','flickerStep','explosionStep','afterimageStep'),
+    model: {
+      palette: { hull: 0x141020, upper: 0x29213c, deck: 0x1a1727, accent: 0xb388ff, boot: 0x080611 },
+      bow: 'clipper', stern: 'transom', sheer: 0.5,
+      blocks: [{x: 0,len:90,w:27,h:8},{x: 12,len:46,w:19,h:9}],
+      tower: {x:16,h:28,w:12,len:18,style:'tower'}, funnels: [], masts: [],
+      lightStrip: 0xb388ff,
+      emitters: [{x:0,y:28,len:24,w:20,color:0xb388ff},{x:70,y:15,len:18,w:6,color:0xe7d9ff},{x:-70,y:15,len:18,w:6,color:0xe7d9ff}],
+    },
+  },
   {
     id: 'hadal',
     name: 'Hadal',

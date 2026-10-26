@@ -1,3 +1,4 @@
+import { canTrack } from '../core/Targeting';
 import { KNOT, MAP_HALF, SPEED_SCALE } from '../config';
 import type { Game } from '../core/Game';
 import { DEG, approachAngle, bearingTo, forwardX, forwardZ } from '../core/math';
@@ -91,7 +92,7 @@ export class TorpedoSystem {
         if (Math.hypot(ax - t.x, az - t.z) > 120) t.heading = approachAngle(t.heading, bearingTo(t.x, t.z, ax, az), 14 * DEG * dt);
       }
       if (t.homing) {
-        if (!t.homing.alive || t.homing.mods.banished) t.homing = null;
+        if (!canTrack(t.owner, t.homing)) t.homing = null;
         else {
           const tgt = t.homing;
           const d = Math.hypot(tgt.pos.x - t.x, tgt.pos.z - t.z);
@@ -155,7 +156,7 @@ export class TorpedoSystem {
   private trySplit(t: Torpedo): void {
     const g = this.game;
     for (const s of g.ships) {
-      if (!s.alive || s.team === t.team || s.mods.untargetable) continue;
+      if (!canTrack(t.owner, s)) continue;
       if (Math.hypot(s.pos.x - t.x, s.pos.z - t.z) > 400) continue;
       const n = t.split;
       t.split = 0;
@@ -181,7 +182,7 @@ export class TorpedoSystem {
     if (!s.alive && dmg > 0 && g.rng() < TORP_DETONATION) s.detonate(t.owner);
     if (g.rng() < t.flood * (1 - prot)) s.startFlood(t.owner);
     if (s.alive && t.fire > 0 && g.rng() < t.fire) s.startFire(Math.floor(g.rng() * 4), t.owner);
-    if (s.alive && t.onHit) t.onHit(s);
+    if (s.alive && t.onHit && (s.stepper?.phaseUntil ?? 0) <= g.time) t.onHit(s);
     g.events.emit('torpHit', { attacker: t.owner, target: s, damage: dmg, x: t.x, z: t.z });
     g.events.emit('explosion', { x: t.x, y: 2, z: t.z, size: 1.4 });
     g.events.emit('ribbon', { ship: t.owner, kind: 'Torpedo Hit', damage: dmg });

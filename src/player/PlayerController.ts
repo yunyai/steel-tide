@@ -1,3 +1,4 @@
+import { canTrack, concealmentReason } from '../core/Targeting';
 import { PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import type { InputDeviceId, KeyLayout } from '../config';
 import type { Game } from '../core/Game';
@@ -85,6 +86,9 @@ export class PlayerController {
   focus: Ship;
   private shakeAmt = 0;
   private camPos = new Vector3();
+  private stepCamera = false;
+  private stepReturn = 0;
+  private stepView = new Vector3();
   private padTimers = { thr: 0, rud: 0 };
   /** A shoulder button was used as a skill modifier since it went down (so its release does not switch weapons). */
   private padChord = false;
@@ -163,7 +167,7 @@ export class PlayerController {
     let best: Ship | null = null;
     let bestScore = Infinity;
     for (const o of this.game.ships) {
-      if (!o.alive || o.team === s.team || o.mods.untargetable || o.isSummon && o.summonOwner === s) continue;
+      if (!canTrack(s, o)) continue;
       const brg = bearingTo(s.pos.x, s.pos.z, o.pos.x, o.pos.z);
       const off = Math.abs(wrapAngle(brg - this.yaw));
       const d = dist2D(s.pos.x, s.pos.z, o.pos.x, o.pos.z);
@@ -203,11 +207,14 @@ export class PlayerController {
     const p = this.padIndex;
     const pad = p >= 0 ? input.pad(p) : null;
     const mouse = this.device === 'mouse';
-    const tracking = !mouse && this.lock !== null;
-    if (this.lock && (!this.lock.alive || this.lock.mods.untargetable)) {
+    if (this.lock && !canTrack(s, this.lock)) {
+      this.notice = concealmentReason(this.lock, s.team) ?? 'Target outside lock range';
+      this.noticeTime = 2.5;
       this.lock = null;
       c.targetId = -1;
     }
+
+    const tracking = !mouse && this.lock !== null;
 
     // Spectating after death.
     if (!s.alive) {
@@ -354,7 +361,6 @@ export class PlayerController {
   private cameraInput(dt: number, input: Input, pad: Gamepad | null, mouse: boolean): void {
     // Sensitivity follows the actual field of view, so the scope feels the same at every power.
     const zoomK = 1 / this.mag;
-    const tracking = !mouse && this.lock !== null;
     let dYaw = 0;
     let dPitch = 0;
     let rangeMul = 1;
@@ -394,7 +400,7 @@ export class PlayerController {
       dYaw += rx * Math.abs(rx) * 1.3 * zoomK * dt;
       rangeMul *= Math.exp(-ry * Math.abs(ry) * 1.1 * dt * (this.zoom ? 0.3 : 1));
     }
-    if (tracking) {
+    if (!mouse && this.lock !== null) {
       const d = this.holdRange;
       this.lockYaw = clamp(this.lockYaw + dYaw, -0.6, 0.6);
       this.lockRange = clamp(this.lockRange + d * (rangeMul - 1), -d * 0.6, d * 0.6);
@@ -419,6 +425,20 @@ export class PlayerController {
     const spec = s.spec;
     const cam = this.camera;
     const t = this.game.renderTime;
+    const f = s.stepper?.flicker;
+    if (f && own) {
+      if (!this.stepCamera) {
+        this.stepCamera=true;
+        this.stepView.set(f.x-Math.sin(this.yaw)*1800,1400,f.z+Math.cos(this.yaw)*1800);
+        this.stepView.y=Math.max(this.stepView.y,this.game.map.heightAt(this.stepView.x,this.stepView.z)+200);
+      }
+      cam.position.copy(this.stepView);this.camPos.copy(this.stepView);
+      cam.lookAt(f.x,0,f.z);cam.fov=65;this.mag=1;
+      cam.updateProjectionMatrix();cam.updateMatrixWorld();
+      return;
+    }
+    if(this.stepCamera){this.stepCamera=false;this.stepReturn=0.5;}
+    this.stepReturn=Math.max(0,this.stepReturn-dt);
     const p = s.renderPos;
     const target = tmpV;
     const viewYaw = this.yaw + this.freeYaw;
@@ -442,7 +462,7 @@ export class PlayerController {
       target.set(p.x - fx * D * Math.cos(e), Math.max(0, p.y) + lift + D * Math.sin(e), p.z - fz * D * Math.cos(e));
       this.clearTerrain(p, target);
     }
-    const snap = this.camPos.distanceToSquared(target) > 1500 * 1500;
+    const snap = this.stepReturn<=0 && this.camPos.distanceToSquared(target) > 1500 * 1500;
     if (snap) this.camPos.copy(target);
     else this.camPos.lerp(target, 1 - Math.exp(-dt * 14));
     const floor = Math.max(waveHeight(this.camPos.x, this.camPos.z, t) + 3, this.game.map.heightAt(this.camPos.x, this.camPos.z) + 8);
@@ -555,7 +575,7 @@ export class PlayerController {
     const me = this.ship;
     if (!this.assistOn) return null;
     if (this.lock) return this.lock;
-    if (hit.ship) return hit.ship;
+    if (hit.ship && canTrack(me, hit.ship)) return hit.ship;
     const reach = ASSIST_PX * (this.zoom ? 1.4 : 1);
     const hw = this.viewW / 2;
     const hh = this.viewH / 2;
@@ -563,7 +583,7 @@ export class PlayerController {
     let best: Ship | null = null;
     let bestPx = reach;
     for (const o of this.game.ships) {
-      if (!o.alive || o.team === me.team || o.mods.untargetable || o.deep) continue;
+      if (!canTrack(me, o)) continue;
       const d = dist2D(me.pos.x, me.pos.z, o.pos.x, o.pos.z);
       if (d > max) continue;
       // Ignore ships far from where the crosshair meets the sea (stops picks through the horizon).

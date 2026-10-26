@@ -1,0 +1,309 @@
+{
+  "coverage": {
+    "assets": 43,
+    "expectedAssets": 43,
+    "events": [
+      {
+        "label": "world:gun",
+        "url": "/audio/gun-heavy.m4a",
+        "actual": "/audio/gun-heavy.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:explosion",
+        "url": "/audio/sonniss-explosion.m4a",
+        "actual": "/audio/sonniss-explosion.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:splash",
+        "url": "/audio/sonniss-splash.m4a",
+        "actual": "/audio/sonniss-splash.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:hit",
+        "url": "/audio/sonniss-hit.m4a",
+        "actual": "/audio/sonniss-hit.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:torpedo",
+        "url": "/audio/torpedo-launch.m4a",
+        "actual": "/audio/torpedo-launch.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:missile",
+        "url": "/audio/missile-launch.m4a",
+        "actual": "/audio/missile-launch.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:flak",
+        "url": "/audio/flak.m4a",
+        "actual": "/audio/flak.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:depth",
+        "url": "/audio/sonniss-depth.m4a",
+        "actual": "/audio/sonniss-depth.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:zap",
+        "url": "/audio/zap.m4a",
+        "actual": "/audio/zap.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:thunder",
+        "url": "/audio/thunder.m4a",
+        "actual": "/audio/thunder.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:laser",
+        "url": "/audio/laser.m4a",
+        "actual": "/audio/laser.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:nuke",
+        "url": "/audio/nuke.m4a",
+        "actual": "/audio/nuke.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:shield",
+        "url": "/audio/shield.m4a",
+        "actual": "/audio/shield.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:charge",
+        "url": "/audio/charge.m4a",
+        "actual": "/audio/charge.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:ricochet",
+        "url": "/audio/ricochet.m4a",
+        "actual": "/audio/ricochet.m4a",
+        "recorded": true
+      },
+      {
+        "label": "world:collapse",
+        "url": "/audio/collapse.m4a",
+        "actual": "/audio/collapse.m4a",
+        "recorded": true
+      },
+      {
+        "label": "gun:100",
+        "url": "/audio/gun-light.m4a",
+        "actual": "/audio/gun-light.m4a",
+        "recorded": true
+      },
+      {
+        "label": "gun:200",
+        "url": "/audio/gun-medium.m4a",
+        "actual": "/audio/gun-medium.m4a",
+        "recorded": true
+      },
+      {
+        "label": "gun:460",
+        "url": "/audio/gun-heavy.m4a",
+        "actual": "/audio/gun-heavy.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:click",
+        "url": "/audio/ui-click.m4a",
+        "actual": "/audio/ui-click.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:ribbon",
+        "url": "/audio/ui-ribbon.m4a",
+        "actual": "/audio/ui-ribbon.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:alarm",
+        "url": "/audio/ui-alarm.m4a",
+        "actual": "/audio/ui-alarm.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:ability",
+        "url": "/audio/ui-ability.m4a",
+        "actual": "/audio/ui-ability.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:ult",
+        "url": "/audio/ui-ult.m4a",
+        "actual": "/audio/ui-ult.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:capture",
+        "url": "/audio/ui-capture.m4a",
+        "actual": "/audio/ui-capture.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:victory",
+        "url": "/audio/ui-victory.m4a",
+        "actual": "/audio/ui-victory.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:defeat",
+        "url": "/audio/ui-defeat.m4a",
+        "actual": "/audio/ui-defeat.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:citadel",
+        "url": "/audio/ui-citadel.m4a",
+        "actual": "/audio/ui-citadel.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:warning",
+        "url": "/audio/ui-warning.m4a",
+        "actual": "/audio/ui-warning.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:pickup",
+        "url": "/audio/ui-pickup.m4a",
+        "actual": "/audio/ui-pickup.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:siren",
+        "url": "/audio/ui-siren.m4a",
+        "actual": "/audio/ui-siren.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:horn",
+        "url": "/audio/ui-horn.m4a",
+        "actual": "/audio/ui-horn.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:heartbeat",
+        "url": "/audio/ui-heartbeat.m4a",
+        "actual": "/audio/ui-heartbeat.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:ultReady",
+        "url": "/audio/ui-ult-ready.m4a",
+        "actual": "/audio/ui-ult-ready.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:streak",
+        "url": "/audio/ui-streak.m4a",
+        "actual": "/audio/ui-streak.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:shift",
+        "url": "/audio/transform.m4a",
+        "actual": "/audio/transform.m4a",
+        "recorded": true
+      },
+      {
+        "label": "ui:unshift",
+        "url": "/audio/ui-unshift.m4a",
+        "actual": "/audio/ui-unshift.m4a",
+        "recorded": true
+      },
+      {
+        "label": "family:charge",
+        "url": "/audio/charge.m4a",
+        "actual": "/audio/charge.m4a",
+        "recorded": true
+      },
+      {
+        "label": "family:impact",
+        "url": "/audio/impact.m4a",
+        "actual": "/audio/impact.m4a",
+        "recorded": true
+      },
+      {
+        "label": "family:beam",
+        "url": "/audio/beam.m4a",
+        "actual": "/audio/beam.m4a",
+        "recorded": true
+      },
+      {
+        "label": "family:slash",
+        "url": "/audio/slash.m4a",
+        "actual": "/audio/slash.m4a",
+        "recorded": true
+      },
+      {
+        "label": "family:transform",
+        "url": "/audio/transform.m4a",
+        "actual": "/audio/transform.m4a",
+        "recorded": true
+      }
+    ],
+    "generated": 0,
+    "naval": [
+      "navalEngine",
+      "sea"
+    ],
+    "ground": [
+      "groundEngine",
+      "wind"
+    ],
+    "engineResponds": true,
+    "engineTiming": {
+      "idle": 0.8471522927284241,
+      "full": 1.1312986612319946,
+      "idleTime": 0.512,
+      "fullTime": 0.9973333333333333,
+      "state": "running"
+    },
+    "volumes": true,
+    "muted": true,
+    "bounded": true,
+    "admitted": 22,
+    "cleaned": true
+  },
+  "suspension": {
+    "restored": true,
+    "gain": 0.9845899939537048
+  },
+  "loadingClick": {
+    "primary": true,
+    "used": "/audio/ui-click.m4a"
+  },
+  "primaryLoop": {
+    "primary": true
+  },
+  "missingFile": {
+    "recordedFallback": true,
+    "used": "/audio/gun-medium.m4a"
+  },
+  "loading": {
+    "pendingBounded": true,
+    "noLatePlayback": true,
+    "restarted": [
+      "groundEngine",
+      "wind"
+    ]
+  },
+  "allMissing": {
+    "silent": true,
+    "generated": 0
+  }
+}

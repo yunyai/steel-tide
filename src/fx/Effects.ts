@@ -33,6 +33,7 @@ export interface Shake {
 
 export class Effects {
   private off: (() => void)[] = [];
+  private visualQuality = quality();
   private emitAcc = new Map<string, number>();
   /** Camera positions this frame (for LOD and audio). */
   views: Vector3[] = [];
@@ -69,10 +70,13 @@ export class Effects {
       }),
       ev.on('skill', (e) => {
         const ult = !!e.ship.skills[e.index].spec.ult;
-        if (this.locals.includes(e.ship)) audio.ui(ult ? 'ult' : 'ability');
+        const skill = e.ship.skills[e.index].spec;
+        audio.cue(skill.id, 'activate', skill.icon === 'beam' || skill.icon === 'laser' ? 'beam' : skill.icon === 'blade' ? 'slash' : ult ? 'impact' : 'charge', e.ship.pos.x, e.ship.pos.y + 10, e.ship.pos.z, this.locals.includes(e.ship));
         this.skillBurst(e.ship, e.ship.skills[e.index].spec, ult);
       }),
+      ev.on('shift', e => { if (!e.quiet) audio.cue('titanShift', e.on ? 'activate' : 'end', 'transform', e.ship.pos.x, e.ship.pos.y, e.ship.pos.z, this.locals.includes(e.ship)); }),
       ev.on('consumable', (e) => {
+        if (e.type === 'search' && this.locals.includes(e.ship)) audio.ui('pickup');
         if (e.type === 'search') {
           const tint = SEARCH_TINT[eraOf(e.ship.spec)];
           this.flat.spawn({ x: e.ship.pos.x, y: 0.8, z: e.ship.pos.z, life: 2.5, size: 50, size1: (e.ship.spec.consumables.find((c) => c.type === e.type)?.power ?? 3000) * 2, color: tint, alpha: 0.5, kind: PK.Ring, fadeOut: 0.2 });
@@ -359,7 +363,7 @@ export class Effects {
     for (const s of g.ships) {
       const spec = s.spec;
       const d = this.near(s.pos.x, s.pos.z);
-      const lod = (d < 3000 ? 1 : d < 8000 ? 0.5 : d < 14000 ? 0.2 : 0) * quality().particles;
+      const lod = (d < 3000 ? 1 : d < 8000 ? 0.5 : d < 14000 ? 0.2 : 0) * this.visualQuality.particles;
       if (lod === 0) continue;
       const fx = Math.sin(s.heading);
       const fz = -Math.cos(s.heading);

@@ -1,3 +1,5 @@
+import { canTrack, contactVisible, revealedTo } from '../core/Targeting';
+import { cameraOccluded } from '../render/Visibility';
 import { Vector3 } from 'three';
 import { BATTLE_TIME_LIMIT, DOMINATION_WIN_SCORE, KNOT, SPEED_SCALE } from '../config';
 import type { Game } from '../core/Game';
@@ -534,10 +536,12 @@ export class HUD {
         fracR = r === Infinity ? 0 : 1 - r / full;
         info = r === Infinity ? 'Knocked out' : r <= 0 ? 'Ready' : ready ? `${ready}/${live.length} ready` : `${r.toFixed(1)}s`;
       } else if (s.kind === 'torp' && me.spec.torpedoes) {
-        const ready = me.launchers.filter((l) => l.reload <= 0).length;
+        const states = me.launchers.map(l => me.torpedoReadiness(l, this.pc.aim.x, this.pc.aim.z));
+        const ready = states.filter(s => s === 'ready').length;
         const r = Math.min(...me.launchers.map((l) => l.reload));
         fracR = 1 - Math.max(0, r) / me.spec.torpedoes.reload;
-        info = ready ? `${ready}/${me.launchers.length} ready` : `${r.toFixed(0)}s`;
+        info = states.map((state, i) => `${i + 1}: ${state === 'reloading' ? `${Math.max(0, me.launchers[i].reload).toFixed(0)}s` : state}`).join(' · ');
+        se.root.classList.toggle('ready', ready > 0);
       } else if (s.kind === 'air' && me.air && me.spec.air) {
         const n = Math.floor(me.air.hangar[s.sq]);
         fracR = me.air.cooldown > 0 ? 1 - me.air.cooldown / me.spec.air.launchCooldown : 1;
@@ -596,7 +600,7 @@ export class HUD {
       }
     } else e.dead.style.display = 'none';
     e.hint.style.display = pc.device === 'mouse' && !this.input.aiming && me.alive && g.rush?.phase !== 'offer' ? '' : 'none';
-    const notice = pc.noticeTime > 0 && me.alive ? pc.notice : '';
+    const notice = me.alive && me.skillFailureUntil > this.game.time && me.skillFailure ? me.skillFailure : pc.noticeTime > 0 && me.alive ? pc.notice : '';
     setText(e.notice, notice);
     e.notice.style.display = notice ? '' : 'none';
 
@@ -764,7 +768,7 @@ export class HUD {
     if (me.mods.feared) st.push(['Feared', '', glyph('fear')]);
     if (me.mods.rooted) st.push(['Rooted', '', glyph('root')]);
     if (me.mods.healBlock) st.push(['No repairs', '', glyph('skull')]);
-    if (me.mods.revealed) st.push(['Revealed', '', glyph('eye')]);
+    if (revealedTo(me, enemy)) st.push(['Revealed', '', glyph('eye')]);
     if (me.guard) st.push([me.guard.left > 1 ? `Warded ×${me.guard.left}` : 'Warded', 'buff', glyph('rune')]);
     if (me.mods.undying || me.lastStand) st.push(['Undying', 'buff', glyph('skull')]);
     if (me.mods.marked) st.push(['Marked', '', glyph('strike')]);
@@ -778,10 +782,24 @@ export class HUD {
     if (me.mods.invulnerable) st.push(['Invulnerable', 'buff', glyph('shield')]);
     if (me.mods.untargetable && !me.mods.banished) st.push(['Untargetable', 'buff', glyph('cloak')]);
     if (me.fireProof) st.push(['Fireproof', 'buff', glyph('wrench')]);
+    if(me.stepper) {
+      const a=me.stepper;
+      if(a.sideUntil>g.time)st.push([`Sidestep ${Math.ceil(a.sideUntil-g.time)}s`, 'buff',glyph('blink')]);
+      if(a.broadUntil>g.time)st.push([`Broadstep ${Math.ceil(a.broadUntil-g.time)}s`, 'buff',glyph('salvo')]);
+      const copies=g.ships.filter(s=>s.alive&&s.summonOwner===me&&s.stepper?.copy);
+      if(copies.length)st.push([`Afterimages ${copies.length}/4 · ${Math.ceil(Math.max(...copies.map(s=>s.expiresAt))-g.time)}s`, 'buff',glyph('fleet')]);
+      if(a.flicker)st.push([`Flicker ${a.flicker.count}/20`, 'buff',glyph('blink')]);
+    }
     if (me.effects.some((f) => f.id === 'pickup:fury')) st.push(['Fury', 'buff', glyph('fire')]);
     if (g.exposed[team] > 0) st.push(['Enemies exposed', 'buff', glyph('reveal')]);
     if (g.exposed[enemy] > 0) st.push(['You are exposed', '', glyph('reveal')]);
-    if (g.inSmoke(me.pos.x, me.pos.z)) st.push(['In smoke', 'buff', '']);
+    if (g.inSmoke(me.pos.x, me.pos.z)) st.push(['Smoke concealment', 'buff', '']);
+    if (me.submerged && !revealedTo(me, enemy)) st.push(['Depth concealment', 'buff', glyph('cloak')]);
+    for (const c of me.consumables) if (c.spec.type === 'search' && c.active > 0) {
+      const r = c.spec.power ?? 0;
+      const n = g.ships.filter(s => s.alive && s.team !== team && dist2D(s.pos.x, s.pos.z, me.pos.x, me.pos.z) <= r).length;
+      st.push([`Search ${(r / 1000).toFixed(1)} km · ${Math.ceil(c.active)}s · ${n} contacts`, 'buff', glyph('eye')]);
+    }
     const stKey = st.map((s) => s[0]).join(',');
     if (e.status.dataset.k !== stKey) {
       e.status.dataset.k = stKey;
@@ -884,9 +902,10 @@ export class HUD {
     const items: { s: Ship; x: number; y: number; d: number; label: string }[] = [];
     const off: { s: Ship; d: number }[] = [];
     for (const s of g.ships) {
-      if (!s.alive || s === me) continue;
+      if (!s.alive || s === me || !contactVisible(s, this.team)) continue;
       const ally = s.team === this.team;
       const top = (s.superBox?.top ?? s.spec.freeboard + 6) + 14 + Math.max(0, s.renderPos.y);
+      if (!ally && cameraOccluded(g, this.pc.camera.position, { x: s.renderPos.x, y: s.renderPos.y + s.spec.freeboard, z: s.renderPos.z }, this.team)) continue;
       const p = this.project(s.renderPos.x, top, s.renderPos.z);
       const d = dist2D(me.pos.x, me.pos.z, s.pos.x, s.pos.z);
       if (!p || p.x < -50 || p.y < -20 || p.x > W + 50 || p.y > H + 20) {
@@ -1016,6 +1035,7 @@ export class HUD {
       const sp = torps.speed * KNOT * SPEED_SCALE;
       out = range > torps.range;
       sub = out ? 'Beyond torpedo range' : `${(range / sp).toFixed(0)} s run`;
+      note = me.launchers.map((l, i) => `${i + 1}: ${me.torpedoReadiness(l, pc.aim.x, pc.aim.z)}`).join(' · ');
       this.lead(this.nearestEnemy(torps.range), (d) => d / sp);
     } else if (slot?.kind === 'air') {
       sub = `${slot.label} strike`;
@@ -1049,7 +1069,7 @@ export class HUD {
 
   private liveEnemies(): Ship[] {
     const me = this.pc.ship;
-    return this.game.ships.filter((s) => s.alive && s.team !== me.team);
+    return this.game.ships.filter((s) => canTrack(me, s));
   }
 
   private nearestEnemy(maxRange: number): Ship | null {
