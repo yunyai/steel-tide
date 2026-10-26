@@ -1,3 +1,4 @@
+import { ARCHITECT } from './architect';
 import { AIRCRAFT_HP_BUFF, AIRCRAFT_INTERVAL_MUL, EXTRA_MAIN_BUFF, MAIN_DAMAGE_BUFF, WEAK_SKILL_SHIPS } from './Balance';
 import { HP_SCALE, RANGE_SCALE, RELOAD_SCALE } from '../config';
 import type { BattleEra, Era, ShipSpec } from '../core/types';
@@ -25,7 +26,7 @@ const TURN_SCALE = 0.75;
 const RUDDER_SCALE = 0.5;
 const ACCEL_SCALE = 0.6;
 
-const RAW: ShipSpec[] = [...HISTORIC, ...TITANS, ...FANTASY, ...FANTASY_TITANS, ...MODERN, ...MODERN_TITANS, ...SCIFI, ...SCIFI_TITANS, ...ANIME, ...ANIME_FORMS, ...MISC, ...SUMMONS, ...ANIME_SUMMONS];
+const RAW: ShipSpec[] = [...HISTORIC, ...TITANS, ...FANTASY, ...FANTASY_TITANS, ...MODERN, ...MODERN_TITANS, ...SCIFI, ...SCIFI_TITANS, ...ANIME, ...ANIME_FORMS, ...MISC, ...ARCHITECT, ...SUMMONS, ...ANIME_SUMMONS];
 const TRAVERSE_MEDIANS = new Map<string, number>();
 for (const s of RAW) {
   const key = `${eraOf(s)}:${s.cls}`;

@@ -162,7 +162,7 @@ export class MissileSystem {
         const nx = m.sx + (m.tx - m.sx) * m.u;
         const nz = m.sz + (m.tz - m.sz) * m.u;
         m.heading = bearingTo(m.x, m.z, nx, nz);
-        const ny = 4 * m.apex * m.u * (1 - m.u) + 4;
+        const ny = 4 * m.apex * m.u * (1 - m.u) + 4 + (m.target?.pos.y ?? 0) * m.u;
         m.pitch = Math.atan2(ny - m.y, Math.max(1e-3, dist2D(m.x, m.z, nx, nz)));
         m.x = nx;
         m.z = nz;
@@ -186,7 +186,7 @@ export class MissileSystem {
         case 'cruise':
           m.speed = Math.min(m.top, m.speed + (m.profile === 'hyper' ? 900 : 120) * dt);
           m.heading = approachAngle(m.heading, bearingTo(m.x, m.z, m.tx, m.tz), (m.profile === 'hyper' ? 12 : 25) * DEG * dt);
-          m.y += ((m.profile === 'skim' ? SKIM_ALT : m.profile === 'hyper' ? 60 : CRUISE_ALT) - m.y) * Math.min(1, dt * 0.8);
+          m.y += ((m.target && m.target.pos.y>20 ? m.target.pos.y+4 : m.profile === 'skim' ? SKIM_ALT : m.profile === 'hyper' ? 60 : CRUISE_ALT) - m.y) * Math.min(1, dt * 0.8);
           if (m.profile === 'skim') {
             // Sea-skimmers stay low to the end and only jink onto the nearest hull.
             if (d < 400 && !m.target && !m.struck) m.target = this.acquire(m);
@@ -198,6 +198,7 @@ export class MissileSystem {
           }
           break;
         case 'popup':
+          if(m.target && m.target.pos.y>20){m.state='dive';break;}
           m.heading = approachAngle(m.heading, bearingTo(m.x, m.z, m.tx, m.tz), 40 * DEG * dt);
           m.y += 110 * dt;
           if (m.y > 180 || d < 300) m.state = 'dive';
@@ -206,7 +207,8 @@ export class MissileSystem {
           m.heading = approachAngle(m.heading, bearingTo(m.x, m.z, m.tx, m.tz), 90 * DEG * dt);
           // Glide down onto the target; a hypersonic round covers too much ground to fall faster.
           const drop = Math.max(m.profile === 'hyper' ? 10 : 60, (m.y / Math.max(30, d)) * m.speed);
-          m.y -= drop * dt;
+          if(m.target && m.target.pos.y>20)m.y+=(m.target.pos.y+4-m.y)*Math.min(1,dt*Math.max(4,m.speed/Math.max(30,d)));
+          else m.y -= drop * dt;
           break;
         }
       }
@@ -277,7 +279,7 @@ export class MissileSystem {
     if (m.state !== 'dive' && m.profile !== 'skim') return null;
     for (const s of this.game.ships) {
       if (!s.alive || s.team === m.team || s.submerged || s.mods.banished) continue;
-      if (m.y > s.spec.freeboard + 12) continue;
+      if (m.y > s.pos.y + s.spec.freeboard + 12 || m.y < s.pos.y - s.spec.draft - 4) continue;
       const dx = m.x - s.pos.x;
       const dz = m.z - s.pos.z;
       const h = s.heading;
@@ -295,7 +297,9 @@ export class MissileSystem {
     for (const s of g.ships) {
       if (!s.alive || s.team === m.team || s.submerged || s.mods.banished) continue;
       // Measured from the hull, not its centre: a hit on the bow of a long ship counts in full.
-      const d = distToHull(s, m.x, m.z);
+      const horizontal = distToHull(s, m.x, m.z);
+      const vertical=Math.max(0,s.pos.y-s.spec.draft-m.y,m.y-s.pos.y-s.spec.freeboard-12);
+      const d=Math.hypot(horizontal,vertical);
       if (d > m.blast) continue;
       this.hit(m, s, 1 - (0.6 * d) / m.blast);
     }
@@ -303,10 +307,10 @@ export class MissileSystem {
 
   /** A piercing runner strikes each hull it passes within its blast radius, once. */
   private runThrough(m: Missile): void {
-    if (m.y > 60) return;
     for (const s of this.game.ships) {
       if (!s.alive || s.team === m.team || s.submerged || s.mods.banished || m.struck!.has(s.id)) continue;
-      if (distToHull(s, m.x, m.z) > m.blast) continue;
+      const vertical=Math.max(0,s.pos.y-s.spec.draft-m.y,m.y-s.pos.y-s.spec.freeboard-12);
+      if (Math.hypot(distToHull(s,m.x,m.z),vertical) > m.blast) continue;
       m.struck!.add(s.id);
       this.game.events.emit('explosion', { x: m.x, y: 4, z: m.z, size: 1.6 });
       this.hit(m, s, 1);

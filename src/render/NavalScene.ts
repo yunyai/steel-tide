@@ -1,3 +1,4 @@
+import { ArchitectFx } from './ArchitectFx';
 import { CrossStepFx } from './CrossStepFx';
 import { TorpedoAim, type TorpedoAimSource } from './TorpedoAim';
 import { contactVisible } from '../core/Targeting';
@@ -24,6 +25,7 @@ const SHORE_HALF = MAP_HALF + 500;
 /** A naval battle's 3D scene: sky, sea, islands, ships, shells and every effect. */
 export class NavalScene implements BattleScene {
   readonly torpedoAim = new TorpedoAim();
+  readonly architectFx: ArchitectFx;
   readonly crossFx: CrossStepFx;
   readonly aiming = new Map<PerspectiveCamera, TorpedoAimSource>();
   readonly scene = new Scene();
@@ -50,6 +52,7 @@ export class NavalScene implements BattleScene {
   ) {
     this.scene.add(this.torpedoAim.root);
     this.crossFx = new CrossStepFx(this.scene, game);
+    this.architectFx = new ArchitectFx(this.scene, game);
     const q = quality();
     const gl = renderer.gl;
     gl.shadowMap.enabled = q.shadowMap > 0;
@@ -115,6 +118,7 @@ export class NavalScene implements BattleScene {
     for (const f of this.off) f();
     this.off = [];
     this.warm = [];
+    this.architectFx.dispose();
     this.crossFx.dispose();
     this.torpedoAim.dispose();
     this.aiming.clear();
@@ -194,6 +198,7 @@ export class NavalScene implements BattleScene {
     this.skillFx.views = this.effects.views;
     this.skillFx.update(dt);
     this.crossFx.update(dt, this.skillFx.locals);
+    this.architectFx.update(dt, this.skillFx.locals);
     this.projectiles.update(g);
   }
 
@@ -218,6 +223,7 @@ export class NavalScene implements BattleScene {
   }
 
   prepare(vp: Viewport, heightPx: number): void {
+    this.architectFx.prepare(vp.team, heightPx);
     this.crossFx.prepare(vp.team, heightPx);
     this.torpedoAim.update(this.aiming.get(vp.camera), heightPx);
     this.visibility(vp.team);

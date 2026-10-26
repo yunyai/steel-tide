@@ -28,7 +28,7 @@ export const LAN_PATH = '/lan';
 export const LAN_BATTLE_LIMIT_S = 60 * 60;
 
 /** Continuous orders: [rudder -1..1, aimX, aimZ, fire 0/1, targetId]. */
-export type Continuous = [number, number, number, number, number];
+export type Continuous = [number, number, number, number, number, number?];
 
 /** Edge orders, consumed by the tick they land on (see Ship.applyControl). */
 export interface Edge {

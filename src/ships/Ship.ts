@@ -1,3 +1,5 @@
+import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
+import { newArchitectState, clearArchitect, updateArchitect, preparePlatform, syncArchitectSlot, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
@@ -73,6 +75,8 @@ export interface ControlState {
   rudder: number;
   aimX: number;
   aimZ: number;
+  /** Explicit target elevation for airborne structures; absent preserves sea gunnery. */
+  aimY?: number;
   fire: boolean;
   slot: number | null;
   /** Skill to trigger this tick: 0 and 1 normal skills, 2 the ultimate, -1 none. */
@@ -146,6 +150,7 @@ export interface Mods {
   damageMul: number;
   apDamageMul: number;
   damageTakenMul: number;
+  citadelDR: number;
   speedMul: number;
   invulnerable: boolean;
   /** AI, target lock, aim assist and homing weapons ignore this ship (it still draws, shimmering). */
@@ -262,6 +267,7 @@ function baseMods(): Mods {
     damageMul: 1,
     apDamageMul: 1,
     damageTakenMul: 1,
+    citadelDR: 0,
     speedMul: 1,
     invulnerable: false,
     untargetable: false,
@@ -474,6 +480,8 @@ export interface FormState {
 }
 
 export class Ship {
+  architect: ArchitectState | null = null;
+  architectPlatform: ArchitectPlatform | null = null;
   readonly id: number;
   /** The hull as it sails now: the base hull, or its titan form during a Titan Shift. */
   spec: ShipSpec;
@@ -507,7 +515,17 @@ export class Ship {
   rudderTarget = 0;
   turnRate = 0;
 
-  hp: number;
+  private hullHp = 0;
+  get hp(): number { return this.hullHp; }
+  set hp(value: number) {
+    if(this.architect && !this.architect.healthTransfer){
+      ensureArchitectHealth(this);
+      const delta=value-this.hullHp;
+      if(delta>0)healArchitectHealth(this,delta);
+      else if(delta<0)damageArchitectHealth(this,-delta);
+    }
+    this.hullHp=value;
+  }
   maxHp: number;
   alive = true;
   withdrawn = false;
@@ -640,6 +658,8 @@ export class Ship {
    * Shift go through here; hit points, effects and the pose are the caller's.
    */
   private build(spec: ShipSpec): void {
+    clearArchitect(this);
+    this.architect = spec.id === 'architect' ? newArchitectState() : null;
     const game = this.game;
     this.spec = spec;
     this.colossus = spec.cls === 'TT';
@@ -740,9 +760,10 @@ export class Ship {
   }
 
   private shiftNow(form: ShipSpec, time: number, unlock: number[]): void {
+    const pool=architectPool(this);
     this.endSkills();
-    const frac = this.hp / this.maxHp;
-    const hpRatio = this.maxHp / this.spec.hp;
+    const frac = pool.hp / pool.maxHp;
+    const hpRatio = pool.maxHp / this.spec.hp;
     const saved = { cooldowns: this.skills.map((st) => st.cooldown), consumables: this.consumables, slot: this.slot, hpRatio };
     this.build(form);
     this.maxHp = form.hp * hpRatio;
@@ -761,8 +782,9 @@ export class Ship {
   private revert(): void {
     const f = this.form;
     if (!f) return;
+    const pool=architectPool(this);
     this.endSkills();
-    const frac = this.hp / this.maxHp;
+    const frac = pool.hp / pool.maxHp;
     this.form = null;
     this.build(this.base);
     this.maxHp = this.base.hp * f.saved.hpRatio;
@@ -893,6 +915,8 @@ export class Ship {
       return;
     }
     this.recomputeMods(dt);
+    if (this.architectPlatform) preparePlatform(this);
+    if (!this.alive) return;
     this.applyControl();
     const q = this.shiftQueued;
     if (q) {
@@ -900,12 +924,14 @@ export class Ship {
       this.shiftNow(q.form, q.time, q.unlock);
     }
     updateConsumables(this, dt);
+    updateArchitect(this, dt);
+    const wasAssembly = this.architect?.ultimate?.kind === 'assembly';
     const wasCross = !!this.stepper?.cross;
     this.updateSkills(dt);
     this.updateForm();
     this.updateShield(dt);
     this.updateSub(dt);
-    if (!wasCross && !this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
+    if (!this.architectPlatform && !wasAssembly && !wasCross && !this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
     this.updateMain(dt);
     this.updateSecondaries(dt);
     this.updateTorpedoes(dt);
@@ -914,6 +940,7 @@ export class Ship {
     this.updateDamageOverTime(dt);
     this.updateRegen(dt);
     this.updateAura(dt);
+    syncArchitectSlot(this);
     this.recordHistory(dt);
   }
 
@@ -1014,6 +1041,7 @@ export class Ship {
     }
     // The Kage strike: a cloak primes the next hit.
     if (m.untargetable && this.trait?.ambush) this.ambushReady = true;
+    m.damageTakenMul *= 1 - m.citadelDR;
     this.mods = m;
   }
 
@@ -1024,7 +1052,7 @@ export class Ship {
 
   private applyControl(): void {
     const c = this.control;
-    if (!this.stepper?.cross) {
+    if (!this.stepper?.cross && this.architect?.ultimate?.kind !== 'assembly') {
       if (c.throttleSet !== null) this.throttle = clamp(c.throttleSet, 0, THROTTLE_STEPS.length - 1);
       if (c.throttleUp) this.throttle = Math.min(THROTTLE_STEPS.length - 1, this.throttle + 1);
       if (c.throttleDown) this.throttle = Math.max(0, this.throttle - 1);
@@ -1036,7 +1064,13 @@ export class Ship {
         if (c.diveDown) this.depthState = Math.min(2, this.depthState + 1);
         if (c.diveUp) this.depthState = Math.max(0, this.depthState - 1);
       }
-    } else c.throttleSet = null;
+    } else {
+      c.throttleSet = null;
+      if (this.architect?.ultimate?.kind === 'assembly') {
+        if (c.consumable >= 0) activateConsumable(this, c.consumable);
+        if (c.skill === 5) this.activateSkill(5);
+      }
+    }
     // Edge-triggered inputs are consumed by the first tick that sees them.
     c.throttleUp = c.throttleDown = c.diveUp = c.diveDown = false;
     c.slot = null;
@@ -1047,6 +1081,7 @@ export class Ship {
   /** Ready to trigger: off cooldown (or meter full for an ultimate) and not already running. */
   skillReady(i: number): boolean {
     const st = this.skills[i];
+    if (this.architect?.ultimate && i !== 5) return false;
     if (!st || !this.alive || st.active || this.mods.stunned || this.mods.silenced) return false;
     return st.spec.ult ? st.meter >= 1 && !this.isSummon : st.cooldown <= 0;
   }
@@ -1083,6 +1118,8 @@ export class Ship {
 
   activateSkill(i: number, mirrored = false): boolean {
     this.skillFailure = '';
+    ensureArchitectHealth(this);
+    if (this.architect?.ultimate && i !== 5) return this.failSkill('Arsenal transformation active; Fortify remains available');
     if (this.stepper?.flicker || this.stepper?.cross || this.stepper?.rush) return this.failSkill('Step sequence already active');
     const echo = mirrored && this.stepper?.copy && this.summonOwner?.alive && i !== 8;
     if (this.stepper?.copy && !echo) return false;
@@ -1259,7 +1296,7 @@ export class Ship {
     const table = this.tableFor(this.ammo);
     const elev = table ? solve(table, aimDist).elevation : 0;
     const traverse = main.traverse * this.mods.traverseMul * dt;
-    const canFireGuns = !this.stepper?.flicker && !this.stepper?.cross && !this.stepper?.rush && (!this.isSub || this.depthState === 0 && this.pos.y > -1.5) && !this.mods.stunned && !this.mods.disarmed;
+    const canFireGuns = this.architect?.ultimate?.kind !== 'assembly' && !this.stepper?.flicker && !this.stepper?.cross && !this.stepper?.rush && (!this.isSub || this.depthState === 0 && this.pos.y > -1.5) && !this.mods.stunned && !this.mods.disarmed;
     for (const t of this.turrets) {
       if (t.reload > 0) t.reload -= dt;
       if (t.disabled > 0) t.disabled -= dt;
@@ -1323,6 +1360,7 @@ export class Ship {
         fromZ: tp.z,
         toX: tx,
         toZ: tz,
+        toY: c.aimY,
         dmgMul,
         guaranteedFire: this.mods.guaranteedFire || !!buff?.guaranteedFire,
         railgun: this.mods.railgun || !!buff?.railgun,
@@ -1668,12 +1706,12 @@ export class Ship {
       this.charge(dmg * ULT_DAMAGE_CHARGE * ULT_TAKEN_CHARGE);
       attacker.stats.damage += dmg;
       // An ultimate's own damage does not refill the meters, or the big ones recast at once.
-      if (!skill?.ult) attacker.charge(dmg * ULT_DAMAGE_CHARGE);
+      if (!skill?.ult) (attacker.architectPlatform?.owner ?? attacker).charge(dmg * ULT_DAMAGE_CHARGE);
       if (attacker.mods.lifesteal > 0) attacker.heal(dmg * attacker.mods.lifesteal);
       this.lastAttacker = attacker;
       // Wingmen credit their damage to the player who summoned them.
       if (attacker.summonOwner) attacker.summonOwner.stats.damage += dmg;
-      if (skill) { attacker.stats.skill += dmg; if(attacker.stepper?.copy && attacker.summonOwner) attacker.summonOwner.stats.skill += dmg; }
+      if (skill) { attacker.stats.skill += dmg; if((attacker.stepper?.copy || attacker.architectPlatform) && attacker.summonOwner) attacker.summonOwner.stats.skill += dmg; }
       if (skill) this.game.events.emit('skillHit', { ship: this, attacker, skill, damage: dmg });
       if (this.mods.reflect > 0 && !reflected && attacker.alive) {
         attacker.takeDamage(dmg * this.mods.reflect, this, null, true);
@@ -1697,6 +1735,7 @@ export class Ship {
 
   heal(amount: number): void {
     if (!this.alive || this.mods.healBlock) return;
+    ensureArchitectHealth(this);
     const over = this.hp + amount - this.maxHp;
     this.hp = Math.min(this.maxHp, this.hp + amount);
     if (over > 0 && this.mods.overShield > 0) {
@@ -1831,7 +1870,7 @@ export class Ship {
     this.stats.deaths++;
     this.extinguish();
     const credited = killer?.summonOwner ?? killer;
-    if (credited && credited.team !== this.team && !this.stepper?.copy) credited.stats.kills++;
+    if (credited && credited.team !== this.team && !this.stepper?.copy && !this.architectPlatform) credited.stats.kills++;
     this.game.onShipSunk(this, credited ?? null);
   }
 
@@ -1862,6 +1901,7 @@ export class Ship {
     this.shiftQueued = null;
     const spec = this.spec;
     this.alive = true;
+    clearArchitect(this);
     clearStepper(this);
     this.withdrawn = false;
     this.detonated = false;
@@ -1936,6 +1976,7 @@ export class Ship {
 
   withdraw(): void {
     if (!this.alive) return;
+    clearArchitect(this);
     clearStepper(this);
     this.alive = false;
     this.withdrawn = true;

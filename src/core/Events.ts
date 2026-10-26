@@ -46,6 +46,8 @@ export interface GameEventMap {
   lightning: { points: { x: number; y: number; z: number }[]; color: number; straight?: boolean };
   strike: { strike: Strike };
   strikeHit: { strike: Strike };
+  architectCommand: { ship: Ship; kind: 'deploy'|'recall'|'destroy'|'assembly'|'killbox'|'citadel'|'end' };
+  architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox' };
   crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
   stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };
   blink: { ship: Ship; fromX: number; fromZ: number; fromHeading?: number; dodge?: boolean };

@@ -24,8 +24,10 @@ export interface Shell {
   vy: number;
   vz: number;
   h0: number;
+  targetHeight?: number;
   age: number;
   flight: number;
+  skill?: SkillSpec;
   dmgMul: number;
   guaranteedFire: boolean;
   railgun: boolean;
@@ -55,6 +57,8 @@ export interface FireOptions {
   fromZ: number;
   toX: number;
   toZ: number;
+  toY?: number;
+  skill?: SkillSpec;
   dmgMul: number;
   guaranteedFire: boolean;
   railgun: boolean;
@@ -93,9 +97,11 @@ export class ShellSystem {
       vy: 0,
       vz: 0,
       h0: o.fromY,
+      targetHeight: o.toY ?? 0,
       age: 0,
       flight: 1,
       dmgMul: o.dmgMul,
+      skill: o.skill,
       guaranteedFire: o.guaranteedFire,
       railgun: o.railgun,
       secondary: !!o.secondary,
@@ -113,13 +119,14 @@ export class ShellSystem {
     if (s.straight) {
       // Hypervelocity: straight line toward the aim point at hull height.
       const v = o.spec.velocity * (o.railgun ? Math.max(3, o.flat ?? 0) : o.flat!);
-      const dy = 4 - o.fromY;
+      const dy = (o.toY ?? 4) - o.fromY;
       const len = Math.hypot(d, dy);
       s.vx = (hx * d * v) / len;
       s.vz = (hz * d * v) / len;
       s.vy = (dy * v) / len;
       s.py = o.fromY;
       s.h0 = 0;
+      s.targetHeight = 0;
       s.k = 0;
       s.flight = len / v / SHELL_TIME_SCALE;
     } else {
@@ -325,7 +332,7 @@ export class ShellSystem {
     let damage = 0;
     if (res.factor > 0) {
       const raw = s.spec.damage * res.factor * s.dmgMul * (s.ammo === 'AP' ? ship.mods.apTakenMul : 1) * s.owner.critMul(ship);
-      damage = ship.takeDamage(res.outcome === 'citadel' ? raw : ship.zoneDamage(res.zone, raw), s.owner);
+      damage = ship.takeDamage(res.outcome === 'citadel' ? raw : ship.zoneDamage(res.zone, raw), s.owner, s.skill ?? null);
       // A citadel hit that sinks the ship sets off its magazines.
       if (!ship.alive && res.outcome === 'citadel' && !s.secondary) ship.detonate(s.owner);
     }
@@ -405,7 +412,8 @@ function integrate(s: Shell, dt: number): void {
     s.py += s.vy * rdt;
   }
   s.age += dt;
-  s.y = s.py + s.h0 * Math.max(0, 1 - s.age / s.flight);
+  const progress = Math.min(1, s.age / s.flight);
+  s.y = s.py + s.h0 * (1 - progress) + (s.targetHeight ?? 0) * progress;
   s.travelled += Math.hypot(s.x - ox, s.z - oz);
 }
 

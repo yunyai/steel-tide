@@ -60,6 +60,7 @@ export class TurnApplier implements LockstepSim {
       ctl.rudder = c[0];
       ctl.aimX = c[1];
       ctl.aimZ = c[2];
+      ctl.aimY = c[5];
       ctl.fire = c[3] === 1;
       ctl.targetId = c[4];
       ctl.throttleSet = null;
@@ -111,5 +112,7 @@ const cm = (v: number) => Math.round(v * 100) / 100;
 /** The local captain's orders from the controller's draft: what to send for the next turns. */
 export function draftOrders(draft: ControlState): [Continuous, Edge | null] {
   const e = takeEdge(draft);
-  return [[draft.rudder, cm(draft.aimX), cm(draft.aimZ), draft.fire ? 1 : 0, draft.targetId], e];
+  const c: Continuous = [draft.rudder, cm(draft.aimX), cm(draft.aimZ), draft.fire ? 1 : 0, draft.targetId];
+  if (draft.aimY !== undefined) c.push(cm(draft.aimY));
+  return [c, e];
 }

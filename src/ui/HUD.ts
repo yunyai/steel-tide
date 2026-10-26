@@ -112,6 +112,7 @@ export class HUD {
   private minimap: Minimap;
   // Elements updated every frame.
   private e: Record<string, HTMLElement> = {};
+  private moduleEls: HTMLElement[] = [];
   private turretDots: HTMLElement[] = [];
   private telegraph: HTMLElement[] = [];
   private slotEls: { root: HTMLElement; bar: HTMLElement; info: HTMLElement }[] = [];
@@ -135,6 +136,7 @@ export class HUD {
   private chipHold = 0;
   private bossChip = 1;
   private lastHp: number;
+  private lastHullCapacity = 0;
   private lastCombo = 0;
 
   constructor(
@@ -270,6 +272,12 @@ export class HUD {
     e.hpShield = el('i', 'sh', hp);
     el('i', 'ticks', hp);
     e.status = el('div', 'status-row', ck);
+    if (me.architect) {
+      const battery=el('div','architect-battery',ck);battery.setAttribute('aria-label','Modular arsenal');
+      for(let i=0;i<10;i++){
+        const item=el('div','architect-slot',battery);item.innerHTML=`<b>${i+1}</b><span>DOCK</span><i></i>`;this.moduleEls.push(item);
+      }
+    }
     // Titan Shift: the form's name, the time it has left, and where each ultimate comes ready.
     const f = me.form;
     if (f) {
@@ -295,6 +303,7 @@ export class HUD {
       if (ult && !ults) el('div', 'gap', sb);
       const pad = ult ? PAD_ULT[ults++] : PAD_NORMAL[normals++];
       const root = el('div', `sk${ult ? ' ult' : ''}${st.spec.icon === 'shift' ? ' shift' : ''}`, sb);
+      root.title=`${st.spec.name}: ${st.spec.description}`;
       root.style.setProperty('--accent', accentCss(st.spec.accent));
       root.title = `${st.spec.name}: ${st.spec.description}`;
       const hx = el('div', 'hx', root);
@@ -394,7 +403,8 @@ export class HUD {
         if (a.ship === pc.ship) {
           flash(this.skillEls[a.index].root, 'flash');
           if (sp.ult) {
-            this.callout(sp.name, sp.description, c);
+            const brief:Record<string,string>={architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Eight waves of crossfire · Hold the formation',architectCitadel:'Airborne battery · Protect allies within 900 m'};
+            this.callout(sp.name, brief[sp.id]??sp.description, c);
             this.flashScreen(c);
           }
         } else if (sp.ult && a.ship.team !== this.team && !a.ship.isSummon) {
@@ -521,6 +531,13 @@ export class HUD {
 
     this.updateHull(dt);
     this.updateSkills();
+    if(me.architect)this.moduleEls.forEach((item,i)=>{
+      const a=me.architect!.slots[i],state=a.state;
+      item.dataset.state=state;item.style.setProperty('--health',`${Math.max(0,a.hp/me.architect!.moduleHp)}`);
+      setText(item.querySelector('span')!,state==='destroyed'?`${Math.ceil(a.rebuild)}s`:state==='docked'?'DOCK':state==='deployed'?'SET':state==='citadel'?'AIR':state==='returning'?'HOME':state==='assembling'?'BUILD':'MOVE');
+      item.title=`Module ${i+1}: ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP${a.reload>0?`, reload ${a.reload.toFixed(1)}s`:''}`;
+      item.setAttribute('aria-label',item.title);
+    });
 
     // Weapons.
     me.slots.forEach((s, i) => {
@@ -534,7 +551,7 @@ export class HUD {
         const ready = live.filter((t) => t.reload <= 0).length;
         const full = me.mods.reloadOverride > 0 ? me.mods.reloadOverride : me.spec.main.reload * me.mods.reloadMul;
         fracR = r === Infinity ? 0 : 1 - r / full;
-        info = r === Infinity ? 'Knocked out' : r <= 0 ? 'Ready' : ready ? `${ready}/${live.length} ready` : `${r.toFixed(1)}s`;
+        info = r === Infinity ? me.architect ? 'Battery deployed' : 'Knocked out' : r <= 0 ? 'Ready' : ready ? `${ready}/${live.length} ready` : `${r.toFixed(1)}s`;
       } else if (s.kind === 'torp' && me.spec.torpedoes) {
         const states = me.launchers.map(l => me.torpedoReadiness(l, this.pc.aim.x, this.pc.aim.z));
         const ready = states.filter(s => s === 'ready').length;
@@ -729,7 +746,13 @@ export class HUD {
     const team = this.team;
     const enemy: Team = team === 0 ? 1 : 0;
     e.hpNum.innerHTML = `${Math.round(me.hp).toLocaleString()} <small>/ ${me.maxHp.toLocaleString()}</small>`;
+    if(me.architect){
+      const a=me.architect,outside=a.slots.reduce((n,slot)=>n+(!slot.aboard&&slot.entity?.alive?slot.entity.hp:0),0);
+      e.hpNum.title=`${Math.round(outside).toLocaleString()} HP in platforms · Full pool ${Math.round(me.hp+outside).toLocaleString()} / ${Math.round(a.fullHp).toLocaleString()}`;
+    }
     const frac = me.hp / me.maxHp;
+    if(me.architect&&this.lastHullCapacity!==me.maxHp){this.lastHp=me.hp;this.chipHp=me.hp;this.chipHold=0;}
+    this.lastHullCapacity=me.maxHp;
     // Chip trail: holds for a moment after a hit, then drains to the real value.
     if (me.hp < this.lastHp - 1) {
       this.chipHold = 0.5;
@@ -785,6 +808,11 @@ export class HUD {
     if (me.mods.invulnerable) st.push(['Invulnerable', 'buff', glyph('shield')]);
     if (me.mods.untargetable && !me.mods.banished) st.push([exposure ? 'Cloak exposed' : 'Untargetable', exposure ? '' : 'buff', glyph('cloak')]);
     if (me.fireProof) st.push(['Fireproof', 'buff', glyph('wrench')]);
+    if(me.architect){
+      const a=me.architect,u=a.ultimate;
+      if(a.linkUntil>g.time)st.push([`Network ${Math.ceil(a.linkUntil-g.time)}s`,'buff',glyph('lightning')]);
+      if(u)st.push([`${u.kind==='assembly'?'Assembly':u.kind==='killbox'?'Killbox':'Citadel'} · ${u.members.filter(i=>a.slots[i].state!=='destroyed').length}/10`,'buff',glyph('fleet')]);
+    }
     if(me.stepper) {
       const a=me.stepper;
       if(a.sideUntil>g.time)st.push([`Sidestep ${Math.ceil(a.sideUntil-g.time)}s`, 'buff',glyph('blink')]);
@@ -919,8 +947,9 @@ export class HUD {
         if ((!ally || s.spec.cls === 'AK') && !s.isSummon) off.push({ s, d });
         continue;
       }
-      const name = captainName(s);
-      const label = ally ? name : `${name}  ${(d / 1000).toFixed(1)} km`;
+      const name = s.architectPlatform ? `Module ${s.architectPlatform.index+1}` : captainName(s);
+      const compact=!!s.architectPlatform&&this.pc.lock!==s&&this.pc.aimHit?.ship!==s;
+      const label = compact ? `${s.architectPlatform!.index+1}` : ally ? name : `${name}  ${(d / 1000).toFixed(1)} km`;
       items.push({ s, x: p.x, y: p.y, d, label });
     }
     // Declutter: nearer (and locked) ships keep their spot, others stack upward.
@@ -945,7 +974,7 @@ export class HUD {
       }
       m.style.display = '';
       const s = it.s;
-      const cls = `marker ${s.team === this.team ? 'ally' : 'enemy'}${s.spec.cls === 'TT' ? ' titan' : s.spec.cls === 'AK' ? ' cargo' : ''}${lock === s ? ' locked' : ''}`;
+      const cls = `marker ${s.team === this.team ? 'ally' : 'enemy'}${s.spec.cls === 'TT' ? ' titan' : s.spec.cls === 'AK' ? ' cargo' : ''}${lock === s ? ' locked' : ''}${s.architectPlatform?' module-contact':''}${s.architectPlatform&&lock!==s&&this.pc.aimHit?.ship!==s?' compact':''}`;
       if (m.className !== cls) m.className = cls;
       if (m.dataset.cls !== s.spec.cls) {
         m.dataset.cls = s.spec.cls;
@@ -1069,7 +1098,7 @@ export class HUD {
     }
     me.turrets.forEach((t, i) => {
       const d = this.turretDots[i];
-      setClass(d, t.disabled > 0 ? 'off' : t.reload <= 0 ? `ready${t.aligned ? ' bear' : ''}` : '');
+      setClass(d, me.architect&&!me.architect.slots[i].aboard ? 'remote' : t.disabled > 0 ? 'off' : t.reload <= 0 ? `ready${t.aligned ? ' bear' : ''}` : '');
     });
   }
 

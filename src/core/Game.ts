@@ -1,3 +1,4 @@
+import { clearArchitect, destroyPlatform } from '../skills/misc/ArchitectRuntime';
 import { clearStepper, syncStepCopies } from '../skills/misc/StepperRuntime';
 import { eraOf } from '../data/factions';
 import {
@@ -249,6 +250,9 @@ export class Game {
     }
   }
 
+  /** Runtime summons resolve registered specs here, keeping skill modules independent of roster initialization. */
+  shipSpec(id: string): ShipSpec { return SHIP_BY_ID[id]; }
+
   addShip(spec: ShipSpec, team: Team, name: string, x: number, z: number, heading: number): Ship {
     const ship = new Ship(this, spec, team, name);
     ship.pos.set(x, 0, z);
@@ -428,7 +432,7 @@ export class Game {
       if (!a.alive || a.deep || a.mods.banished) continue;
       for (let j = i + 1; j < ships.length; j++) {
         const b = ships[j];
-        if (!b.alive || b.deep || b.mods.banished || a.stepper?.rush || b.stepper?.rush) continue;
+        if (!b.alive || b.deep || b.mods.banished || a.architectPlatform && (a.pos.y > 20 || a.architectPlatform.owner.architect?.slots[a.architectPlatform.index].path) || b.architectPlatform && (b.pos.y > 20 || b.architectPlatform.owner.architect?.slots[b.architectPlatform.index].path) || a.stepper?.rush || b.stepper?.rush) continue;
         const reach = (a.spec.length + b.spec.length) / 2;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
@@ -494,6 +498,8 @@ export class Game {
   }
 
   onShipSunk(ship: Ship, killer: Ship | null): void {
+    if (ship.architectPlatform) { destroyPlatform(ship); return; }
+    clearArchitect(ship);
     const stepCopy = ship.stepper?.copy;
     clearStepper(ship);
     this.events.emit('shipSunk', { ship, killer });
@@ -564,6 +570,7 @@ export class Game {
 
   finish(winner: Team | -1, reason: string): void {
     this.over = true;
+    for (const s of this.ships) if (s.architect) clearArchitect(s);
     for (const s of this.ships) if (s.spec.id === 'stepper' && !s.isSummon) clearStepper(s);
     this.winner = winner;
     this.reason = reason;

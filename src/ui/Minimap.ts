@@ -193,6 +193,7 @@ export class Minimap {
       c.save();
       c.translate(x, y);
       c.rotate(sh.heading);
+      if(sh.architectPlatform){c.fillStyle=ally?ALLY:palette().enemy;c.fillRect(-2,-2,4,4);c.restore();continue;}
       const cargo = sh.spec.cls === 'AK';
       const sz = sh.spec.cls === 'TT' ? base * 1.9 : cargo ? base * 1.2 : base;
       c.beginPath();

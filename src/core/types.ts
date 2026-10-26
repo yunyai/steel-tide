@@ -35,7 +35,8 @@ export type Nation =
   | 'demonslayer'
   | 'mha'
   | 'abyss'
-  | 'fold';
+  | 'fold'
+  | 'foundry';
 export type AmmoType = 'AP' | 'HE';
 export type Team = 0 | 1;
 

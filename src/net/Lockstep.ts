@@ -108,7 +108,7 @@ export class Lockstep {
   /** Send the local captain's orders: edges at once, continuous orders when they change, and a heartbeat now and then. */
   sendOrders(c: Continuous, e: Edge | null, now = performance.now()): void {
     const last = this.lastSent;
-    const changed = !last || c.some((v, i) => v !== last[i]);
+    const changed = !last || c.length !== last.length || c.some((v, i) => v !== last[i]);
     if (!e && !changed && now - this.lastSentAt < HEARTBEAT_MS) return;
     this.lastSent = c;
     this.lastSentAt = now;

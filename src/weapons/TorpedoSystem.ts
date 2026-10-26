@@ -134,7 +134,7 @@ export class TorpedoSystem {
       }
       if (t.split > 1) this.trySplit(t);
       for (const s of g.ships) {
-        if (!s.alive || s.team === t.team || s.mods.torpImmune || s.mods.banished) continue;
+        if (!s.alive || s.pos.y > 20 || s.team === t.team || s.mods.torpImmune || s.mods.banished) continue;
         if (s.deep || (s.submerged && !t.deep)) continue;
         const dx = t.x - s.pos.x;
         const dz = t.z - s.pos.z;

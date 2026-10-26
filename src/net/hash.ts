@@ -28,6 +28,18 @@ export function stateHash(g: Game): number {
     h = mix(h, s.shield);
     h = mix(h, s.alive ? 1 : 0);
     h = mix(h, s.form ? 1 : 0);
+    if (s.architect) {
+      const a=s.architect;
+      for (const n of [a.fullHp,a.moduleHp,a.healthReady?1:0,a.linkUntil,a.linkTick,a.clearing?1:0]) h=mix(h,n);
+      for (const slot of a.slots) {
+        for (const n of [slot.aboard?1:0,slot.index,['docked','launching','deployed','moving','returning','destroyed','assembling','citadel'].indexOf(slot.state),slot.hp,slot.reload,slot.disabled,slot.rebuild,slot.dockedFor,slot.entity?.id??0])h=mix(h,n);
+        if(slot.path)for(const n of [slot.path.x,slot.path.y,slot.path.z,slot.path.tx,slot.path.ty,slot.path.tz,slot.path.elapsed,slot.path.duration,slot.path.damage?1:0,...slot.path.hit])h=mix(h,n);
+      }
+      for(const edge of a.links){h=mix(h,edge.a);h=mix(h,edge.b);}
+      const u=a.ultimate;h=mix(h,u?1:0);
+      if(u)for(const n of [['assembly','killbox','citadel'].indexOf(u.kind),u.elapsed,u.x,u.z,u.aimX,u.aimY,u.aimZ,u.locked?1:0,u.waves,u.fired?1:0,...u.members,...u.granted])h=mix(h,n);
+      for(const st of s.skills)for(const n of [st.cooldown,st.time,st.meter,st.active?1:0])h=mix(h,n);
+    }
     if (s.stepper) {
       const a=s.stepper;
       for(const n of [a.copy?1:0,a.slot,a.ownerId,a.until,a.dodgeReady,a.phaseUntil,a.sideUntil,a.broadUntil,a.broadTarget,...a.copies]) h=mix(h,n);

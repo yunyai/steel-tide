@@ -89,6 +89,7 @@ export class AIController {
     const c = ship.control;
     this.target = this.pickTarget();
     c.targetId = this.target?.id ?? -1;
+    c.aimY = this.target && this.target.pos.y > 20 ? this.target.pos.y + 4 : undefined;
 
     // Fresh aim error each decision, scaled by range and difficulty.
     if (this.target) {
@@ -524,5 +525,9 @@ export class AIController {
     const lead = this.game.difficulty.lead;
     c.aimX = t.pos.x + forwardX(t.heading) * t.speed * time * lead + this.errX;
     c.aimZ = t.pos.z + forwardZ(t.heading) * t.speed * time * lead + this.errZ;
+    if(ship.architect && c.skill===0){
+      const dx=ship.pos.x-t.pos.x,dz=ship.pos.z-t.pos.z,d=Math.hypot(dx,dz)||1;
+      c.aimX=t.pos.x+dx/d*700;c.aimZ=t.pos.z+dz/d*700;
+    }
   }
 }

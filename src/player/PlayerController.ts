@@ -354,6 +354,7 @@ export class PlayerController {
       this.holdRange = clamp(dist2D(s.pos.x, s.pos.z, t.pos.x, t.pos.z) + this.lockRange, 100, this.maxRange());
     }
     // The aim point comes from last frame's crosshair ray (see updateCamera).
+    c.aimY = this.aimHit?.ship && this.aimHit.ship.pos.y > 20 ? Math.max(this.aimHit.ship.pos.y + 4, this.aimHit.y) : this.assist && this.assist.pos.y > 20 ? this.assist.pos.y + 4 : this.lock && this.lock.pos.y > 20 ? this.lock.pos.y + 4 : undefined;
     c.aimX = this.aim.x;
     c.aimZ = this.aim.z;
   }
@@ -425,6 +426,14 @@ export class PlayerController {
     const spec = s.spec;
     const cam = this.camera;
     const t = this.game.renderTime;
+    const citadel=s.architect?.ultimate?.kind==='citadel';
+    if(own&&citadel){
+      this.stepCamera=true;
+      this.stepView.set(s.renderPos.x-Math.sin(this.yaw)*1900,Math.max(1050,s.renderPos.y+1050),s.renderPos.z+Math.cos(this.yaw)*1900);
+      this.stepView.y=Math.max(this.stepView.y,this.game.map.heightAt(this.stepView.x,this.stepView.z)+200);
+      cam.position.copy(this.stepView);this.camPos.copy(this.stepView);cam.lookAt(s.renderPos.x,120,s.renderPos.z);
+      cam.fov=65;this.mag=1;cam.updateProjectionMatrix();cam.updateMatrixWorld();this.assist=null;return;
+    }
     const f = s.stepper?.cross ?? s.stepper?.flicker;
     if (f && own) {
       if (!this.stepCamera) {
@@ -456,7 +465,7 @@ export class PlayerController {
     } else {
       // Orbit: looking down lifts the camera over the ship, as if on a boom.
       const L = Math.max(60, spec.length);
-      const D = (L * 1.05 + 70) * this.dist;
+      const D = (L * 1.05 + 70) * this.dist * (s.architect?.ultimate?.kind==='assembly'?1.8:1);
       const e = clamp(0.17 + Math.max(0, -this.pitch) * 0.6, 0.06, 1.1);
       const lift = spec.freeboard + 4;
       target.set(p.x - fx * D * Math.cos(e), Math.max(0, p.y) + lift + D * Math.sin(e), p.z - fz * D * Math.cos(e));

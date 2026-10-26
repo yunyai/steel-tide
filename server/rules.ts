@@ -78,9 +78,11 @@ export const navalRules: BattleRules = {
   defaultPick: (st) => shipsIn(st.era).find((s) => s.cls !== 'TT')!.id,
 
   cleanContinuous(v) {
-    if (!Array.isArray(v) || v.length !== 5 || !v.every(finite)) return null;
+    if (!Array.isArray(v) || (v.length !== 5 && v.length !== 6) || !v.every(finite)) return null;
     const [r, x, z, f, t] = v as number[];
-    return [Math.max(-1, Math.min(1, r)), x, z, f ? 1 : 0, Number.isInteger(t) ? t : -1];
+    const c: Continuous = [Math.max(-1, Math.min(1, r)), x, z, f ? 1 : 0, Number.isInteger(t) ? t : -1];
+    if (v.length === 6) c.push(Math.max(0, Math.min(1200, v[5])));
+    return c;
   },
 
   /** Edge orders as the battle allows them: Free play adds the ship picker's. */
@@ -102,7 +104,7 @@ export const navalRules: BattleRules = {
     return Object.keys(e).length ? e : null;
   },
 
-  holdFire: (c) => (c[3] ? [c[0], c[1], c[2], 0, c[4]] : c),
+  holdFire: (c) => { const held: Continuous = [...c]; held[3] = 0; return held; },
 
   startError(st, captains) {
     const error = selectionError(st.aiSelection, st.era, st.titans, st.ai);

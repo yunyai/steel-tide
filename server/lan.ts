@@ -484,7 +484,7 @@ export class LobbyServer {
     b.players.forEach((p, i) => {
       // Gone quiet (hidden tab, dropped link): stop shooting until they are back.
       if (p.cont && now - p.lastIn > this.idleMs) p.cont = this.rules.holdFire(p.cont);
-      if (p.cont && (!p.sent || p.cont.some((v, j) => v !== p.sent![j]))) {
+      if (p.cont && (!p.sent || p.cont.length !== p.sent.length || p.cont.some((v, j) => v !== p.sent![j]))) {
         (turn.p ??= []).push([i, p.cont]);
         p.sent = p.cont;
       }

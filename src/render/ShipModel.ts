@@ -1,3 +1,4 @@
+import { ArchitectModel } from './ArchitectModel';
 import { StepperModel } from './StepperModel';
 import {
   AdditiveBlending,
@@ -1017,6 +1018,7 @@ export class ShipView {
   private mastDeck = 0;
   private split: Split | null = null;
   private wasAlive = true;
+  private architectModel: ArchitectModel | null = null;
   private stepModel: StepperModel | null = null;
 
   constructor(readonly spec: ShipSpec, shadows = true) {
@@ -1048,6 +1050,7 @@ export class ShipView {
       this.dome.visible = false;
     }
     this.body.add(hull);
+    if(spec.id==='architect'||spec.id==='architectPlatform'){this.architectModel=new ArchitectModel((g,m)=>this.mesh(g,shadows,m),spec);this.body.add(this.architectModel.root);}
     if(spec.id==='stepper'){this.stepModel=new StepperModel((g,m)=>this.mesh(g,shadows,m));this.body.add(this.stepModel.root);}
 
     const top = spec.sub ? null : mastTop(spec);
@@ -1077,6 +1080,7 @@ export class ShipView {
     spec.main?.turrets.forEach((t, i) => {
       const tg = geo.turrets[i];
       const yaw = new Group();
+      if(spec.id==='architect') yaw.name=`architect-turret-${i}`;
       yaw.position.set(t.x, deckHeight(spec, t.x) + t.y, t.z ?? 0);
       yaw.rotation.y = -t.facing * DEG;
       yaw.add(this.mesh(tg.house, shadows));
@@ -1389,6 +1393,7 @@ export class ShipView {
 
   /** Static pose for menus / previews. */
   pose(time: number): void {
+    this.architectModel?.pose(time);
     this.stepModel?.pose(time);
     this.root.position.y = waveHeight(0, 0, time) * 0.3;
     this.root.rotation.z = Math.sin(time * 0.6) * 0.01;
@@ -1399,6 +1404,7 @@ export class ShipView {
   }
 
   update(ship: Ship, time: number): void {
+    this.architectModel?.pose(time,ship);
     this.stepModel?.pose(time,!!ship.stepper?.copy);
     if(this.stepModel) {
       this.material.transparent=!!ship.stepper?.copy;
@@ -1516,6 +1522,7 @@ export class ShipView {
     ship.turrets.forEach((t, i) => {
       const v = this.turrets[i];
       if (!v) return;
+      if(ship.architect)v.yaw.visible=ship.architect.slots[i].state==='docked';
       v.yaw.rotation.y = -(t.spec.facing + t.yaw) * DEG;
       // Knocked out (or dead): the barrels sag.
       if (t.disabled > 0 || !ship.alive) v.pitch.rotation.z += (DROOP - v.pitch.rotation.z) * Math.min(1, dt * 4);
@@ -1571,6 +1578,7 @@ export class ShipView {
 
   /** Free what this view owns (hull and turret geometry is shared and cached). */
   dispose(): void {
+    this.architectModel?.dispose();
     this.stepModel?.dispose();
     this.aura.material.dispose();
     this.formShell?.material.dispose();
