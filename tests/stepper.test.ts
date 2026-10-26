@@ -89,7 +89,7 @@ describe('Stepper skills', () => {
     expect(me.activateSkill(5)).toBe(true);
     const before = me.pos.clone();
     expect(me.takeDamage(10000, foe)).toBe(0);
-    expect(me.pos.distanceTo(before)).toBeCloseTo(180);
+    expect(me.pos.distanceTo(before)).toBeCloseTo(100);
     run(g, 0.1);
     expect(me.takeDamage(10000, foe)).toBeGreaterThan(0);
     run(g, 0.05);
@@ -516,7 +516,7 @@ describe('Sidestep rapid visible evasion', () => {
     me.activateSkill(5);
     const start = me.pos.clone();
     expect(me.takeDamage(10000, foe)).toBe(0);
-    expect(me.pos.distanceTo(start)).toBeCloseTo(180);
+    expect(me.pos.distanceTo(start)).toBeCloseTo(100);
     expect(me.stepper!.phaseUntil - g.time).toBeCloseTo(0.08);
     expect(me.stepper!.dodgeReady - g.time).toBeCloseTo(0.12);
     g.time = 0.06;
@@ -527,7 +527,7 @@ describe('Sidestep rapid visible evasion', () => {
     expect(me.takeDamage(10000, foe)).toBeGreaterThan(0);
     g.time = 0.12;
     expect(me.takeDamage(10000, foe)).toBe(0);
-    expect(me.pos.distanceTo(a)).toBeCloseTo(180);
+    expect(me.pos.distanceTo(a)).toBeCloseTo(100);
   });
   it('steps before a falling shell reaches the deck and marks the visible dodge', () => {
     const { g, me, foe } = duel();
@@ -539,7 +539,7 @@ describe('Sidestep rapid visible evasion', () => {
     const shell = g.shells.dropBomb(foe, foe.spec.main!.he!, 0, 0, 25);
     g.step();
     expect(shell.alive).toBe(true);
-    expect(me.pos.length()).toBeCloseTo(180);
+    expect(me.pos.length()).toBeCloseTo(100);
     expect(me.stats.received).toBe(0);
     expect(visible).toBe(true);
   });
@@ -560,7 +560,7 @@ describe('Sidestep rapid visible evasion', () => {
       m.state = 'cruise';
     }
     g.step();
-    expect(me.pos.length()).toBeCloseTo(180);
+    expect(me.pos.length()).toBeCloseTo(100);
     expect(me.stats.received).toBe(0);
   });
   it('does not react to friendly, distant or high-flying fire', () => {
@@ -575,7 +575,7 @@ describe('Sidestep rapid visible evasion', () => {
   it('searches the opposite dodge direction when the first landing is blocked', () => {
     const { g, me, foe } = duel();
     me.activateSkill(5);
-    const blocker = place(g, 'iowa', 0, -180, 0);
+    const blocker = place(g, 'iowa', 0, -100, 0);
     blocker.throttle = 2;
     blocker.speed = 0;
     expect(me.takeDamage(10000, foe)).toBe(0);
@@ -590,7 +590,7 @@ describe('Sidestep rapid visible evasion', () => {
     const c = g.ships.find((s) => s.summonOwner === me)!;
     const before = c.pos.clone();
     expect(c.takeDamage(10000, foe)).toBe(0);
-    expect(c.pos.distanceTo(before)).toBeCloseTo(180);
+    expect(c.pos.distanceTo(before)).toBeCloseTo(100);
   });
 });
 

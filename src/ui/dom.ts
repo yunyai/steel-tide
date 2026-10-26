@@ -40,6 +40,7 @@ export function seg<T extends string | number>(options: { value: T; label: strin
 }
 
 export function field(label: string, control: HTMLElement, note?: HTMLElement | string): HTMLElement {
+  if (control.getAttribute('role') === 'group' && !control.hasAttribute('aria-label')) control.setAttribute('aria-label', label);
   const f = h('div', { class: 'field' }, h('div', { class: 'label' }, label), control);
   if (note !== undefined) f.append(typeof note === 'string' ? h('p', { class: 'note' }, note) : note);
   return f;

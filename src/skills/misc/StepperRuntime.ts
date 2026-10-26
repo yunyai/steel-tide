@@ -189,7 +189,7 @@ export function aroundTarget(s: Ship, t: Ship, r: number, broad = false): Landin
   }
   return null;
 }
-export const SIDESTEP = { distance: 180, phase: 0.08, retrigger: 0.12, lookAhead: 0.16 } as const;
+export const SIDESTEP = { distance: 100, phase: 0.08, retrigger: 0.12, lookAhead: 0.16 } as const;
 
 /** React to an imminent collision as well as the damage fallback used by beams/area hits. */
 export function evadeIncoming(s: Ship): void {
@@ -260,7 +260,7 @@ export function incomingStep(
     return false;
   const away = (incomingHeading ?? bearingTo(attacker.pos.x, attacker.pos.z, s.pos.x, s.pos.z)) + Math.PI / 2;
   // Prefer a full lateral jump, trying the opposite side before shorter/diagonal escapes.
-  for (const distance of [SIDESTEP.distance, 120, 60])
+  for (const distance of [SIDESTEP.distance, (SIDESTEP.distance * 2) / 3, SIDESTEP.distance / 3])
     for (const offset of [
       0,
       Math.PI,

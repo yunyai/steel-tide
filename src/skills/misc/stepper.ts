@@ -223,7 +223,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
     {
       ...spec('sideStep', 'Sidestep', 18, 8, 'shield'),
       description:
-        'For 8 s, react before incoming projectiles hit with a lateral step up to 180 m. Phase for 0.08 s and dodge again every 0.12 s.',
+        'For 8 s, react before incoming projectiles hit with a lateral step up to 100 m. Phase for 0.08 s and dodge again every 0.12 s.',
     },
     {
       activate(s, g) {

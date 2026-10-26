@@ -255,7 +255,7 @@ export class GroundMenu {
       { class: 'sheet panel setup' },
       h('h2', {}, 'Ground battle'),
       h('p', { class: 'lede' }, 'You and AI crews against an AI force, on land. Angle your armour, aim for the weak plates, and save the ultimate for the push.'),
-      ...fields,
+      h('div', { class: 'setup-body' }, ...fields),
       h('div', { class: 'sheet-actions' }, this.act('Back', 'btn-quiet', () => this.hooks.title()), next),
     );
     this.hooks.mount(el);

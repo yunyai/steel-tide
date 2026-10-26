@@ -325,7 +325,7 @@ export class HUD {
       const root = el('div', 'slot', weapons);
       this.keyLabel(root, () => pc.layout?.slots[i], 'LB/RB');
       root.append(s.label.replace(' shells', ''));
-      const info = el('div', 'num', root);
+      const info = el('div', 'num info', root);
       const b = el('div', 'bar', root);
       this.slotEls.push({ root, bar: el('i', '', b), info });
     });

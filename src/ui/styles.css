@@ -3242,6 +3242,13 @@ select {
   color: var(--side);
 }
 
+.lan-member > .btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 0.45em 0.8em;
+  font-size: 0.86rem;
+}
+
 .lan-member .who b {
   display: block;
   overflow: hidden;
@@ -3749,7 +3756,6 @@ select {
 .fleet-detail .field { margin-top: 8px; }
 .lan-room { align-items: start; }
 .lan-teams > * { min-width: 0; }
-.lan-member { flex-wrap: wrap; }
 .status-row { flex-wrap: wrap; max-height: 74px; overflow: auto; }
 .status-row span { flex: 0 1 auto; }
 .skillbar.titan { flex-wrap: wrap; row-gap: 4px; }
@@ -3762,7 +3768,7 @@ select {
 .slot.ready .info { color: var(--cyan); }
 .slot .info { overflow-wrap: anywhere; }
 :focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
-::selection { background: var(--cyan-dim); color: var(--text); }
+::selection { background: var(--cyan-dim); color: var(--ice); }
 @media (max-width: 1300px) {
   .cockpit.titan { width: min(740px, 76vw); }
   .skillbar.titan .sk { width: 53px; }
@@ -3780,9 +3786,12 @@ select {
   .status-row { max-height: 48px; }
 }
 
-.naval-setup { display: flex; flex-direction: column; height: min(900px, 92vh); overflow: hidden; }
-.naval-setup > .tabs, .naval-setup > .sheet-actions { flex: none; }
-.setup-body { flex: 1; overflow: auto; min-height: 0; padding-right: 8px; }
+.setup, .lan.room { display: flex; flex-direction: column; height: min(900px, 92vh); overflow: hidden; }
+.setup > .tabs, .setup > .sheet-actions, .lan.room > .sheet-actions { flex: none; }
+.setup-body, .lan-room-body { flex: 1; overflow: auto; min-height: 0; padding-right: 8px; }
+.audio-credits a { color: var(--cyan); text-underline-offset: 3px; }
+.audio-credits a:visited { color: var(--ice); }
+.audio-credits a:hover { color: var(--gold); }
 @media (max-height: 800px) {
   .title-screen { justify-content: flex-start; overflow: auto; padding-top: 28px; padding-bottom: 28px; }
   .title-mark { font-size: clamp(3.6rem, 12vh, 6rem); }

@@ -98,7 +98,7 @@ try {
         r.errors.length ||
         r.dodges !== 13 ||
         r.damage !== 0 ||
-        r.distances.some((d) => Math.abs(d - 180) > 0.01) ||
+        r.distances.some((d) => Math.abs(d - 100) > 0.01) ||
         !r.notice ||
         r.ghosts < 3 ||
         r.rings < 1 ||

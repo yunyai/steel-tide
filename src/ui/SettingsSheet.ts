@@ -275,9 +275,11 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
         const b = h('button', { role: 'tab', 'aria-pressed': String(t.id === tab), 'aria-selected': String(t.id === tab) }, t.label);
         b.onclick = () => {
           if (t.id === tab) return;
+          const focused = document.activeElement === b;
           hooks.click();
           tab = t.id;
           show();
+          if (focused) tabs.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
         };
         return b;
       }),

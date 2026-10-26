@@ -121,7 +121,12 @@ export class Lobby {
     if (typing) return this.renderStatusOnly();
     const lobby = this.net.status === 'online' ? this.net.lobby : null;
     const view = lobby ? `room-${lobby.id}` : 'list';
+    const scrollers = () => Array.from(this.root.querySelectorAll<HTMLElement>('.lan-room-body, .fleet-detail'));
+    const scroll = view === this.view ? scrollers().map(el => ({ top: el.scrollTop, left: el.scrollLeft })) : [];
     this.root.replaceChildren(lobby ? this.room(lobby) : this.list());
+    scrollers().forEach((el, i) => {
+      if (scroll[i]) { el.scrollTop = scroll[i].top; el.scrollLeft = scroll[i].left; }
+    });
     // The default focus only on arriving at a screen, never on a refresh of the same one.
     const el = focused ? this.root.querySelector<HTMLElement>(`[data-k="${CSS.escape(focused)}"]`) : view !== this.view ? this.root.querySelector<HTMLElement>('[data-focus]') : null;
     this.view = view;
@@ -356,9 +361,11 @@ export class Lobby {
       title,
       sub,
       ...(status ? [status] : []),
-      h('div', { class: 'lan-room' }, settings, h('div', { class: 'lan-teams' }, column(0), column(1))),
-      ...notes,
-      ...(err ? [err] : []),
+      h('div', { class: 'lan-room-body' },
+        h('div', { class: 'lan-room' }, settings, h('div', { class: 'lan-teams' }, column(0), column(1))),
+        ...notes,
+        ...(err ? [err] : []),
+      ),
       actions,
     );
   }
@@ -381,11 +388,11 @@ export class Lobby {
       tag.textContent = m.ready ? 'Ready' : 'Not ready';
       if (m.ready) tag.classList.add('ready');
     }
-    if (m.id === me?.id && l.state === 'waiting') row.append(this.act('Random ship', 'btn btn-quiet', () => {
+    row.append(icon, h('span', { class: 'who' }, name, ship), tag);
+    if (m.id === me?.id && l.state === 'waiting') row.append(this.act('Random ship', 'btn-quiet', () => {
       const s = randomShip(l.settings.era, Math.random);
       if (s) this.pickShip(s.id);
     }));
-    row.append(icon, h('span', { class: 'who' }, name, ship), tag);
     return row;
   }
 }
