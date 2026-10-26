@@ -6,6 +6,8 @@ import { distToHull, segmentHitsHull } from '../../core/hull';
 import { bearingTo, forwardX, forwardZ } from '../../core/math';
 import type { Ship } from '../../ships/Ship';
 
+export const FLICKER_RADIUS = 2000;
+
 export interface StepperState {
   mirrorAim: { x: number; z: number; aimX: number; aimZ: number; landingX: number; landingZ: number } | null;
   copy: boolean;

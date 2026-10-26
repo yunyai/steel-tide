@@ -5,6 +5,7 @@ import { segmentHitsHull } from '../../core/hull';
 import { buff, hurt, nearestEnemy } from '../kit';
 import { def, type SkillDef } from '../types';
 import {
+  FLICKER_RADIUS,
   evadeIncoming,
   aimedLanding,
   aroundTarget,
@@ -273,7 +274,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
         dz = origin.z + dz * k;
         if (
           !g.ships.some(
-            (t) => canTrack(s, t) && !t.deep && Math.hypot(t.pos.x - dx, t.pos.z - dz) <= 2000 && !!behind(s, t),
+            (t) => canTrack(s, t) && !t.deep && Math.hypot(t.pos.x - dx, t.pos.z - dz) <= FLICKER_RADIUS && !!behind(s, t),
           )
         )
           return s.failSkill('Flicker-step: no detected enemies with safe water in aimed area');
@@ -291,7 +292,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
         f.elapsed += dt;
         while (f.count < 20 && f.elapsed + 1e-8 >= (f.count + 1) * 0.15) {
           const list = g.ships
-            .filter((t) => canTrack(s, t) && !t.deep && Math.hypot(t.pos.x - f.x, t.pos.z - f.z) <= 2000)
+            .filter((t) => canTrack(s, t) && !t.deep && Math.hypot(t.pos.x - f.x, t.pos.z - f.z) <= FLICKER_RADIUS)
             .sort((a, b) => a.id - b.id)
             .map((t) => ({ t, p: behind(s, t) }))
             .filter((v) => v.p);

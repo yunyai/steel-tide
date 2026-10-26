@@ -4,6 +4,7 @@ import type { Ship } from '../ships/Ship';
 import type { Team } from '../core/types';
 import { audio } from '../fx/Audio';
 import { waveHeight } from '../world/Waves';
+import { FLICKER_RADIUS } from '../skills/misc/StepperRuntime';
 import { quality } from './Quality';
 import { Ribbons } from './Projectiles';
 
@@ -12,7 +13,7 @@ const VIOLET = new Color(0xad74ff).multiplyScalar(2), ENEMY = new Color(0xff476e
 const hash = (n: number) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
 interface Finish { ship: Ship; x:number; z:number; radius:number; age:number }
 
-/** A dense spatial slash storm in two fixed-size batches, independent of simulation RNG. */
+/** Stepper's ultimate boundaries and slash storm in two fixed-size batches, independent of simulation RNG. */
 export class CrossStepFx {
   readonly light = new Ribbons(6000, true, false);
   readonly dark = new Ribbons(3000, false, false);
@@ -54,10 +55,13 @@ export class CrossStepFx {
     this.light.material.uniforms.uViewportH.value = this.dark.material.uniforms.uViewportH.value = heightPx;
     if (!this.game.over) {
       for (const s of this.game.ships) {
-        const f = s.alive && !s.withdrawn && s.stepper?.cross;
-        if (!f) continue;
+        if (!s.alive || s.withdrawn) continue;
         const color = team === -1 || s.team === team ? VIOLET : ENEMY;
         const echo = !!s.stepper?.copy;
+        const flicker = s.stepper?.flicker;
+        if (flicker && !echo) this.flickerArea(flicker.x, flicker.z, color);
+        const f = s.stepper?.cross;
+        if (!f) continue;
         // All players see the exact zone. Copies share a zone and don't stack five boundaries.
         if (!echo) this.ring(f.x,f.z,1000,color,0.8);
         const rate = echo ? 45 : 110;
@@ -107,6 +111,31 @@ export class CrossStepFx {
       const a=i*Math.PI/48,b=(i+1)*Math.PI/48;
       const ax=x+Math.sin(a)*radius,az=z+Math.cos(a)*radius,bx=x+Math.sin(b)*radius,bz=z+Math.cos(b)*radius;
       this.light.push(ax,waveHeight(ax,az,this.game.renderTime)+5,az,bx,waveHeight(bx,bz,this.game.renderTime)+5,bz,color,k,2,1.2);
+    }
+  }
+  private flickerArea(x: number, z: number, color: Color): void {
+    const line = (ax: number, az: number, bx: number, bz: number, core = false) => {
+      const ay = waveHeight(ax,az,this.game.renderTime)+8;
+      const by = waveHeight(bx,bz,this.game.renderTime)+8;
+      // A dark under-stroke keeps the boundary legible on both sunlit and shaded water.
+      this.dark.push(ax,ay,az,bx,by,bz,DARK,0.85,20,5);
+      this.light.push(ax,ay+0.5,az,bx,by+0.5,bz,color,0.95,9,2.5);
+      if (core) this.light.push(ax,ay+1,az,bx,by+1,bz,WHITE,0.75,2,0.8);
+    };
+    for (let i = 0; i < 96; i++) {
+      const a = i * Math.PI / 48, b = (i+1) * Math.PI / 48;
+      line(x+Math.sin(a)*FLICKER_RADIUS,z+Math.cos(a)*FLICKER_RADIUS,
+        x+Math.sin(b)*FLICKER_RADIUS,z+Math.cos(b)*FLICKER_RADIUS,true);
+    }
+    // Inward range ticks distinguish the fixed target area from the small strike rings.
+    for (let i = 0; i < 32; i++) {
+      const a = i * Math.PI / 16, inner = FLICKER_RADIUS - (i % 8 === 0 ? 150 : 65);
+      line(x+Math.sin(a)*inner,z+Math.cos(a)*inner,
+        x+Math.sin(a)*FLICKER_RADIUS,z+Math.cos(a)*FLICKER_RADIUS);
+    }
+    for (let i = 0; i < 4; i++) {
+      const a = i * Math.PI / 2, b = (i+1) * Math.PI / 2;
+      line(x+Math.sin(a)*45,z+Math.cos(a)*45,x+Math.sin(b)*45,z+Math.cos(b)*45);
     }
   }
   dispose(): void {
