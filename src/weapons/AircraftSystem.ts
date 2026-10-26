@@ -310,7 +310,7 @@ export class AircraftSystem {
   private applyAA(sq: Squadron, dt: number): void {
     if (sq.aaImmune > this.game.time) return;
     for (const s of this.game.ships) {
-      if (!s.alive || s.team === sq.team || s.submerged) continue;
+      if (!s.alive || s.team === sq.team || s.submerged || s.stepper?.cross) continue;
       const d = dist2D(sq.x, sq.z, s.pos.x, s.pos.z);
       const range = s.spec.aa.range * s.mods.aaRangeMul;
       if (d > range) continue;

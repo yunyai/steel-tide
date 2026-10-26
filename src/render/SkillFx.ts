@@ -167,12 +167,7 @@ export class SkillFx {
         const color=this.friendly(e.ship)?0xb388ff:0xff668f;
         this.stepFade(e.ship,new Mesh(new TorusGeometry(e.radius,Math.max(4,e.radius*0.008),4,64),new MeshBasicMaterial({color,transparent:true,opacity:0.85,depthWrite:false})),e.x,3,e.z,0.7,true);
         const ring=this.stepFades[this.stepFades.length-1];ring.mesh.rotation.x=Math.PI/2;
-        if(e.kind==='explosion') {
-          audio.cue('explosionStep','impact','impact',e.x,10,e.z,this.locals.includes(e.ship));
-          this.flash(e.x,e.z,0.18,0xb388ff);
-          this.add.spawn({x:e.x,y:25,z:e.z,life:0.65,size:60,size1:e.radius*1.6,color:0xe9dcff,color1:0x9461ff,kind:PK.Glow,alpha:0.9});
-          for(let i=0;i<40;i++){const a=i/40*Math.PI*2;this.add.spawn({x:e.x,y:15,z:e.z,vx:Math.cos(a)*900,vz:Math.sin(a)*900,vy:rnd(20,130),gravity:100,life:0.8,size:16,size1:1,color:0xc4a0ff,kind:PK.Glow});}
-        } else if(e.kind==='copies')audio.cue('afterimageStep','activate','transform',e.x,20,e.z,this.locals.includes(e.ship));
+        if(e.kind==='copies')audio.cue('afterimageStep','activate','transform',e.x,20,e.z,this.locals.includes(e.ship));
         else {audio.play('hit',e.x,10,e.z,300,0.6);this.add.spawn({x:e.x,y:20,z:e.z,life:0.25,size:140,size1:15,color:0xf4edff,kind:PK.Glow});}
       }),
       ev.on('skill', (e) => {

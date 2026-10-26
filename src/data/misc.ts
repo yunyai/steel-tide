@@ -30,7 +30,7 @@ export const MISC: ShipSpec[] = [
     },
     torpedoes: { name: 'Phase lances', launchers: [{ x: -35, side: 1, tubes: 4 },{ x: -35, side: -1, tubes: 4 }], tubes: 4, reload: 24, speed: 80, range: 9000, damage: 16000, floodChance: 0.35, spread: 8, detect: 800, look: 'lance' },
     aa: { range: 4500, dps: 1200 }, consumables: [TITAN_REPAIR, search(9000)],
-    skills: kitOf(STEPPER_SKILLS,'stepperFlashStep','ramStep','broadStep','overStep','backStep','sideStep','flickerStep','explosionStep','afterimageStep'),
+    skills: kitOf(STEPPER_SKILLS,'stepperFlashStep','ramStep','broadStep','overStep','backStep','sideStep','flickerStep','crossStep','afterimageStep'),
     model: {
       palette: { hull: 0x141020, upper: 0x29213c, deck: 0x1a1727, accent: 0xb388ff, boot: 0x080611 },
       bow: 'clipper', stern: 'transom', sheer: 0.5,

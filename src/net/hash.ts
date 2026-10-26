@@ -33,6 +33,9 @@ export function stateHash(g: Game): number {
       for(const n of [a.copy?1:0,a.slot,a.ownerId,a.until,a.dodgeReady,a.phaseUntil,a.sideUntil,a.broadUntil,a.broadTarget,...a.copies]) h=mix(h,n);
       for(const st of s.skills) for(const n of [st.cooldown,st.time,st.meter,st.active?1:0]) h=mix(h,n);
       h=mix(h,a.flicker?1:0);h=mix(h,a.rush?1:0);
+      h=mix(h,a.cross?1:0);h=mix(h,a.repair?1:0);h=mix(h,a.repairInterruptedUntil);
+      if(a.repair)h=mix(h,a.repair.remaining);
+      if(a.cross)for(const n of [a.cross.x,a.cross.z,a.cross.elapsed,a.cross.count,a.cross.jumps,a.cross.finish.x,a.cross.finish.z,a.cross.finish.heading])h=mix(h,n);
       if(a.flicker)for(const n of [a.flicker.x,a.flicker.z,a.flicker.elapsed,a.flicker.count])h=mix(h,n);
       if(a.rush)for(const n of [a.rush.x0,a.rush.z0,a.rush.x1,a.rush.z1,a.rush.elapsed,...a.rush.hit])h=mix(h,n);
     }

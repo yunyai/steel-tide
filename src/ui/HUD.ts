@@ -791,6 +791,9 @@ export class HUD {
       if(a.broadUntil>g.time)st.push([`Broadstep ${Math.ceil(a.broadUntil-g.time)}s`, 'buff',glyph('salvo')]);
       const copies=g.ships.filter(s=>s.alive&&s.summonOwner===me&&s.stepper?.copy);
       if(copies.length)st.push([`Afterimages ${copies.length}/4 · ${Math.ceil(Math.max(...copies.map(s=>s.expiresAt))-g.time)}s`, 'buff',glyph('fleet')]);
+      if(a.cross)st.push([`Cross-step ${a.cross.count}/60`, 'buff',glyph('blade')]);
+      if(a.repair)st.push([`Backstep repair ${Math.ceil(a.repair.remaining)}s`, 'buff',glyph('heal')]);
+      if(a.repairInterruptedUntil>g.time)st.push(['Backstep repair interrupted', '',glyph('heal')]);
       if(a.flicker)st.push([`Flicker ${a.flicker.count}/20`, 'buff',glyph('blink')]);
     }
     if (me.effects.some((f) => f.id === 'pickup:fury')) st.push(['Fury', 'buff', glyph('fire')]);

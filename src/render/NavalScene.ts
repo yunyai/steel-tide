@@ -1,3 +1,5 @@
+import { CrossStepFx } from './CrossStepFx';
+import { TorpedoAim, type TorpedoAimSource } from './TorpedoAim';
 import { contactVisible } from '../core/Targeting';
 import { type Color, type Object3D, type PerspectiveCamera, Scene } from 'three';
 import { MAP_HALF } from '../config';
@@ -21,6 +23,9 @@ const SHORE_HALF = MAP_HALF + 500;
 
 /** A naval battle's 3D scene: sky, sea, islands, ships, shells and every effect. */
 export class NavalScene implements BattleScene {
+  readonly torpedoAim = new TorpedoAim();
+  readonly crossFx: CrossStepFx;
+  readonly aiming = new Map<PerspectiveCamera, TorpedoAimSource>();
   readonly scene = new Scene();
   readonly env: Environment;
   readonly ocean: Ocean;
@@ -43,6 +48,8 @@ export class NavalScene implements BattleScene {
     renderer: Renderer,
     readonly game: Game,
   ) {
+    this.scene.add(this.torpedoAim.root);
+    this.crossFx = new CrossStepFx(this.scene, game);
     const q = quality();
     const gl = renderer.gl;
     gl.shadowMap.enabled = q.shadowMap > 0;
@@ -108,6 +115,9 @@ export class NavalScene implements BattleScene {
     for (const f of this.off) f();
     this.off = [];
     this.warm = [];
+    this.crossFx.dispose();
+    this.torpedoAim.dispose();
+    this.aiming.clear();
     this.effects.dispose();
     this.skillFx.dispose();
     this.env.dispose();
@@ -183,6 +193,7 @@ export class NavalScene implements BattleScene {
     this.effects.update(dt);
     this.skillFx.views = this.effects.views;
     this.skillFx.update(dt);
+    this.crossFx.update(dt, this.skillFx.locals);
     this.projectiles.update(g);
   }
 
@@ -207,6 +218,8 @@ export class NavalScene implements BattleScene {
   }
 
   prepare(vp: Viewport, heightPx: number): void {
+    this.crossFx.prepare(vp.team, heightPx);
+    this.torpedoAim.update(this.aiming.get(vp.camera), heightPx);
     this.visibility(vp.team);
     if (vp.hide) this.views.get(vp.hide as Ship)?.setMode('hidden');
     this.ocean.follow(vp.camera);

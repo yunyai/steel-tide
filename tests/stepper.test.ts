@@ -118,14 +118,14 @@ describe('Stepper skills', () => {
     expect(foe.stats.received).toBeCloseTo(600000);
     expect(me.skills[6].active).toBe(false);
   });
-  it('teleports then explodes without hurting allies', () => {
+  it('carves a fixed area without hurting allies', () => {
     const { g, me, foe } = duel();
     const ally = place(g, 'iowa', 0, 800, -1500);
     me.control.aimX = 600;
     me.meter = 1;
     expect(me.activateSkill(7)).toBe(true);
-    expect(me.pos.x).toBeCloseTo(600);
-    expect(foe.stats.received).toBeCloseTo(220000);
+    run(g, 3);
+    expect(foe.stats.received).toBeCloseTo(510000);
     expect(ally.stats.received).toBe(0);
   });
 });
@@ -138,11 +138,12 @@ describe('Stepper mirrored ships', () => {
     expect(copies).toHaveLength(4);
     expect(copies.every((s) => s.maxHp === me.maxHp * 0.25 && !g.ai.has(s))).toBe(true);
     expect(copies[0].takeDamage(1000, copies[1])).toBe(750);
-    // Place all explosions near the durable target without overlapping its hull.
+    // Aim all mirrored slash storms at the same durable target.
     me.control.aimX = 600;
     me.control.aimZ = -1500;
     expect(me.activateSkill(7)).toBe(true);
-    expect(foe.stats.received).toBeGreaterThan(220000);
+    run(g, 3);
+    expect(foe.stats.received).toBeGreaterThan(510000);
     expect(g.ships.filter((s) => s.summonOwner === me)).toHaveLength(4);
     expect(copies[0].activateSkill(8)).toBe(false);
     me.withdraw();
@@ -201,19 +202,24 @@ describe('Stepper safety and defenses', () => {
     }
   });
   it('respects shields, invulnerability and reflected skill damage', () => {
-    const { me, foe } = duel();
+    const { g, me, foe } = duel();
     me.meter = 1;
     me.control.aimX = 600;
     foe.shield = 300000;
+    foe.shieldTime = 20;
+    foe.addEffect({ id:'test-mirror', time:3.1, apply(m) { m.spellMirror = true; } });
     foe.mods.spellMirror = true;
     expect(me.activateSkill(7)).toBe(true);
     expect(foe.hp).toBe(foe.maxHp);
-    expect(me.hp).toBeLessThan(me.maxHp);
+    run(g, 3);
+    expect(me.hp).toBe(me.maxHp);
     me.control.aimX = 800;
     me.skills[7].meter = 1;
     foe.mods.spellMirror = false;
     foe.mods.invulnerable = true;
+    foe.addEffect({ id:'test-invulnerable', time:4, apply(m) { m.invulnerable = true; } });
     expect(me.activateSkill(7)).toBe(true);
+    run(g, 3);
     expect(foe.hp).toBe(foe.maxHp);
   });
   it('does not step when no safe dodge landing exists', () => {

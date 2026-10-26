@@ -241,7 +241,7 @@ export class MissileSystem {
     if (m.uninterceptable) return;
     const g = this.game;
     for (const s of g.ships) {
-      if (!s.alive || s.team === m.team || s.submerged) continue;
+      if (!s.alive || s.team === m.team || s.submerged || s.stepper?.cross) continue;
       const r = s.spec.aa.range * 0.8 * s.mods.aaRangeMul;
       if (dist2D(m.x, m.z, s.pos.x, s.pos.z) >= r) continue;
       let n = 0;

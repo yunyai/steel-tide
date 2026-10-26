@@ -34,6 +34,7 @@ export const LOOP_ASSETS = {
 export type LoopKind = keyof typeof LOOP_ASSETS;
 
 const OVERRIDES: Record<string, Partial<Record<CueEvent, CueFamily>>> = {
+  crossStep: { activate: 'slash', impact: 'slash', end: 'impact' },
   abyssalMaw: { activate: 'impact' }, kamehameha: { activate: 'beam' }, worldSlash: { activate: 'slash' }, titanShift: { activate: 'transform', end: 'transform' },
 };
 export function cueAsset(ability: string, event: CueEvent, family: CueFamily): string {

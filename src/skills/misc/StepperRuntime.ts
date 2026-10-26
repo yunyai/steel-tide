@@ -1,3 +1,4 @@
+import type { CrossState } from './CrossStep';
 import { MAP_HALF, SHELL_TIME_SCALE } from '../../config';
 import type { Game } from '../../core/Game';
 import { canTrack } from '../../core/Targeting';
@@ -17,6 +18,9 @@ export interface StepperState {
   sideUntil: number;
   broadUntil: number;
   broadTarget: number;
+  cross: CrossState | null;
+  repair: { remaining: number } | null;
+  repairInterruptedUntil: number;
   flicker: { x: number; z: number; elapsed: number; count: number } | null;
   rush: { x0: number; z0: number; x1: number; z1: number; elapsed: number; hit: number[] } | null;
 }
@@ -33,6 +37,9 @@ export function newStepperState(): StepperState {
     sideUntil: 0,
     broadUntil: 0,
     broadTarget: 0,
+    cross: null,
+    repair: null,
+    repairInterruptedUntil: 0,
     flicker: null,
     rush: null,
   };
@@ -203,6 +210,7 @@ export function evadeIncoming(s: Ship): void {
     st.phaseUntil > g.time ||
     st.rush ||
     st.flicker ||
+    st.cross ||
     s.mods.invulnerable ||
     s.mods.stunned ||
     s.mods.silenced
@@ -256,7 +264,7 @@ export function incomingStep(
     now = s.game.time;
   if (!st || !attacker || attacker.team === s.team || pierce || periodic || reflected) return false;
   if (st.phaseUntil > now) return true;
-  if (st.sideUntil <= now || st.dodgeReady > now || st.rush || st.flicker || s.mods.stunned || s.mods.silenced)
+  if (st.sideUntil <= now || st.dodgeReady > now || st.rush || st.flicker || st.cross || s.mods.stunned || s.mods.silenced)
     return false;
   const away = (incomingHeading ?? bearingTo(attacker.pos.x, attacker.pos.z, s.pos.x, s.pos.z)) + Math.PI / 2;
   // Prefer a full lateral jump, trying the opposite side before shorter/diagonal escapes.
@@ -289,6 +297,9 @@ export function clearStepper(s: Ship): void {
   }
   if (s.stepper.copy) {
     s.stepper.flicker = null;
+    s.stepper.cross = null;
+    s.stepper.repair = null;
+    s.stepper.phaseUntil = 0;
     s.stepper.rush = null;
   } else s.stepper = newStepperState();
 }

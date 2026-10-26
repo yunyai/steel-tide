@@ -1,3 +1,4 @@
+import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
 import { Vector3 } from 'three';
@@ -899,11 +900,12 @@ export class Ship {
       this.shiftNow(q.form, q.time, q.unlock);
     }
     updateConsumables(this, dt);
+    const wasCross = !!this.stepper?.cross;
     this.updateSkills(dt);
     this.updateForm();
     this.updateShield(dt);
     this.updateSub(dt);
-    if (!this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
+    if (!wasCross && !this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
     this.updateMain(dt);
     this.updateSecondaries(dt);
     this.updateTorpedoes(dt);
@@ -1022,17 +1024,19 @@ export class Ship {
 
   private applyControl(): void {
     const c = this.control;
-    if (c.throttleSet !== null) this.throttle = clamp(c.throttleSet, 0, THROTTLE_STEPS.length - 1);
-    if (c.throttleUp) this.throttle = Math.min(THROTTLE_STEPS.length - 1, this.throttle + 1);
-    if (c.throttleDown) this.throttle = Math.max(0, this.throttle - 1);
-    this.rudderTarget = clamp(c.rudder, -1, 1);
-    if (c.slot !== null && c.slot >= 0 && c.slot < this.slots.length) this.slot = c.slot;
-    if (c.consumable >= 0) activateConsumable(this, c.consumable);
-    if (c.skill >= 0) this.activateSkill(c.skill);
-    if (this.isSub) {
-      if (c.diveDown) this.depthState = Math.min(2, this.depthState + 1);
-      if (c.diveUp) this.depthState = Math.max(0, this.depthState - 1);
-    }
+    if (!this.stepper?.cross) {
+      if (c.throttleSet !== null) this.throttle = clamp(c.throttleSet, 0, THROTTLE_STEPS.length - 1);
+      if (c.throttleUp) this.throttle = Math.min(THROTTLE_STEPS.length - 1, this.throttle + 1);
+      if (c.throttleDown) this.throttle = Math.max(0, this.throttle - 1);
+      this.rudderTarget = clamp(c.rudder, -1, 1);
+      if (c.slot !== null && c.slot >= 0 && c.slot < this.slots.length) this.slot = c.slot;
+      if (c.consumable >= 0) activateConsumable(this, c.consumable);
+      if (c.skill >= 0) this.activateSkill(c.skill);
+      if (this.isSub) {
+        if (c.diveDown) this.depthState = Math.min(2, this.depthState + 1);
+        if (c.diveUp) this.depthState = Math.max(0, this.depthState - 1);
+      }
+    } else c.throttleSet = null;
     // Edge-triggered inputs are consumed by the first tick that sees them.
     c.throttleUp = c.throttleDown = c.diveUp = c.diveDown = false;
     c.slot = null;
@@ -1079,7 +1083,7 @@ export class Ship {
 
   activateSkill(i: number, mirrored = false): boolean {
     this.skillFailure = '';
-    if (this.stepper?.flicker || this.stepper?.rush) return this.failSkill('Step sequence already active');
+    if (this.stepper?.flicker || this.stepper?.cross || this.stepper?.rush) return this.failSkill('Step sequence already active');
     const echo = mirrored && this.stepper?.copy && this.summonOwner?.alive && i !== 8;
     if (this.stepper?.copy && !echo) return false;
     if (!echo && !this.skillReady(i) || echo && (!this.alive || this.mods.stunned || this.mods.silenced || this.skills[i]?.active)) {
@@ -1255,7 +1259,7 @@ export class Ship {
     const table = this.tableFor(this.ammo);
     const elev = table ? solve(table, aimDist).elevation : 0;
     const traverse = main.traverse * this.mods.traverseMul * dt;
-    const canFireGuns = !this.stepper?.flicker && !this.stepper?.rush && (!this.isSub || this.depthState === 0 && this.pos.y > -1.5) && !this.mods.stunned && !this.mods.disarmed;
+    const canFireGuns = !this.stepper?.flicker && !this.stepper?.cross && !this.stepper?.rush && (!this.isSub || this.depthState === 0 && this.pos.y > -1.5) && !this.mods.stunned && !this.mods.disarmed;
     for (const t of this.turrets) {
       if (t.reload > 0) t.reload -= dt;
       if (t.disabled > 0) t.disabled -= dt;
@@ -1346,7 +1350,7 @@ export class Ship {
   }
 
   private updateSecondaries(dt: number): void {
-    if (!this.secondaries.length || this.submerged || this.mods.stunned || this.mods.disarmed) return;
+    if (this.stepper?.cross || !this.secondaries.length || this.submerged || this.mods.stunned || this.mods.disarmed) return;
     const g = this.game;
     this.secRetarget -= dt;
     if (this.secRetarget <= 0) {
@@ -1410,23 +1414,25 @@ export class Ship {
 
   /** Relative bearing window check for a torpedo launcher. */
   launcherCanBear(l: LauncherState, rel: number): boolean {
-    const a = Math.abs(rel) / DEG;
-    switch (l.spec.side) {
-      case 1:
-        return rel > 0 && a >= 25 && a <= 155;
-      case -1:
-        return rel < 0 && a >= 25 && a <= 155;
-      case 2:
-        return a <= 40;
-      case -2:
-        return a >= 140;
-      default:
-        return a >= 25 && a <= 155;
-    }
+    return torpedoSectors(l.spec.side).some(([lo, hi]) => rel >= lo && rel <= hi);
   }
 
-  torpedoReadiness(l: LauncherState, aimX = this.control.aimX, aimZ = this.control.aimZ, ignoreReload = false): 'ready' | 'reloading' | 'outside arc' | 'too deep' | 'stunned' | 'disarmed' {
-    if (this.mods.stunned) return 'stunned';
+  /** One launch solution is shared by the firing path and local aiming overlay. */
+  torpedoSolution(l: LauncherState, aimX = this.control.aimX, aimZ = this.control.aimZ, spec = this.spec.torpedoes!, ignoreReload = false): TorpedoSolution {
+    const p = this.localToWorld(l.spec.x, 0, (l.spec.side === 1 ? 1 : l.spec.side === -1 ? -1 : 0) * this.spec.beam * 0.3);
+    const bearing = bearingTo(p.x, p.z, aimX, aimZ);
+    const headings = Array.from({ length: l.tubes }, (_, i) => bearing + (l.tubes > 1 ? i / (l.tubes - 1) - 0.5 : 0) * spec.spread * DEG);
+    return {
+      x: p.x, z: p.z, bearing, headings,
+      range: Math.min(spec.range, this.mods.rangeCap > 0 ? this.mods.rangeCap : Infinity),
+      spread: spec.spread * DEG,
+      sectors: torpedoSectors(l.spec.side),
+      readiness: this.torpedoReadiness(l, aimX, aimZ, ignoreReload),
+    };
+  }
+
+  torpedoReadiness(l: LauncherState, aimX = this.control.aimX, aimZ = this.control.aimZ, ignoreReload = false): TorpedoReadiness {
+    if (this.mods.stunned || this.stepper?.cross) return 'stunned';
     if (this.mods.disarmed) return 'disarmed';
     if (this.isSub && this.depthState === 2) return 'too deep';
     if (l.reload > 0 && !ignoreReload) return 'reloading';
@@ -1466,14 +1472,12 @@ export class Ship {
     };
     let fired = 0;
     for (const l of this.launchers) {
-      if (this.torpedoReadiness(l, c.aimX, c.aimZ, ignoreReload) !== 'ready') continue;
-      const lp = this.localToWorld(l.spec.x, 0, (l.spec.side === 1 ? 1 : l.spec.side === -1 ? -1 : 0) * this.spec.beam * 0.3, tmpV);
-      const brg = bearingTo(lp.x, lp.z, c.aimX, c.aimZ);
+      const solution = this.torpedoSolution(l, c.aimX, c.aimZ, tspec, ignoreReload);
+      if (solution.readiness !== 'ready') continue;
 
       const n = l.tubes;
-      for (let i = 0; i < n; i++) {
-        const off = n > 1 ? (i / (n - 1) - 0.5) * tspec.spread * DEG : 0;
-        const t = g.torps.launch(this, lp.x, lp.z, brg + off, spec, homing);
+      for (const heading of solution.headings) {
+        const t = g.torps.launch(this, solution.x, solution.z, heading, spec, homing);
         if (tb) {
           t.skill = tb.skill;
           t.wire = !!tb.wire;
@@ -1485,7 +1489,7 @@ export class Ship {
       }
       fired += n;
       l.reload = tspec.reload * this.mods.torpReloadMul;
-      g.events.emit('torpLaunched', { ship: this, x: lp.x, z: lp.z, count: n });
+      g.events.emit('torpLaunched', { ship: this, x: solution.x, z: solution.z, count: n });
     }
     if (fired && tb && --tb.spreads <= 0) this.torpBuff = null;
     return fired;
@@ -1653,6 +1657,10 @@ export class Ship {
     if (hostile) this.intake += raw;
     let dmg = Math.min(this.hp, raw);
     if (this.mods.undying) dmg = Math.max(0, Math.min(dmg, this.hp - 1));
+    if (dmg > 0 && this.stepper?.repair) {
+      this.stepper.repair = null;
+      this.stepper.repairInterruptedUntil = this.game.time + 2;
+    }
     this.hp -= dmg;
     this.stats.received += dmg;
     if (hostile) {

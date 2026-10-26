@@ -100,6 +100,7 @@ export class NavalBattle implements ActiveBattle {
       return pc;
     });
     this.viewports = this.pcs.map(captainView);
+    for (const pc of this.pcs) this.scene.aiming.set(pc.camera, pc);
     this.huds = this.pcs.map((pc) => {
       const h = new HUD(game, pc, input);
       hudLayer.append(h.root);
@@ -222,6 +223,8 @@ export class NavalBattle implements ActiveBattle {
   private changeCaptain(i: number, ship: Ship): void {
     const old = this.pcs[i];
     const pc = new PlayerController(ship, old.device, old.index, this.game, old.assistOn);
+    this.scene.aiming.delete(old.camera);
+    this.scene.aiming.set(pc.camera, pc);
     if (this.link) pc.draft = emptyControl();
     this.pcs[i] = pc;
     this.viewports[i] = captainView(pc);

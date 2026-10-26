@@ -1,3 +1,4 @@
+import { beginCross, updateCross, endCross } from './CrossStep';
 import { bearingTo, forwardX, forwardZ, wrapDeg } from '../../core/math';
 import { canTrack } from '../../core/Targeting';
 import { segmentHitsHull } from '../../core/hull';
@@ -19,7 +20,7 @@ const spec = (
   name: string,
   cooldown: number,
   duration = 0,
-  icon: 'blink' | 'ram' | 'salvo' | 'torpedo' | 'heal' | 'shield' | 'nuke' | 'fleet' = 'blink',
+  icon: 'blink' | 'ram' | 'salvo' | 'torpedo' | 'heal' | 'shield' | 'nuke' | 'fleet' | 'blade' = 'blink',
   ult = false,
 ) => ({
   id,
@@ -184,8 +185,8 @@ export const STEPPER_SKILLS: SkillDef[] = [
   ),
   def(
     {
-      ...spec('backStep', 'Backstep', 20, 0, 'heal'),
-      description: 'Retreat 2 km from the nearest detected enemy, phase for 2 s and heal 20% maximum HP.',
+      ...spec('backStep', 'Backstep', 20, 8, 'heal'),
+      description: 'Retreat 2 km from the nearest detected enemy, phase for 2 s and heal 20% maximum HP, then repair another 20% over 8 s. Hull damage cancels the repair.',
     },
     {
       activate(s, g) {
@@ -213,7 +214,18 @@ export const STEPPER_SKILLS: SkillDef[] = [
         });
         s.mods.invulnerable = true;
         s.heal(s.maxHp * 0.2);
+        stepState(s).repair = { remaining: 8 };
+        stepState(s).repairInterruptedUntil = 0;
       },
+      update(s, _g, dt) {
+        const repair = s.stepper?.repair;
+        if (!repair) return;
+        const elapsed = Math.min(dt, repair.remaining);
+        s.heal(s.maxHp * 0.025 * elapsed);
+        repair.remaining -= elapsed;
+        if (repair.remaining < 1e-8) s.stepper!.repair = null;
+      },
+      end(s) { if (s.stepper) s.stepper.repair = null; },
       aiShouldUse(s) {
         return s.hp / s.maxHp < 0.6;
       },
@@ -307,19 +319,13 @@ export const STEPPER_SKILLS: SkillDef[] = [
   ),
   def(
     {
-      ...spec('explosionStep', 'Explosion-step', 95, 0, 'nuke', true),
-      description: 'Step to the reticle within 3.5 km and detonate a 1 km blast for 220k damage.',
+      ...spec('crossStep', 'Cross-step', 95, 3, 'blade', true),
+      description: 'Aim within 3.5 km: phase around a 1 km zone for 3 s, carving 60 cuts at 6k damage each. Converge for a 150k final slash. 510k total against enemies caught throughout.',
     },
     {
-      activate(s, g, st) {
-        const p = aimedLanding(s, 3500);
-        if (!p) return s.failSkill('Explosion-step: destination blocked; no safe water');
-        snapStep(s, p);
-        for (const t of g.ships)
-          if (t.alive && t.team !== s.team && !t.deep && Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) <= 1000)
-            hurt(s, t, 220000, st.spec);
-        g.events.emit('stepImpact', { ship: s, x: s.pos.x, z: s.pos.z, radius: 1000, kind: 'explosion' });
-      },
+      activate: beginCross,
+      update(s, _g, dt, st) { updateCross(s, dt, st); },
+      end: endCross,
       aiShouldUse: aimed(3500),
     },
   ),

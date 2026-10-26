@@ -46,7 +46,8 @@ export interface GameEventMap {
   lightning: { points: { x: number; y: number; z: number }[]; color: number; straight?: boolean };
   strike: { strike: Strike };
   strikeHit: { strike: Strike };
-  stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'explosion' | 'copies' };
+  crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
+  stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };
   blink: { ship: Ship; fromX: number; fromZ: number; fromHeading?: number; dodge?: boolean };
   /** A ship refused to sink, or was raised from its wreck. */
   revive: { ship: Ship; skill: SkillSpec | null };

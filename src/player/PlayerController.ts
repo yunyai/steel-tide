@@ -425,7 +425,7 @@ export class PlayerController {
     const spec = s.spec;
     const cam = this.camera;
     const t = this.game.renderTime;
-    const f = s.stepper?.flicker;
+    const f = s.stepper?.cross ?? s.stepper?.flicker;
     if (f && own) {
       if (!this.stepCamera) {
         this.stepCamera=true;
