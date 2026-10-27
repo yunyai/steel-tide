@@ -1,3 +1,4 @@
+import { ArchitectElementFx } from './ArchitectElementFx';
 import { FleetFx } from './FleetFx';
 import { ArchitectFx } from './ArchitectFx';
 import { StepperFx } from './StepperFx';
@@ -28,6 +29,7 @@ const SHORE_HALF = MAP_HALF + 500;
 export class NavalScene implements BattleScene {
   readonly torpedoAim = new TorpedoAim();
   readonly fleetFx: FleetFx;
+  readonly elementFx:ArchitectElementFx;
   readonly architectFx: ArchitectFx;
   readonly crossFx: CrossStepFx;
   readonly stepperFx: StepperFx;
@@ -58,6 +60,7 @@ export class NavalScene implements BattleScene {
     this.fleetFx = new FleetFx(this.scene, game);
     this.crossFx = new CrossStepFx(this.scene, game);
     this.stepperFx = new StepperFx(this.scene, game);
+    this.elementFx = new ArchitectElementFx(this.scene,game);
     this.architectFx = new ArchitectFx(this.scene, game);
     const q = quality();
     const gl = renderer.gl;
@@ -125,6 +128,7 @@ export class NavalScene implements BattleScene {
     this.off = [];
     this.warm = [];
     this.architectFx.dispose();
+    this.elementFx.dispose();
     this.crossFx.dispose();
     this.fleetFx.dispose();
     this.stepperFx.dispose();
@@ -209,6 +213,7 @@ export class NavalScene implements BattleScene {
     this.crossFx.update(dt, this.skillFx.locals);
     this.stepperFx.update(dt, this.skillFx.locals);
     this.architectFx.update(dt, this.skillFx.locals);
+    this.elementFx.update(dt,this.skillFx.locals);
     this.projectiles.update(g);
   }
 
@@ -237,6 +242,7 @@ export class NavalScene implements BattleScene {
   prepare(vp: Viewport, heightPx: number): void {
     this.fleetFx.prepare(vp.team);
     this.architectFx.prepare(vp.team, heightPx);
+    this.elementFx.prepare(vp.team);
     this.crossFx.prepare(vp.team, heightPx);
     this.stepperFx.prepare(vp.team, heightPx);
     this.torpedoAim.update(this.aiming.get(vp.camera), heightPx);

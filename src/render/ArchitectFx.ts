@@ -1,3 +1,4 @@
+import { ELEMENT_STYLE } from '../skills/misc/ArchitectElements';
 import { Color, DoubleSide, Euler, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial, PlaneGeometry, Quaternion, Vector3, type Scene } from 'three';
 import type { Game } from '../core/Game';
 import type { Ship } from '../ships/Ship';
@@ -9,7 +10,7 @@ import { ASSEMBLY_HEIGHT, ASSEMBLY_MUZZLE, assemblyWorld, reducedMotion, satelli
 
 const GOLD=new Color(0xffbd66).multiplyScalar(1.6),BLUE=new Color(0x8be9ff).multiplyScalar(2),RED=new Color(0xff4668).multiplyScalar(2),WHITE=new Color(0xf0fbff).multiplyScalar(3);
 const ASSEMBLY_BEAM_LIFE=1.1;
-interface Shot {ship:Ship;x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox';age:number}
+interface Shot {ship:Ship;x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox';slot?:number;age:number}
 const matrix=new Matrix4(),quaternion=new Quaternion(),euler=new Euler(),position=new Vector3(),scale=new Vector3();
 const muzzle=new Vector3(),core=new Vector3(),satellite=new Vector3();
 /** All ten-module networks share two draw batches, independent of visual quality or simulation RNG. */
@@ -140,7 +141,8 @@ export class ArchitectFx {
         }
       }
       for(const shot of this.shots){
-        const color=team===-1||shot.ship.team===team?BLUE:RED;
+        const element=shot.slot===undefined?undefined:shot.ship.architect?.slots[shot.slot]?.element;
+        const color=element?new Color(ELEMENT_STYLE[element].color).multiplyScalar(1.5):team===-1||shot.ship.team===team?BLUE:RED;
         // Hold the full blast briefly, then leave a readable afterglow.
         const k=shot.kind==='assembly'?1-smooth((shot.age-.18)/(ASSEMBLY_BEAM_LIFE-.18)):1-shot.age/.35;
         const sx=shot.x,sy=shot.y,sz=shot.z;

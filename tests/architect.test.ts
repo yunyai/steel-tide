@@ -79,18 +79,19 @@ describe('Architect arsenal',()=>{
   });
 });
 describe('Architect normal skills',()=>{
-  it('commands two fixed-damage shells per available module with a shared reload',()=>{
+  it('commands two fixed-damage shells per available module without interrupting normal reload',()=>{
     const {g,s}=arena();expect(s.activateSkill(1)).toBe(true);
     expect(g.shells.shells).toHaveLength(20);
-    expect(g.shells.shells.every(p=>p.spec.damage===20000&&p.skill?.id==='architectBurst')).toBe(true);
-    expect(s.turrets.every(t=>t.reload===6)).toBe(true);
+    expect(g.shells.shells.every(p=>p.spec.damage===30000&&p.skill?.id==='architectBurst')).toBe(true);
+    expect(s.turrets.every(t=>t.reload===0)).toBe(true);
   });
   it('connects modules without multiplying damage where links overlap',()=>{
     const {g,s,t}=deploy();t.pos.set(800,0,0);t.heading=Math.PI/2;t.prevPos.copy(t.pos);
+    let linkDamage=0;g.events.on('skillHit',e=>{if(e.skill.id==='architectConnect')linkDamage+=e.damage;});
     expect(s.activateSkill(2)).toBe(true);run(g,.5);
-    expect(t.stats.received).toBeCloseTo(6000);
+    expect(linkDamage).toBeCloseTo(6000);
     const slot=s.architect!.slots[0];slot.entity!.takeDamage(1e9,t,null,false,true);
-    const before=t.stats.received;run(g,.5);expect(t.stats.received).toBe(before);
+    const before=linkDamage;run(g,.5);expect(linkDamage).toBe(before);
   });
   it('reconfigures into a safe ring and returns them with Recall',()=>{
     const {g,s,t}=deploy();t.pos.set(3000,0,-3000);s.control.aimX=0;s.control.aimZ=0;
@@ -110,7 +111,7 @@ describe('Architect ultimates',()=>{
     const {g,s,t}=arena();s.control.aimX=0;s.control.aimZ=-1000;s.meter=1;
     expect(s.activateSkill(6)).toBe(true);expect(s.activateSkill(0)).toBe(false);
     run(g,3.45);expect(t.stats.received).toBe(0);
-    run(g,.05);expect(t.stats.received).toBeCloseTo(1200000);
+    run(g,.05);expect(t.stats.received).toBeGreaterThanOrEqual(1320000);
     run(g,.5);expect(s.architect!.ultimate).toBeNull();expect(s.architect!.slots.every(a=>a.state==='docked')).toBe(true);
   });
   it('locks aim in the last .4 seconds and blocks hull movement without granting immunity',()=>{
@@ -118,7 +119,7 @@ describe('Architect ultimates',()=>{
     const p=s.pos.clone();s.control.throttleSet=6;s.control.fire=true;
     run(g,3.1);s.control.aimX=3000;s.control.aimZ=1500;
     expect(s.takeDamage(10000,t)).toBeGreaterThan(0);
-    run(g,.4);expect(t.stats.received).toBeCloseTo(1200000);expect(s.pos.distanceTo(p)).toBeCloseTo(0);
+    run(g,.4);expect(t.stats.received).toBeGreaterThanOrEqual(1320000);expect(s.pos.distanceTo(p)).toBeCloseTo(0);
   });
   it('requires two available modules and preserves charge on invalid ultimates',()=>{
     const {g,s}=arena();s.meter=1;
@@ -129,8 +130,9 @@ describe('Architect ultimates',()=>{
   });
   it('fires eight Killbox waves for 960k total at its fixed center',()=>{
     const {g,s,t}=arena();s.control.aimX=0;s.control.aimZ=-1000;s.meter=1;
+    let baseDamage=0;g.events.on('skillHit',e=>{if(e.skill.id==='architectKillbox')baseDamage+=e.damage;});
     expect(s.activateSkill(7)).toBe(true);run(g,9.5);
-    expect(t.stats.received).toBeCloseTo(960000);expect(s.architect!.ultimate).toBeNull();
+    expect(baseDamage).toBeCloseTo(960000);expect(t.stats.received).toBeGreaterThanOrEqual(1080000);expect(s.architect!.ultimate).toBeNull();
     expect(s.architect!.slots.every(a=>a.state==='deployed')).toBe(true);
   });
   it('raises Citadel above terrain, grants nonstacking protection and lands safely',()=>{

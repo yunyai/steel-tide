@@ -659,7 +659,7 @@ export class Ship {
    */
   private build(spec: ShipSpec): void {
     clearArchitect(this);
-    this.architect = spec.id === 'architect' ? newArchitectState() : null;
+    this.architect = spec.id === 'architect' ? newArchitectState(this.game.rng) : null;
     const game = this.game;
     this.spec = spec;
     this.colossus = spec.cls === 'TT';
@@ -1367,6 +1367,7 @@ export class Ship {
         cluster: buff?.cluster ? buff.skill : undefined,
         flat: this.mods.flatShots || main.flat || 0,
         onHit: buff?.onHit,
+        element:this.architect?{owner:this,slot:this.turrets.indexOf(t)}:undefined,
         look: main.look,
       });
     }

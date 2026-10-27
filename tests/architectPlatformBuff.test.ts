@@ -32,11 +32,11 @@ it('preserves reload percentage through recall and redeployment without resettin
   slot.state='citadel';again.refreshModifiers();preparePlatform(again);expect(again.turrets[0].reload).toBe(.75);
   slot.state='deployed';again.refreshModifiers();preparePlatform(again);expect(again.turrets[0].reload).toBe(1.5);
 });
-it('keeps Commanded Burst shell damage fixed and uses each gun’s ordinary reload duration',()=>{
-  const {g,s,m}=setup();g.shells.shells=[];s.control.aimX=800;s.control.aimZ=-1000;s.activateSkill(1);
+it('adds Commanded Burst without interrupting docked or deployed reloads',()=>{
+  const {g,s,m}=setup();g.shells.shells=[];s.control.aimX=800;s.control.aimZ=-1000;const reloads=[m.turrets[0].reload,s.turrets[2].reload];s.activateSkill(1);
   expect(g.shells.shells).toHaveLength(20);
-  expect(g.shells.shells.every(p=>p.spec.damage===20000&&p.dmgMul===s.mods.damageMul&&p.skill?.id==='architectBurst')).toBe(true);
-  expect(m.turrets[0].reload).toBe(3);expect(s.turrets[2].reload).toBe(6);
+  expect(g.shells.shells.every(p=>p.spec.damage===30000&&p.dmgMul===s.mods.damageMul&&p.skill?.id==='architectBurst')).toBe(true);
+  expect(m.turrets[0].reload).toBe(reloads[0]);expect(s.turrets[2].reload).toBe(reloads[1]);
 });
 it('survives three seconds of 50k-per-second incoming damage without special protection',()=>{
   const {m}=setup();m.shield=0;m.colossus=false;

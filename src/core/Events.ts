@@ -1,3 +1,4 @@
+import type { ElementEvent } from '../skills/misc/ArchitectElements';
 import type { Ship } from '../ships/Ship';
 import type { AmmoType, ConsumableType, GunLook, HitOutcome, SkillSpec, Team } from './types';
 import type { Pickup } from './Pickups';
@@ -46,8 +47,9 @@ export interface GameEventMap {
   lightning: { points: { x: number; y: number; z: number }[]; color: number; straight?: boolean };
   strike: { strike: Strike };
   strikeHit: { strike: Strike };
+  architectElement: ElementEvent;
   architectCommand: { ship: Ship; kind: 'deploy'|'recall'|'destroy'|'assembly'|'killbox'|'citadel'|'end' };
-  architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox' };
+  architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox';slot?:number };
   crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
   stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };
   blink: { ship: Ship; fromX: number; fromZ: number; fromHeading?: number; dodge?: boolean; step?: 'flash' | 'ram' | 'broad' | 'over' | 'back' };

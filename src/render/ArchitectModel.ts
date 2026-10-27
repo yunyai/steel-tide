@@ -1,3 +1,4 @@
+import { ELEMENTS, ELEMENT_STYLE, type ArchitectElement } from '../skills/misc/ArchitectElements';
 import { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, TorusGeometry, Vector3, type BufferGeometry, type Material } from 'three';
 import type { ShipSpec } from '../core/types';
 import type { Ship } from '../ships/Ship';
@@ -7,27 +8,56 @@ import { ASSEMBLY_HEIGHT, ASSEMBLY_MUZZLE, reducedMotion, satellitePose, smooth 
 const DARK=0x253541,EDGE=0x526b79,IVORY=0xd5d9d0,BLACK=0x0e1b25,GOLD=0xffbd66,CYAN=0x91edff;
 
 /** Architect alone uses these heavy gun houses; normal railgun ships keep their own silhouette. */
-export function architectTurretGeometry(){
-  const house=new Parts(),guns=new Parts();
+export function architectTurretGeometry(element:ArchitectElement='furnace'){
+  const accent=ELEMENT_STYLE[element].color;
+  const house=new Parts(),guns=new Parts(),glow=new Parts();
   house.cyl(12,14,5,0,0,0,DARK,{seg:12});
-  house.cyl(12.3,12.3,1.4,0,4,0,GOLD,{seg:12});
+  house.cyl(12.3,12.3,1.4,0,4,0,accent,{seg:12});
   house.box(31,15,24,-4,5,0,IVORY,{taper:.18,slope:3});
   house.box(24,3,18,-6,20,0,EDGE,{taper:.15});
   house.box(9,9,26,11,8,0,DARK,{taper:.1});
   for(const z of [-1,1]){
     house.box(21,5,3,-7,9,z*12,EDGE);
-    house.box(12,1.3,2,-8,18,z*10,GOLD);
+    house.box(12,1.3,2,-8,18,z*10,accent);
     for(let x=-14;x<=-2;x+=4)house.box(2,3,1.5,x,12,z*14,BLACK);
     guns.box(42,4,4,20,-2,z*6.5,DARK);
-    guns.box(36,2,1.6,21,0,z*6.5,CYAN);
+    guns.box(36,2,1.6,21,0,z*6.5,accent);
     guns.box(34,2,1.4,18,2.2,z*8.7,IVORY);
     guns.box(34,2,1.4,18,2.2,z*4.3,IVORY);
     guns.box(8,8,8,3,-4,z*6.5,EDGE,{taper:.1});
     guns.box(6,7,7,40,-3.5,z*6.5,IVORY,{taper:.12});
     guns.box(1,3,3,43.1,-1.5,z*6.5,BLACK);
   }
-  return {house:house.merge(),guns:guns.merge(),pivotX:10,pivotY:15};
+  if(element==='furnace'){
+    house.box(17,16,22,-16,12,0,DARK,{taper:.12});
+    for(const z of [-1,1])for(let x=-22;x<=-10;x+=4){house.box(2,10,3,x,17,z*12,accent);house.box(3,2,5,x,27,z*12,EDGE);}
+    guns.box(17,8,20,29,-4,0,EDGE,{taper:.18});guns.box(14,2,14,29,5,0,accent);
+  }else if(element==='cryo'){
+    for(const z of [-1,1]){house.cyl(4,4,20,-12,18,z*15,EDGE,{seg:8,rz:Math.PI/2});house.cyl(2.5,2.5,17,-12,18,z*15,accent,{seg:8,rz:Math.PI/2});for(let x=-16;x<=2;x+=5)house.box(2,9,7,x,20,z*8,IVORY,{taper:.3});}
+    guns.box(22,4,22,18,2,0,IVORY,{taper:.2});guns.box(24,1,13,18,6,0,accent);
+  }else if(element==='storm'){
+    for(const z of [-1,1]){house.box(8,25,6,-8,13,z*13,EDGE,{taper:.2});for(let y=21;y<39;y+=5)house.box(11,2,9,-8,y,z*13,accent);house.box(16,5,7,-7,38,z*13,IVORY,{taper:.2});}
+    for(const x of [12,23,34])guns.box(3,11,24,x,-5,0,EDGE);
+  }else if(element==='gravity'){
+    house.box(12,24,29,-13,10,0,DARK,{taper:.2});
+    for(const x of [11,25,38]){guns.add(new TorusGeometry(13,2,6,16),EDGE,x,0,0,{ry:Math.PI/2});guns.add(new TorusGeometry(10.5,1,5,20),accent,x,0,0,{ry:Math.PI/2});}
+  }else{
+    for(const z of [-1,1]){house.box(25,9,4,-5,21,z*12,IVORY,{rz:z*.18,taper:.3});guns.box(36,5,5,22,5,z*10,IVORY,{rz:z*.1,taper:.25});guns.box(34,1,2,23,10,z*10,accent);}
+    guns.box(35,3,3,23,0,0,accent);guns.box(8,10,18,42,-4,0,EDGE,{taper:.25});
+  }
+  for(const z of [-1,1]){glow.box(18,1.4,1.5,-7,22,z*11,accent);glow.box(4,6,1.4,6,13,z*13,accent);}
+  if(element==='furnace')for(const z of [-1,1])for(let x=-22;x<=-10;x+=4)glow.box(1.5,9,1,x,18,z*13.6,accent);
+  if(element==='cryo')for(const z of [-1,1])glow.cyl(2.7,2.7,17,-12,18,z*15,accent,{seg:8,rz:Math.PI/2});
+  if(element==='storm')for(const z of [-1,1])for(let y=21;y<39;y+=5)glow.box(11.2,1.2,9.2,-8,y+.5,z*13,accent);
+  if(element==='gravity')glow.add(new TorusGeometry(11,.8,5,24),accent,34,15,0,{ry:Math.PI/2});
+  if(element==='prism')for(const z of [-1,1])glow.box(23,1,1,-5,30,z*12,accent);
+  return {house:house.merge(),guns:guns.merge(),glow:glow.merge(),pivotX:10,pivotY:15};
 }
+
+export const architectGlowMaterial=new MeshBasicMaterial({color:0xffffff,vertexColors:true,toneMapped:false});
+architectGlowMaterial.color.setRGB(1.6,1.6,1.6);
+const elementalGeometry=new Map<ArchitectElement,ReturnType<typeof architectTurretGeometry>>();
+export function elementalTurretGeometry(element:ArchitectElement){let g=elementalGeometry.get(element);if(!g){g=architectTurretGeometry(element);elementalGeometry.set(element,g);}return g;}
 
 /** Mechanical silhouettes are merged by material; only clamps, outriggers and satellites articulate. */
 export class ArchitectModel {
@@ -116,12 +146,13 @@ export class ArchitectModel {
       add(collars,this.cannon);
       add(new Parts().barrel(7,4,ASSEMBLY_MUZZLE,-10,0,0,CYAN),this.cannon,this.blue);
       // Reuse the same heavy gun silhouette in each cosmetic focusing satellite.
-      const turret=architectTurretGeometry();this.owned.push(turret.house,turret.guns);
+
       const base=new Parts().box(56,10,32,-4,-8,0,IVORY,{taper:.2}).box(48,5,36,-4,-13,0,DARK).merge();this.owned.push(base);
       for(let i=0;i<10;i++){
+        const turret=elementalTurretGeometry(ELEMENTS[i%5]);
         const sat=new Group();sat.name=`architect-satellite-${i}`;this.gun.add(sat);this.satellites.push(sat);
         sat.add(make(base,this.armor),make(turret.house,this.armor));
-        const barrels=make(turret.guns,this.armor);barrels.position.set(turret.pivotX,turret.pivotY,0);sat.add(barrels);
+        const barrels=make(turret.guns,this.armor);barrels.position.set(turret.pivotX,turret.pivotY,0);sat.add(barrels);sat.add(make(turret.glow,architectGlowMaterial));
       }
     }else{
       const frame=new Parts();
@@ -171,6 +202,7 @@ export class ArchitectModel {
       this.vents.forEach((v,i)=>v.rotation.x=(i?1:-1)*(.25+charge*.5+Math.min(1,fire*8)*.4));
       this.satellites.forEach((g,i)=>{
         g.visible=u.elapsed>=1.5&&u.members.includes(i)&&ship.architect!.slots[i].state==='assembling';
+        const geo=elementalTurretGeometry(ship.architect!.slots[i].element);(g.children[1] as Mesh).geometry=geo.house;(g.children[2] as Mesh).geometry=geo.guns;(g.children[3] as Mesh).geometry=geo.glow;
         satellitePose(ship,i,this.reduce,this.point);g.position.copy(this.point);
       });
       this.blue.color.setRGB(.55+charge*.7,1.3+charge*.8,1.7+charge*.7);

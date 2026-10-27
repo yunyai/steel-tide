@@ -1,3 +1,4 @@
+import { elementalShellHit } from '../skills/misc/ArchitectElements';
 import { MAP_HALF, SHELL_TIME_SCALE, SIM_DT, WALL_HEIGHT } from '../config';
 import type { Game } from '../core/Game';
 import { bearingTo, dist2D, forwardX, forwardZ, segmentBox } from '../core/math';
@@ -45,6 +46,7 @@ export interface Shell {
   /** Called on each hull it hits. */
   onHit: ((target: Ship, x: number, z: number) => void) | null;
   /** How the round looks in flight. */
+  element?: {owner:Ship;slot:number;splash?:number};
   look: GunLook;
 }
 
@@ -67,6 +69,7 @@ export interface FireOptions {
   /** Fly flat at this multiple of muzzle velocity (railgun mode is 3, with piercing). */
   flat?: number;
   onHit?: (target: Ship, x: number, z: number) => void;
+  element?: {owner:Ship;slot:number;splash?:number};
   look?: GunLook;
 }
 
@@ -114,6 +117,7 @@ export class ShellSystem {
       cluster: o.cluster ?? null,
       straight: o.railgun || (o.flat ?? 0) > 0,
       onHit: o.onHit ?? null,
+      element:o.element??(owner.architectPlatform?{owner:owner.architectPlatform.owner,slot:owner.architectPlatform.index}:undefined),
       look: o.look ?? 'shell',
     };
     if (s.straight) {
@@ -339,6 +343,7 @@ export class ShellSystem {
     if ((ship.stepper?.phaseUntil ?? 0) > g.time) return;
     const attacker = s.owner;
     attacker.stats.hits++;
+    if(s.element&&damage>0)elementalShellHit(s.element.owner,s.element.slot,ship,s.element.splash,s.spec.damage,{x:wx,y:wy,z:wz});
     if (s.onHit && ship.alive) s.onHit(ship, wx, wz);
     if (res.outcome === 'citadel') attacker.stats.citadels++;
     // Fires from HE, module damage from penetrations.

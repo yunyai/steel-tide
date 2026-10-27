@@ -1,7 +1,8 @@
+import { applyElementMark, ultimateElementHit } from './ArchitectElements';
 import type { Ship } from '../../ships/Ship';
 import { MAP_HALF } from '../../config';
 import { bearingTo } from '../../core/math';
-import { segmentHitsHull } from '../../core/hull';
+import { distToHull, segmentHitsHull } from '../../core/hull';
 import { hurt, buff } from '../kit';
 import { available, archAim, attachModule, clearLine, dockPoint, formation, moduleLanding, moveModule, raiseShield, updateModulePath } from './ArchitectRuntime';
 
@@ -43,7 +44,8 @@ function airPosition(s:Ship,n:number,count:number,skip:number):{x:number;y:numbe
   return {x,y,z,heading:bearingTo(x,z,s.pos.x,s.pos.z)};
 }
 /** Piercing rays are spatial attacks: normal defenses apply, with explicit height and obstacle checks. */
-function rail(s:Ship,x:number,y:number,z:number,tx:number,ty:number,tz:number,width:number,damage:number,index:number,kind:'assembly'|'killbox'):void {
+function rail(s:Ship,x:number,y:number,z:number,tx:number,ty:number,tz:number,width:number,damage:number,index:number,kind:'assembly'|'killbox',slot?:number):Ship[] {
+  const hits:Ship[]=[];
   const k=clearLine(s,x,z,tx,tz,y,ty);tx=x+(tx-x)*k;tz=z+(tz-z)*k;ty=y+(ty-y)*k;
   const dx=tx-x,dz=tz-z,d2=dx*dx+dz*dz;
   for(const t of s.game.ships){
@@ -51,9 +53,9 @@ function rail(s:Ship,x:number,y:number,z:number,tx:number,ty:number,tz:number,wi
     if(!t.alive||t.team===s.team||t.deep)continue;
     const f=Math.max(0,Math.min(1,((t.pos.x-x)*dx+(t.pos.z-z)*dz)/Math.max(1,d2))),height=y+(ty-y)*f;
     if(height<t.pos.y-t.spec.draft-width/2||height>t.pos.y+t.spec.freeboard+30+width/2)continue;
-    if(segmentHitsHull(t,x,z,tx,tz,width/2)>=0)hurt(s,t,damage,s.skills[index].spec);
+    if(segmentHitsHull(t,x,z,tx,tz,width/2)>=0){hits.push(t);const dealt=hurt(s,t,damage,s.skills[index].spec);if(dealt>0&&slot!==undefined)applyElementMark(s,s.architect!.slots[slot],t);}
   }
-  s.game.events.emit('architectShot',{ship:s,x,y,z,tx,ty,tz,width,kind});
+  s.game.events.emit('architectShot',{ship:s,x,y,z,tx,ty,tz,width,kind,slot});return hits;
 }
 export function updateArchitectUltimate(s:Ship,dt:number):void {
   const a=s.architect,u=a?.ultimate;if(!a||!u)return;
@@ -65,7 +67,7 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
       if(u.kind==='assembly'){
         if(slot.entity?.alive)attachModule(s,slot);
         slot.state='assembling';slot.path=null;s.turrets[i].disabled=Infinity;
-      }else if(slot.entity?.alive){slot.state=u.kind==='citadel'?'citadel':'deployed';slot.path=null;}
+      }else if(slot.entity?.alive){slot.state=u.kind==='citadel'?'citadel':'deployed';slot.coordinated=u.kind==='citadel';slot.path=null;}
     }
   }
   if(u.kind==='assembly'){
@@ -74,16 +76,26 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
       u.fired=true;
       const count=u.members.filter(i=>a.slots[i].state!=='destroyed').length;
       const dx=u.aimX-s.pos.x,dz=u.aimZ-s.pos.z,len=Math.hypot(dx,dz)||1;
-      if(count)rail(s,s.pos.x,s.pos.y+24,s.pos.z,s.pos.x+dx/len*6000,u.aimY,s.pos.z+dz/len*6000,180,count*120000,6,'assembly');
+      if(count){
+        const hits=rail(s,s.pos.x,s.pos.y+24,s.pos.z,s.pos.x+dx/len*6000,u.aimY,s.pos.z+dz/len*6000,180,count*120000,6,'assembly');
+        for(const i of u.members){const slot=a.slots[i];if(slot.state==='destroyed')continue;
+          const victims=new Set<Ship>();
+          for(const hit of hits)for(const t of s.game.ships)if(t.alive&&t.team!==s.team&&!t.submerged&&distToHull(t,hit.pos.x,hit.pos.z)<=200&&Math.abs(t.pos.y-hit.pos.y)<120&&clearLine(s,hit.pos.x,hit.pos.z,t.pos.x,t.pos.z,hit.pos.y+12,t.pos.y+12)===1)victims.add(t);
+          for(const t of victims)ultimateElementHit(s,slot,t,'assembly');
+        }
+      }
       else s.failSkill('Final Assembly: every participating module was destroyed');
     }
     if(u.elapsed+1e-8>=4)endArchitectUltimate(s);
   }else if(u.kind==='killbox'){
     while(u.waves<8&&u.elapsed+1e-8>=2.5+u.waves){
-      for(const i of u.members){const m=a.slots[i].entity;if(!m?.alive)continue;rail(s,m.pos.x,16,m.pos.z,u.x*2-m.pos.x,4,u.z*2-m.pos.z,120,12000,7,'killbox');}
+      for(const i of u.members){const m=a.slots[i].entity;if(!m?.alive)continue;rail(s,m.pos.x,16,m.pos.z,u.x*2-m.pos.x,4,u.z*2-m.pos.z,120,12000,7,'killbox',i);}
       u.waves++;
     }
-    if(u.elapsed+1e-8>=9.5)endArchitectUltimate(s);
+    if(u.elapsed+1e-8>=9.5){
+      for(const i of u.members){const slot=a.slots[i];if(!slot.entity?.alive)continue;for(const t of s.game.ships)if(t.alive&&t.team!==s.team&&!t.submerged&&Math.abs(t.pos.y)<120&&distToHull(t,u.x,u.z)<=1000&&clearLine(s,u.x,u.z,t.pos.x,t.pos.z,16,t.pos.y+12)===1)ultimateElementHit(s,slot,t,'killbox');}
+      endArchitectUltimate(s);
+    }
   }else{
     if(u.elapsed+1e-8>=1.5){
       // Read all slots before moving them so positions don't depend on incidental traversal order.
@@ -110,7 +122,7 @@ export function endArchitectUltimate(s:Ship):void {
   a.ultimate=null;
   const reservations:ReturnType<typeof moduleLanding>[]=[];
   for(const i of u.members){
-    const slot=a.slots[i];if(slot.state==='destroyed')continue;
+    const slot=a.slots[i];slot.coordinated=false;if(slot.state==='destroyed')continue;
     if(u.kind==='assembly'){
       if(slot.entity?.alive)attachModule(s,slot);
       slot.state='docked';slot.path=null;s.turrets[i].disabled=slot.disabled;s.turrets[i].reload=slot.reload;

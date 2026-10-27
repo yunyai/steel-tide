@@ -1,5 +1,6 @@
+import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import { addFleetDetails, FLEET_DETAILS } from './FleetDetails';
-import { ArchitectModel, architectTurretGeometry } from './ArchitectModel';
+import { ArchitectModel, architectTurretGeometry, elementalTurretGeometry, architectGlowMaterial } from './ArchitectModel';
 import { StepperModel } from './StepperModel';
 import { stepperHullGeometry, stepperTurretGeometry } from './StepperGeometry';
 import {
@@ -1109,7 +1110,7 @@ export class ShipView {
     }
 
     spec.main?.turrets.forEach((t, i) => {
-      const tg = geo.turrets[i];
+      const tg = spec.id==='architect'||spec.id==='architectPlatform'?elementalTurretGeometry(ELEMENTS[i%5]):geo.turrets[i];
       const yaw = new Group();
       if(spec.id==='stepper') yaw.name=`stepper-turret-${i}`;
       if(spec.id==='architect') yaw.name=`architect-turret-${i}`;
@@ -1123,6 +1124,7 @@ export class ShipView {
       slide.add(this.mesh(tg.guns, shadows));
       pitch.add(slide);
       yaw.add(pitch);
+      if(spec.id==='architect'||spec.id==='architectPlatform')yaw.add(this.mesh(elementalTurretGeometry(ELEMENTS[i%5]).glow,false,architectGlowMaterial));
       this.body.add(yaw);
       this.turrets.push({ yaw, pitch, slide });
     });
@@ -1556,6 +1558,11 @@ export class ShipView {
       const v = this.turrets[i];
       if (!v) return;
       if(ship.architect)v.yaw.visible=ship.architect.slots[i].state==='docked';
+      const moduleSlot=ship.architect?.slots[i]??(ship.architectPlatform?ship.architectPlatform.owner.architect?.slots[ship.architectPlatform.index]:undefined);
+      if(moduleSlot){const geo=elementalTurretGeometry(moduleSlot.element);(v.yaw.children[0] as Mesh).geometry=geo.house;(v.slide.children[0] as Mesh).geometry=geo.guns;(v.yaw.children[2] as Mesh).geometry=geo.glow;
+        // Physical focusing hardware breathes as its autonomous overdrive approaches readiness.
+        const charge=1-Math.min(1,moduleSlot.miniTimer/6);v.slide.scale.set(1,1+charge*.06,1+charge*.1);
+      }
       v.yaw.rotation.y = -(t.spec.facing + t.yaw) * DEG;
       // Knocked out (or dead): the barrels sag.
       if (t.disabled > 0 || !ship.alive) v.pitch.rotation.z += (DROOP - v.pitch.rotation.z) * Math.min(1, dt * 4);

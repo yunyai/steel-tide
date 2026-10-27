@@ -1,3 +1,4 @@
+import { ELEMENT_STYLE } from '../skills/misc/ArchitectElements';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
 import { Vector3 } from 'three';
@@ -538,7 +539,8 @@ export class HUD {
       const a=me.architect!.slots[i],state=a.state;
       item.dataset.state=state;item.dataset.health=a.hp/me.architect!.moduleHp<.3?'low':a.hp/me.architect!.moduleHp<.6?'mid':'high';item.style.setProperty('--health',`${Math.max(0,a.hp/me.architect!.moduleHp)}`);
       setText(item.querySelector('span')!,state==='destroyed'?`${Math.ceil(a.rebuild)}s`:state==='docked'?'DOCK':state==='deployed'?'SET':state==='citadel'?'AIR':state==='returning'?'HOME':state==='assembling'?'BUILD':'MOVE');
-      item.title=`Module ${i+1}: ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP${a.reload>0?`, reload ${a.reload.toFixed(1)}s`:''}`;
+      const theme=ELEMENT_STYLE[a.element];item.querySelector('b')!.textContent=`${i+1} ${theme.short}`;item.querySelector('b')!.style.color=`#${theme.color.toString(16).padStart(6,'0')}`;
+      item.title=`${theme.name} ${i+1} · skill ${a.skillTimer.toFixed(1)}s · overdrive ${a.miniTimer.toFixed(1)}s: ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP${a.reload>0?`, reload ${a.reload.toFixed(1)}s`:''}`;
       item.setAttribute('aria-label',item.title);
     });
 
@@ -955,9 +957,9 @@ export class HUD {
         if ((!ally || s.spec.cls === 'AK') && !s.isSummon) off.push({ s, d });
         continue;
       }
-      const name = s.architectPlatform ? `Module ${s.architectPlatform.index+1}` : captainName(s);
+      const name = s.architectPlatform ? `${ELEMENT_STYLE[s.architectPlatform.owner.architect!.slots[s.architectPlatform.index].element].name} ${s.architectPlatform.index+1}` : captainName(s);
       const compact=!!s.architectPlatform&&this.pc.lock!==s&&this.pc.aimHit?.ship!==s;
-      const label = compact ? `${s.architectPlatform!.index+1}` : ally ? name : `${name}  ${(d / 1000).toFixed(1)} km`;
+      const label = compact ? `${s.architectPlatform!.index+1} ${ELEMENT_STYLE[s.architectPlatform!.owner.architect!.slots[s.architectPlatform!.index].element].short}` : ally ? name : `${name}  ${(d / 1000).toFixed(1)} km`;
       items.push({ s, x: p.x, y: p.y, d, label });
     }
     // Declutter: nearer (and locked) ships keep their spot, others stack upward.
