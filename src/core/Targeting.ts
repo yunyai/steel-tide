@@ -25,7 +25,7 @@ export function proximityContact(target: Ship, team: Team): ProximityContact {
 
 export function revealSource(target: Ship, team: Team): RevealSource {
   if (!target.alive || target.withdrawn || target.mods.banished || target.team === team) return null;
-  if (target.mods.revealed || target.game.exposed[team] > 0) return 'ability';
+  if (target.architectReveal[team]>target.game.time || target.mods.revealed || target.game.exposed[team] > 0) return 'ability';
   if (target.game.ships.some(s => s.alive && !s.withdrawn && !s.mods.banished && s.team === team && s.consumables.some(c =>
     c.spec.type === 'search' && c.active > 0 && Math.hypot(s.pos.x - target.pos.x, s.pos.z - target.pos.z) <= (c.spec.power ?? 0)))) return 'sonar';
   const p = proximityContact(target, team);

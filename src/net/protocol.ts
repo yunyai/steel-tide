@@ -1,3 +1,5 @@
+import type { ArchitectLoadout, ArchitectSelection } from '../data/architectLoadout';
+export const SIM_PROTOCOL=2;
 // LAN lobby and lockstep wire format, shared by the browser and the lobby server.
 // Keep this file free of DOM and game imports: the server reads it too.
 
@@ -32,6 +34,7 @@ export type Continuous = [number, number, number, number, number, number?];
 
 /** Edge orders, consumed by the tick they land on (see Ship.applyControl). */
 export interface Edge {
+  ar?:{index:number;pick:ArchitectSelection};
   /** Throttle up / down one step. */
   tu?: 1;
   td?: 1;
@@ -79,6 +82,7 @@ export interface LobbySettings {
 }
 
 export interface Member {
+  architectLoadout?:ArchitectLoadout;
   id: string;
   name: string;
   team: Team;
@@ -112,13 +116,13 @@ export interface LobbySummary {
 }
 
 export type ClientMsg =
-  | { t: 'hello'; name: string; token?: string }
+  | { t: 'hello'; protocol?:number; name: string; token?: string }
   | { t: 'name'; name: string }
   | { t: 'create'; name: string }
   | { t: 'join'; lobby: string }
   | { t: 'leave' }
   | { t: 'settings'; s: Partial<LobbySettings> }
-  | { t: 'me'; team?: Team; shipId?: string; ready?: boolean }
+  | { t: 'me'; architectLoadout?:ArchitectLoadout; team?: Team; shipId?: string; ready?: boolean }
   | { t: 'start' }
   | { t: 'loaded' }
   | { t: 'in'; c?: Continuous; e?: Edge }

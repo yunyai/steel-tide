@@ -1,3 +1,5 @@
+import { setArchitectLoadout } from '../skills/misc/ArchitectRuntime';
+import { copyLoadout } from '../data/architectLoadout';
 import { clearArchitect, destroyPlatform } from '../skills/misc/ArchitectRuntime';
 import { clearStepper, syncStepCopies } from '../skills/misc/StepperRuntime';
 import { eraOf } from '../data/factions';
@@ -159,6 +161,7 @@ export class Game {
       const p = this.spawnPoint(r.team, r.spec, lane);
       const ship = this.addShip(r.spec, r.team, r.name, p.x, p.z, p.heading);
       ship.humanIndex = r.humanIndex;
+      setArchitectLoadout(ship,copyLoadout(this.config.players[r.humanIndex]?.architectLoadout));
       this.fleet.push(ship);
       // Already under way, so the fleets meet within a quarter of a minute.
       ship.throttle = 6;
@@ -215,6 +218,7 @@ export class Game {
   private changeShip(old: Ship, spec: ShipSpec): Ship {
     const ship = new Ship(this, spec, old.team, old.name);
     ship.humanIndex = old.humanIndex;
+    setArchitectLoadout(ship,old.architectLoadout);
     ship.autopilot = old.autopilot;
     ship.stats = old.stats;
     old.humanIndex = -1;
@@ -499,6 +503,7 @@ export class Game {
 
   onShipSunk(ship: Ship, killer: Ship | null): void {
     if (ship.architectPlatform) { destroyPlatform(ship); return; }
+    if(ship.architectDrone){this.events.emit('explosion',{x:ship.pos.x,y:ship.pos.y,z:ship.pos.z,size:1});return;}
     clearArchitect(ship);
     const stepCopy = ship.stepper?.copy;
     clearStepper(ship);

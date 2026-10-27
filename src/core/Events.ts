@@ -7,6 +7,7 @@ import type { Strike } from '../weapons/StrikeSystem';
 export interface GameEventMap {
   gunFired: { ship: Ship; x: number; y: number; z: number; bearing: number; caliber: number; secondary: boolean; look?: GunLook };
   shellHit: {
+    element?:import('../data/architectLoadout').ArchitectElement;
     attacker: Ship;
     target: Ship;
     outcome: HitOutcome;

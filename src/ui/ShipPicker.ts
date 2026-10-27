@@ -1,3 +1,5 @@
+import { architectLoadoutEditor } from './ArchitectLoadout';
+import type { ArchitectSelection } from '../data/architectLoadout';
 import { randomShip } from '../core/FleetSelection';
 import type { BattleEra, Era, ShipSpec } from '../core/types';
 import { ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
@@ -13,6 +15,7 @@ import { LIVE_ERAS, TABS, type Tab, tabOf } from './Menu';
 export interface ShipPickerOptions {
   /** The captain's ship now (a new hull after a change of ship). */
   ship(): Ship;
+  refit?(index:number,pick:ArchitectSelection):void;
   era: BattleEra;
   titans: boolean;
   /** Sail `spec` from the next respawn; `now` also leaves the fight to change into it. */
@@ -73,6 +76,7 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
     const name = h('h3', {}, s.name);
     if (s.cls === 'TT') name.classList.add('tt');
     detail.replaceChildren(name, meta, h('p', { class: 'specialty' }, s.specialty), actions);
+    if(me.architect&&o.refit)detail.append(architectLoadoutEditor(me.architectLoadout,(v,index)=>{for(let i=0;i<10;i++)if(index===undefined||index===i)o.refit!(i,v[i]);},i=>me.architect?.slots[i].state==='docked'&&!me.architect.ultimate));
   };
 
   const renderList = () => {

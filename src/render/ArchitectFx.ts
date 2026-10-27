@@ -135,9 +135,8 @@ export class ArchitectFx {
             this.focusRing(s,0,62+k*10,color,.35);
           }
         }else if(u.kind==='killbox'){
-          this.ring(u.x,u.z,1000,color,.55);
-          const warning=Math.max(0,((u.elapsed-1.5)%1-.5)*2);
-          if(warning>0)for(const i of u.members){const p=a.slots[i].entity?.pos;if(!p)continue;r.push(p.x,8,p.z,u.x*2-p.x,8,u.z*2-p.z,color,warning*.6,8,2);}
+          this.ring(u.x,u.z,1500,color,.4);
+
         }
       }
       for(const shot of this.shots){
@@ -165,8 +164,8 @@ export class ArchitectFx {
             this.shockRing(x+(shot.tx-x)*travel,y,z+(shot.tz-z)*travel,h,65+travel*95,color,(1-travel)*.65,5);
           }
         }else{
-          r.push(sx,sy,sz,shot.tx,shot.ty,shot.tz,color,k*.75,shot.width*.3,3);
-          r.push(sx,sy+1,sz,shot.tx,shot.ty+1,shot.tz,WHITE,k*.9,shot.width*.06,1);
+          r.push(sx,sy,sz,sx,sy+15,sz,color,0,shot.width*.3,3);
+
         }
       }
     }

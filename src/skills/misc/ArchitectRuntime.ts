@@ -1,4 +1,6 @@
-import { newElementState, shuffledElements, updateElements, moduleLinked, fireElementSalvo, type ArchitectElement, type ElementState } from './ArchitectElements';
+import { arsenalTeam } from './ArchitectTargets';
+import { ARCHETYPES, validSelection, copyLoadout, type ArchitectLoadout, type ArchitectType } from '../../data/architectLoadout';
+import { newElementState, updateElements, moduleLinked, type ArchitectElement, type ElementState } from './ArchitectElements';
 import { ensureArchitectHealth, detachArchitectHealth, returnArchitectHealth, rebuildArchitectHealth, ARCHITECT_FULL_HP, MODULE_COMBAT_HP, PLATFORM_HEALTH_RATIO } from './ArchitectHealth';
 import { Vector3 } from 'three';
 import type { Ship, TurretState } from '../../ships/Ship';
@@ -13,12 +15,12 @@ import { updateArchitectUltimate, endArchitectUltimate, type ArchitectUltimate }
 
 export type ModuleMode = 'docked'|'launching'|'deployed'|'moving'|'returning'|'destroyed'|'assembling'|'citadel';
 export interface ModuleSlot {
-  element:ArchitectElement; skillTimer:number; miniTimer:number; castGap:number; opening:boolean; coordinated:boolean; aboard:boolean; index:number; state:ModuleMode; hp:number; reload:number; reloadScale:number; disabled:number; rebuild:number; dockedFor:number;
+  type:ArchitectType; skill:0|1; element:ArchitectElement; skillTimer:number; castGap:number; opening:boolean; boostUntil:number; reactionUntil:number; aboard:boolean; index:number; state:ModuleMode; hp:number; reload:number; reloadScale:number; disabled:number; rebuild:number; dockedFor:number;
   entity:Ship|null;
   path:{ x:number;y:number;z:number;tx:number;ty:number;tz:number;elapsed:number;duration:number;hit:number[];damage:boolean }|null;
 }
 export interface ArchitectState {
-  elements:ElementState; fullHp:number;moduleHp:number;healthReady:boolean;healthTransfer:boolean;
+  huntTarget:number;huntUntil:number;elements:ElementState; fullHp:number;moduleHp:number;healthReady:boolean;healthTransfer:boolean;
   slots:ModuleSlot[];
   links:{a:number;b:number}[];linkUntil:number;linkTick:number;
   ultimate:ArchitectUltimate|null;
@@ -26,9 +28,9 @@ export interface ArchitectState {
 }
 export interface ArchitectPlatform { owner:Ship; index:number }
 export const MODULE_HP=MODULE_COMBAT_HP;
-export function newArchitectState(rng:()=>number=()=>.5):ArchitectState {
-  const elements=shuffledElements(rng);
-  return {elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({element:elements[index],skillTimer:0,miniTimer:6+index*.6,castGap:0,opening:false,coordinated:false,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:1,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false};
+export function newArchitectState(_rng:()=>number=()=>.5,loadout?:ArchitectLoadout):ArchitectState {
+  const selections=copyLoadout(loadout);
+  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:1,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false};
 }
 export function dockPoint(s:Ship,i:number):Vector3 {
   const t=s.spec.main!.turrets[i];return s.localToWorld(t.x,s.spec.freeboard+t.y,t.z??0);
@@ -73,7 +75,7 @@ export function materialize(s:Ship,a:ModuleSlot):Ship {
   a.entity=m;disableDocked(s,a);return m;
 }
 export function moveModule(s:Ship,a:ModuleSlot,p:{x:number;y?:number;z:number;heading?:number},mode:ModuleMode,duration?:number,damage=false):void {
-  if(mode==='returning'||mode==='assembling'){a.coordinated=false;a.opening=false;}
+  if(mode==='returning'||mode==='assembling'){a.opening=false;}
   if(a.state==='docked'){const t=s.turrets[a.index];a.reload=t.reload;a.disabled=t.disabled;}
   const m=materialize(s,a);m.control.fire=false;
   a.state=mode;a.dockedFor=0;
@@ -119,8 +121,8 @@ export function raiseShield(s:Ship,amount:number,life=6):void {
   s.shield=Math.max(s.shield,amount);s.shieldMax=Math.max(s.shieldMax,s.shield);s.shieldTime=Math.max(s.shieldTime,life);
 }
 export function fortify(s:Ship):void {
-  raiseShield(s,75000);
-  for(const a of available(s))if(a.entity?.alive)raiseShield(a.entity,25000);
+  raiseShield(s,300000,8);
+  for(const a of available(s))if(a.entity?.alive)raiseShield(a.entity,100000,8);
 }
 export function clearLine(s:Ship,x:number,z:number,tx:number,tz:number,y=5,ty=5):number {
   const d=Math.hypot(tx-x,tz-z),n=Math.max(1,Math.ceil(d/20));
@@ -152,24 +154,24 @@ function setModuleReloadScale(slot:ModuleSlot,scale:number):void {
   slot.reloadScale=scale;
 }
 function platformReloadScale(slot:ModuleSlot):number {
-  return slot.state==='citadel'?.25:slot.state==='deployed'?.5:1;
+  return slot.state==='citadel'?1/6:slot.entity?.architectPlatform?.owner.architect?.ultimate?.kind==='killbox'?.25:slot.state==='deployed'?.5:1;
 }
 export function commandedBurst(s:Ship,_spec:SkillSpec):boolean {
-  let count=0;
-  for(const a of available(s)){
-    if(a.state!=='docked'&&a.state!=='deployed')continue;
-    if(a.disabled>0||a.entity?.mods.stunned||a.entity?.mods.disarmed)continue;
-    const m=a.entity,origin=m?m.pos:dockPoint(s,a.index);
-    if(Math.hypot(origin.x-s.control.aimX,origin.z-s.control.aimZ)>6000)continue;
-    fireElementSalvo(s,a,s.control.aimX,s.control.aimZ,s.control.aimY??4);
-    const turret=m?.turrets[0]??s.turrets[a.index];turret.recoil=.6;count++;
-  }
-  return count>0||s.failSkill('Commanded Burst: no available guns in range');
+ const eligible=(t:Ship)=>canTrack(s,t)&&Math.hypot(t.pos.x-s.pos.x,t.pos.z-s.pos.z)<=6000;
+ const candidates=arsenalTeam(s,true).filter(eligible);
+ const aimed=candidates.filter(t=>Math.hypot(t.pos.x-s.control.aimX,t.pos.z-s.control.aimZ)<=Math.max(250,t.spec.length/2)).sort((a,b)=>Math.hypot(a.pos.x-s.control.aimX,a.pos.z-s.control.aimZ)-Math.hypot(b.pos.x-s.control.aimX,b.pos.z-s.control.aimZ)||a.id-b.id)[0];
+ const target=aimed??candidates.find(t=>t.id===s.control.targetId);
+ if(!target)return s.failSkill('Hunt: aim at a tracked enemy within 6 km');
+ s.architect!.huntTarget=target.id;s.architect!.huntUntil=s.game.time+10;return true;
+}
+export function huntedTarget(s:Ship):Ship|null {
+ const a=s.architect;if(!a||a.huntUntil<=s.game.time)return null;
+ return s.game.ships.find(t=>t.id===a.huntTarget&&canTrack(s,t)&&!t.submerged&&Math.hypot(t.pos.x-s.pos.x,t.pos.z-s.pos.z)<=s.mainRange&&clearLine(s,s.pos.x,s.pos.z,t.pos.x,t.pos.z,s.pos.y+s.spec.freeboard+20,t.pos.y+12)===1)??null;
 }
 export function destroyPlatform(m:Ship):void {
   const tag=m.architectPlatform;if(!tag)return;
   const a=tag.owner.architect;if(!a||a.clearing)return;
-  const slot=a.slots[tag.index];slot.skillTimer=6;slot.miniTimer=18;slot.castGap=0;slot.opening=false;slot.coordinated=false;slot.hp=0;slot.state='destroyed';slot.rebuild=5;slot.entity=null;slot.path=null;slot.disabled=0;
+  const slot=a.slots[tag.index];slot.skillTimer=ARCHETYPES[slot.type].skills[slot.skill].cooldown;slot.castGap=0;slot.opening=false;slot.hp=0;slot.state='destroyed';slot.rebuild=5;slot.entity=null;slot.path=null;slot.disabled=0;
   disableDocked(tag.owner,slot);
   m.game.events.emit('architectCommand',{ship:tag.owner,kind:'destroy'});
 }
@@ -178,8 +180,9 @@ export function clearArchitect(s:Ship):void {
   const full=a.healthReady?a.fullHp:s.maxHp;
   s.maxHp=full;
   a.clearing=true;
+  for(const d of a.elements.drones)s.game.ships.find(m=>m.id===d.id)?.withdraw();
   for(const slot of a.slots)if(slot.entity?.alive)slot.entity.withdraw();
-  s.architect=s.spec.id==='architect'?newArchitectState(s.game.rng):null;
+  s.architect=s.spec.id==='architect'?newArchitectState(s.game.rng,s.architectLoadout):null;
   if(s.architect){s.architect.fullHp=full;s.architect.moduleHp=full*MODULE_COMBAT_HP/ARCHITECT_FULL_HP;}
 }
 export function syncArchitectSlot(s:Ship):void {
@@ -247,16 +250,18 @@ export function preparePlatform(m:Ship):void {
   m.mods.damageMul*=s.mods.damageMul;m.mods.apDamageMul*=s.mods.apDamageMul;m.mods.reloadMul*=s.mods.reloadMul;
   setModuleReloadScale(slot,platformReloadScale(slot));
   if(slot.state==='deployed'||slot.state==='citadel'){
-    m.mods.damageMul*=3;m.mods.reloadMul*=slot.reloadScale/(moduleLinked(s,slot)?1.25:1);
+    m.mods.damageMul*=3;m.mods.reloadMul*=slot.reloadScale/(slot.state!=='citadel'&&a.ultimate?.kind!=='killbox'&&moduleLinked(s,slot)?1.25:1);if(a.ultimate?.kind==='killbox')m.mods.damageMul*=1.5;
   }
   m.control.fire=false;
   if(slot.state!=='deployed'&&slot.state!=='citadel')return;
-  if(a.ultimate&&a.ultimate.kind!=='citadel'&&a.ultimate.members.includes(slot.index))return;
+  if(a.ultimate&&a.ultimate.kind==='assembly'&&a.ultimate.members.includes(slot.index))return;
   let target:Ship|null=null,dist=Infinity;
-  for(const t of m.game.ships){
+  for(const t of arsenalTeam(m,true)){
     if(!canTrack(m,t)||t.submerged)continue;
     const d=Math.hypot(t.pos.x-m.pos.x,t.pos.z-m.pos.z);if(d>m.mainRange)continue;
-    const priority=t.id===s.control.targetId?-1:d;
+    if(a.ultimate?.kind==='killbox'&&Math.hypot(t.pos.x-a.ultimate.x,t.pos.z-a.ultimate.z)>1500)continue;
+    if(clearLine(s,m.pos.x,m.pos.z,t.pos.x,t.pos.z,m.pos.y+30,t.pos.y+12)<1)continue;
+    const priority=t.id===(a.huntUntil>s.game.time?a.huntTarget:s.control.targetId)?-1:d;
     if(priority<dist){target=t;dist=priority;}
   }
   if(!target)return;
@@ -267,4 +272,16 @@ export function preparePlatform(m:Ship):void {
 export function endArchitect(s:Ship):void {if(s.architect?.ultimate)endArchitectUltimate(s);}
 export function turretInDock(s:Ship,t:TurretState):boolean {
   const i=s.turrets.indexOf(t);return !s.architect||s.architect.slots[i]?.state==='docked';
+}
+/** Configuration is copied onto the captain so hull changes and respawns preserve it. */
+export function setArchitectLoadout(s:Ship,loadout:ArchitectLoadout):void{
+ s.architectLoadout=copyLoadout(loadout);
+ if(s.architect)for(const a of s.architect.slots){const pick=s.architectLoadout[a.index];a.type=pick.type;a.skill=pick.skill;a.element=ARCHETYPES[a.type].element;}
+}
+export function refitArchitect(s:Ship,index:number,pick:import('../../data/architectLoadout').ArchitectSelection):boolean{
+ if(!validSelection(pick)||s.game.config.type!=='freeplay'||!s.alive||s.architect?.ultimate||!Number.isInteger(index)||index<0||index>=10)return false;
+ const a=s.architect?.slots[index];if(!a||a.state!=='docked')return s.failSkill('Refit: recall this platform first');
+ if(a.type===pick.type&&a.skill===pick.skill)return true;
+ s.architectLoadout[index]={...pick};a.type=pick.type;a.skill=pick.skill;a.element=ARCHETYPES[a.type].element;a.skillTimer=ARCHETYPES[a.type].skills[a.skill].cooldown;a.opening=false;
+ s.architect!.elements.jobs=s.architect!.elements.jobs.filter(j=>j.slot!==index||!j.channel);return true;
 }

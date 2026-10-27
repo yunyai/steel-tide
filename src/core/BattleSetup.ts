@@ -13,6 +13,7 @@ export type ConvoySide = 'escort' | 'raid';
 export type DifficultyId = 'easy' | 'normal' | 'hard';
 
 export interface PlayerConfig {
+  architectLoadout?:import('../data/architectLoadout').ArchitectLoadout;
   shipId: string;
   device: InputDeviceId;
   /** Fire-control assist: the aim leads and is pulled toward a target near the crosshair. */

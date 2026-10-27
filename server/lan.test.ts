@@ -37,7 +37,7 @@ class Client {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/lan`);
     await new Promise((res, rej) => (ws.once('open', res), ws.once('error', rej)));
     const c = new Client(ws);
-    c.send({ t: 'hello', name, token });
+    c.send({ t: 'hello', protocol:2, name, token });
     await c.next('welcome');
     return c;
   }
@@ -425,8 +425,17 @@ describe('LobbyServer without sockets', () => {
     const peer = s.connect((m) => sent.push(m));
     s.receive(peer, { t: 'create', name: 'x' });
     expect(sent).toEqual([]);
-    s.receive(peer, { t: 'hello', name: '' });
+    s.receive(peer, { t: 'hello', protocol:2, name: '' });
     expect(sent[0]).toMatchObject({ t: 'welcome' });
     s.close();
   });
+});
+it('rejects malformed Architect loadouts without terminating the lobby',async()=>{
+ await serve();const [c]=await room('Builder','Observer');
+ c.send({t:'me',architectLoadout:Array.from({length:10},()=>({type:{toString:null},skill:0}))});
+ expect((await c.next('error')).text).toMatch(/Invalid Architect/);
+ c.send({t:'name',name:'Still connected'});expect((await c.next('lobby',m=>!!m.lobby?.members.some(x=>x.name==='Still connected'))).lobby).not.toBeNull();
+});
+it('rejects incompatible clients before joining a lobby',()=>{
+ const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',name:'Old client'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
 });

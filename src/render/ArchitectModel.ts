@@ -1,4 +1,6 @@
-import { ELEMENTS, ELEMENT_STYLE, type ArchitectElement } from '../skills/misc/ArchitectElements';
+import { ArchitectSiege } from './ArchitectSiege';
+import { ARCHETYPES, type ArchitectType } from '../data/architectLoadout';
+import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, TorusGeometry, Vector3, type BufferGeometry, type Material } from 'three';
 import type { ShipSpec } from '../core/types';
 import type { Ship } from '../ships/Ship';
@@ -8,8 +10,8 @@ import { ASSEMBLY_HEIGHT, ASSEMBLY_MUZZLE, reducedMotion, satellitePose, smooth 
 const DARK=0x253541,EDGE=0x526b79,IVORY=0xd5d9d0,BLACK=0x0e1b25,GOLD=0xffbd66,CYAN=0x91edff;
 
 /** Architect alone uses these heavy gun houses; normal railgun ships keep their own silhouette. */
-export function architectTurretGeometry(element:ArchitectElement='furnace'){
-  const accent=ELEMENT_STYLE[element].color;
+export function architectTurretGeometry(type:ArchitectType='furnace'){
+  const element=ARCHETYPES[type].element,accent=ARCHETYPES[type].color;
   const house=new Parts(),guns=new Parts(),glow=new Parts();
   house.cyl(12,14,5,0,0,0,DARK,{seg:12});
   house.cyl(12.3,12.3,1.4,0,4,0,accent,{seg:12});
@@ -45,6 +47,12 @@ export function architectTurretGeometry(element:ArchitectElement='furnace'){
     for(const z of [-1,1]){house.box(25,9,4,-5,21,z*12,IVORY,{rz:z*.18,taper:.3});guns.box(36,5,5,22,5,z*10,IVORY,{rz:z*.1,taper:.25});guns.box(34,1,2,23,10,z*10,accent);}
     guns.box(35,3,3,23,0,0,accent);guns.box(8,10,18,42,-4,0,EDGE,{taper:.25});
   }
+  if(type==='sentinel'){house.box(4,20,4,-10,24,0,EDGE);house.box(30,10,3,-10,42,0,IVORY);glow.box(26,6,1,-10,44,2,accent);}
+  if(type==='abyss')for(const z of [-1,1]){guns.cyl(5,6,22,15,7,z*15,EDGE,{seg:8,rz:Math.PI/2});guns.cyl(3,3,1,27,7,z*15,BLACK,{seg:8,rz:Math.PI/2});}
+  if(type==='restoration')for(const z of [-1,1]){house.box(5,22,5,-10,20,z*17,IVORY);house.box(18,5,5,-2,39,z*17,EDGE);glow.cyl(4,4,6,8,35,z*17,accent,{seg:8});}
+  if(type==='bastion')for(const z of [-1,1]){house.box(43,23,5,0,9,z*17,IVORY,{taper:.15});glow.box(30,12,1,0,14,z*20,accent);}
+  if(type==='resonance')for(const z of [-1,1]){house.box(4,32,5,-15,20,z*16,IVORY);glow.box(14,3,5,-10,49,z*16,accent);}
+  if(type==='swarm')for(const z of [-1,1])for(const x of [-17,-7,3]){house.box(8,18,9,x,22,z*16,IVORY);house.box(5,2,6,x,40,z*16,BLACK);glow.box(3,1,4,x,42,z*16,accent);}
   for(const z of [-1,1]){glow.box(18,1.4,1.5,-7,22,z*11,accent);glow.box(4,6,1.4,6,13,z*13,accent);}
   if(element==='furnace')for(const z of [-1,1])for(let x=-22;x<=-10;x+=4)glow.box(1.5,9,1,x,18,z*13.6,accent);
   if(element==='cryo')for(const z of [-1,1])glow.cyl(2.7,2.7,17,-12,18,z*15,accent,{seg:8,rz:Math.PI/2});
@@ -56,8 +64,8 @@ export function architectTurretGeometry(element:ArchitectElement='furnace'){
 
 export const architectGlowMaterial=new MeshBasicMaterial({color:0xffffff,vertexColors:true,toneMapped:false});
 architectGlowMaterial.color.setRGB(1.6,1.6,1.6);
-const elementalGeometry=new Map<ArchitectElement,ReturnType<typeof architectTurretGeometry>>();
-export function elementalTurretGeometry(element:ArchitectElement){let g=elementalGeometry.get(element);if(!g){g=architectTurretGeometry(element);elementalGeometry.set(element,g);}return g;}
+const elementalGeometry=new Map<ArchitectType,ReturnType<typeof architectTurretGeometry>>();
+export function elementalTurretGeometry(element:ArchitectType){let g=elementalGeometry.get(element);if(!g){g=architectTurretGeometry(element);elementalGeometry.set(element,g);}return g;}
 
 /** Mechanical silhouettes are merged by material; only clamps, outriggers and satellites articulate. */
 export class ArchitectModel {
@@ -65,6 +73,7 @@ export class ArchitectModel {
   readonly docks:Group[]=[];
   private clamps:Group[][]=[];
   private supports:Group[]=[];
+  private siege:ArchitectSiege|null=null;
   private jets=new Group();
   private gun=new Group();
   private cannon=new Group();
@@ -82,6 +91,7 @@ export class ArchitectModel {
     const add=(parts:Parts,parent:Group,material:Material=this.armor)=>{
       const geo=parts.merge();this.owned.push(geo);parent.add(make(geo,material));
     };
+    if(spec.id==='architectPlatform'){this.siege=new ArchitectSiege(make);this.root.add(this.siege.root);}
     this.root.name=spec.id==='architect'?'architect-foundry':'architect-platform-frame';
     if(spec.id==='architect'){
       const frame=new Parts(),lights=new Parts();
@@ -178,6 +188,7 @@ export class ArchitectModel {
   }
 
   pose(_time:number,ship?:Ship):void {
+    if(ship)this.siege?.pose(ship,_time);
     for(let i=0;i<this.docks.length;i++){
       const slot=ship?.architect?.slots[i],docked=!slot||slot.state==='docked';
       this.docks[i].visible=docked;
@@ -202,7 +213,7 @@ export class ArchitectModel {
       this.vents.forEach((v,i)=>v.rotation.x=(i?1:-1)*(.25+charge*.5+Math.min(1,fire*8)*.4));
       this.satellites.forEach((g,i)=>{
         g.visible=u.elapsed>=1.5&&u.members.includes(i)&&ship.architect!.slots[i].state==='assembling';
-        const geo=elementalTurretGeometry(ship.architect!.slots[i].element);(g.children[1] as Mesh).geometry=geo.house;(g.children[2] as Mesh).geometry=geo.guns;(g.children[3] as Mesh).geometry=geo.glow;
+        const geo=elementalTurretGeometry(ship.architect!.slots[i].type);(g.children[1] as Mesh).geometry=geo.house;(g.children[2] as Mesh).geometry=geo.guns;(g.children[3] as Mesh).geometry=geo.glow;
         satellitePose(ship,i,this.reduce,this.point);g.position.copy(this.point);
       });
       this.blue.color.setRGB(.55+charge*.7,1.3+charge*.8,1.7+charge*.7);

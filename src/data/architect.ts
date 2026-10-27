@@ -14,7 +14,7 @@ const battery = {
 export const ARCHITECT: ShipSpec[] = [{
   id:'architect',name:'Architect',nation:'foundry',cls:'TT',year:2190,
   description:'A battleship that builds its own battlefield. Ten armored cannon blocks detach from exposed docking rails, anchor across the sea and return to assemble impossible weapons.',
-  specialty:'Ten 200k-HP railgun platforms, each reserving 100k hull HP. Deployed guns hit three times as hard with half the reload time; destroyed platforms rebuild in 5 s. Two each of Furnace, Cryo, Storm, Gravity and Prism automatically unleash skills and overdrives. Mix elemental reactions, fire extra command salvos, assemble a combined cannon, and raise an airborne Citadel.',
+  specialty:'Ten 200k-HP railgun platforms, each reserving 100k hull HP. Deployed guns hit three times as hard with half the reload time; destroyed platforms rebuild in 5 s. Choose eleven elemental and specialist types, each with one selected automatic skill. Hunt a priority target, build ten colossal Grand Battery siege guns, or raise Citadel for 5x skill recharge and 3x deployed gun fire rate.',
   hp:2500000,length:500,beam:90,draft:13,freeboard:17,maxSpeed:30,accelTime:45,turnRadius:1050,rudderTime:14,
   armor,citadel:{length:0.6,top:2,width:0.65},main:battery,
   aa:{range:6000,dps:1000},consumables:[TITAN_REPAIR,search(9000)],skills:ARCHITECT_SKILLS.map(d=>d.spec),

@@ -1,3 +1,4 @@
+import { refitArchitect } from '../skills/misc/ArchitectRuntime';
 import { Vector3 } from 'three';
 import { type BattleConfig, defaultAssist } from '../core/BattleSetup';
 import type { Game } from '../core/Game';
@@ -317,6 +318,7 @@ export class NavalBattle implements ActiveBattle {
     if (!pc) return;
     const picker = buildShipPicker({
       ship: () => this.pcs[0].ship,
+      refit:(index,pick)=>{if(this.link)this.link.lockstep.sendEdge({ar:{index,pick}});else refitArchitect(this.pcs[0].ship,index,pick);},
       era: this.config.era ?? 'historic',
       titans: this.config.titans !== false,
       click: () => audio.ui('click'),

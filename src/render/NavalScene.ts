@@ -156,6 +156,9 @@ export class NavalScene implements BattleScene {
     let built = false;
     for (const s of g.ships) {
       const had = this.views.get(s);
+      if(!s.alive&&(s.architectPlatform||s.architectDrone)&&s.deathTime>=3){
+        if(had){this.scene.remove(had.root);if(had.dome)this.scene.remove(had.dome);had.dispose();this.views.delete(s);}continue;
+      }
       // A Titan Shift (or its revert) swaps the hull's spec: build the new body in place of the old.
       if (had && had.spec !== s.spec) {
         this.scene.remove(had.root);

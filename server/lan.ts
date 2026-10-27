@@ -1,3 +1,5 @@
+import { SIM_PROTOCOL } from '../src/net/protocol';
+import { validLoadout, copyLoadout, type ArchitectLoadout } from '../src/data/architectLoadout';
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Server as NetServer } from 'node:net';
@@ -66,6 +68,7 @@ interface Session {
 }
 
 interface MemberState {
+  architectLoadout?:ArchitectLoadout;
   session: Session;
   team: Team;
   shipId: string;
@@ -164,6 +167,7 @@ export class LobbyServer {
   receive(peer: Peer, raw: unknown): void {
     if (!raw || typeof raw !== 'object') return;
     const m = raw as ClientMsg;
+    if(m.t==='hello'&&m.protocol!==SIM_PROTOCOL){peer.send({t:'error',text:'Game versions differ. Refresh all clients and restart the server.'});return;}
     if (m.t === 'hello') return this.hello(peer, m);
     const s = peer.session;
     if (!s || s.peer !== peer) return;
@@ -298,6 +302,7 @@ export class LobbyServer {
         name: m.session.name,
         team: m.team,
         shipId: m.shipId,
+        architectLoadout:m.architectLoadout,
         ready: m.ready,
         connected: m.session.peer !== null,
         player: m.player,
@@ -387,6 +392,7 @@ export class LobbyServer {
     const mem = this.member(s);
     if (!l || !mem) return;
     if (!l.battle) {
+      if(m.architectLoadout!==undefined){if(!validLoadout(m.architectLoadout))return this.send(s,{t:'error',text:'Invalid Architect loadout'});mem.architectLoadout=copyLoadout(m.architectLoadout);mem.ready=false;}
       if (isTeam(m.team) && m.team !== mem.team) {
         if (l.members.filter((x) => x.team === m.team).length >= MAX_PER_TEAM) return this.send(s, { t: 'error', text: 'That fleet is full.' });
         mem.team = m.team;
@@ -407,7 +413,7 @@ export class LobbyServer {
     const sailing = l.members.filter((m) => m.session.peer);
     const st = l.settings;
     const rules = this.rules;
-    const captains = sailing.map((m) => ({ pick: rules.pickAllowed(m.shipId, st) ? m.shipId : rules.defaultPick(st), team: m.team, name: m.session.name }));
+    const captains = sailing.map((m) => ({ pick: rules.pickAllowed(m.shipId, st) ? m.shipId : rules.defaultPick(st), team: m.team, name: m.session.name,architectLoadout:m.architectLoadout }));
     const refused = rules.startError(st, captains);
     if (refused) return this.send(s, { t: 'error', text: refused });
     const config: BattleConfig = rules.config(st, captains, randomBytes(4).readUInt32BE(0) % 1e9);

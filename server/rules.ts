@@ -1,3 +1,4 @@
+import { validSelection, copyLoadout, type ArchitectLoadout } from '../src/data/architectLoadout';
 import { cleanAISelection, selectionError } from '../src/core/FleetSelection';
 import { buildRoster } from '../src/core/BattleSetup';
 import { makeRng } from '../src/core/math';
@@ -14,6 +15,7 @@ import { MAPS } from '../src/world/GameMap';
 
 /** One captain sailing in a battle about to start. */
 export interface Captain {
+  architectLoadout?:ArchitectLoadout;
   pick: string;
   team: Team;
   name: string;
@@ -93,6 +95,7 @@ export const navalRules: BattleRules = {
     if (st.type === 'freeplay') {
       if (shipAllowed(o.sp, st)) e.sp = o.sp;
       if (o.rd === 1) e.rd = 1;
+      const ar=o.ar as Edge['ar'];if(ar&&smallInt(ar.index,9)&&validSelection(ar.pick))e.ar={index:ar.index,pick:{...ar.pick}};
     }
     if (o.tu === 1) e.tu = 1;
     if (o.td === 1) e.td = 1;
@@ -130,7 +133,7 @@ export const navalRules: BattleRules = {
       seed,
       convoySide: st.escortTeam === 0 ? 'escort' : 'raid',
       era: st.era,
-      players: captains.map((c) => ({ shipId: c.pick, device: 'mouse', team: c.team, name: c.name })),
+      players: captains.map((c) => ({ shipId: c.pick, architectLoadout:copyLoadout(c.architectLoadout), device: 'mouse', team: c.team, name: c.name })),
     };
     const roster = buildRoster(config, makeRng(seed));
     config.resolvedAI = [0, 1].map(t => roster.filter(r => r.team === t && r.humanIndex < 0).map(r => r.spec.id)) as [string[], string[]];

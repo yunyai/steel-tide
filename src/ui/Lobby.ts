@@ -87,8 +87,8 @@ export class Lobby {
   }
 
   /** Tell the lobby which ship we picked in the hangar. */
-  pickShip(shipId: string): void {
-    this.net.send({ t: 'me', shipId });
+  pickShip(shipId: string,architectLoadout?:import('../data/architectLoadout').ArchitectLoadout): void {
+    this.net.send({ t: 'me', shipId,architectLoadout });
   }
 
   private receive(m: ServerMsg): void {

@@ -1,4 +1,4 @@
-import { ELEMENT_STYLE } from '../skills/misc/ArchitectElements';
+import { ARCHETYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
 import { Vector3 } from 'three';
@@ -406,7 +406,7 @@ export class HUD {
         if (a.ship === pc.ship) {
           flash(this.skillEls[a.index].root, 'flash');
           if (sp.ult) {
-            const brief:Record<string,string>={flickerStep:'20 strikes · Fold, strike, repeat',crossStep:'60 cuts · Final convergence',afterimageStep:'Four echoes · Your attacks, multiplied',architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Eight waves of crossfire · Hold the formation',architectCitadel:'Airborne battery · Protect allies within 900 m'};
+            const brief:Record<string,string>={flickerStep:'20 strikes · Fold, strike, repeat',crossStep:'60 cuts · Final convergence',afterimageStep:'Four echoes · Your attacks, multiplied',architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Ten siege cannons · Continuous elemental bombardment',architectCitadel:'Airborne battery · Protect allies within 900 m'};
             this.callout(sp.name, brief[sp.id]??sp.description, c);
             this.flashScreen(c);
           }
@@ -539,8 +539,8 @@ export class HUD {
       const a=me.architect!.slots[i],state=a.state;
       item.dataset.state=state;item.dataset.health=a.hp/me.architect!.moduleHp<.3?'low':a.hp/me.architect!.moduleHp<.6?'mid':'high';item.style.setProperty('--health',`${Math.max(0,a.hp/me.architect!.moduleHp)}`);
       setText(item.querySelector('span')!,state==='destroyed'?`${Math.ceil(a.rebuild)}s`:state==='docked'?'DOCK':state==='deployed'?'SET':state==='citadel'?'AIR':state==='returning'?'HOME':state==='assembling'?'BUILD':'MOVE');
-      const theme=ELEMENT_STYLE[a.element];item.querySelector('b')!.textContent=`${i+1} ${theme.short}`;item.querySelector('b')!.style.color=`#${theme.color.toString(16).padStart(6,'0')}`;
-      item.title=`${theme.name} ${i+1} · skill ${a.skillTimer.toFixed(1)}s · overdrive ${a.miniTimer.toFixed(1)}s: ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP${a.reload>0?`, reload ${a.reload.toFixed(1)}s`:''}`;
+      const theme=ARCHETYPES[a.type];item.querySelector('b')!.textContent=`${i+1} ${theme.short}`;item.querySelector('b')!.style.color=`#${theme.color.toString(16).padStart(6,'0')}`;
+      item.title=`${theme.name} ${i+1} · skill ${a.skillTimer.toFixed(1)}s · ${ARCHETYPES[a.type].skills[a.skill].name}: ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP${a.reload>0?`, reload ${a.reload.toFixed(1)}s`:''}`;
       item.setAttribute('aria-label',item.title);
     });
 
@@ -821,7 +821,8 @@ export class HUD {
     if(me.architect){
       const a=me.architect,u=a.ultimate;
       if(a.linkUntil>g.time)st.push([`Network ${Math.ceil(a.linkUntil-g.time)}s`,'buff',glyph('lightning')]);
-      if(u)st.push([`${u.kind==='assembly'?'Assembly':u.kind==='killbox'?'Killbox':'Citadel'} · ${u.members.filter(i=>a.slots[i].state!=='destroyed').length}/10`,'buff',glyph('fleet')]);
+      if(a.huntUntil>g.time)st.push([`Hunt · ${(a.huntUntil-g.time).toFixed(1)}s`,'buff',glyph('salvo')]);
+      if(u)st.push([`${u.kind==='assembly'?'Assembly':u.kind==='killbox'?'Grand Battery':'Citadel'} · ${u.members.filter(i=>a.slots[i].state!=='destroyed').length}/10`,'buff',glyph('fleet')]);
     }
     if(me.stepper) {
       const a=me.stepper;
@@ -957,9 +958,9 @@ export class HUD {
         if ((!ally || s.spec.cls === 'AK') && !s.isSummon) off.push({ s, d });
         continue;
       }
-      const name = s.architectPlatform ? `${ELEMENT_STYLE[s.architectPlatform.owner.architect!.slots[s.architectPlatform.index].element].name} ${s.architectPlatform.index+1}` : captainName(s);
+      const name = s.architectPlatform ? `${ARCHETYPES[s.architectPlatform.owner.architect!.slots[s.architectPlatform.index].type].name} ${s.architectPlatform.index+1}` : captainName(s);
       const compact=!!s.architectPlatform&&this.pc.lock!==s&&this.pc.aimHit?.ship!==s;
-      const label = compact ? `${s.architectPlatform!.index+1} ${ELEMENT_STYLE[s.architectPlatform!.owner.architect!.slots[s.architectPlatform!.index].element].short}` : ally ? name : `${name}  ${(d / 1000).toFixed(1)} km`;
+      const label = compact ? `${s.architectPlatform!.index+1} ${ARCHETYPES[s.architectPlatform!.owner.architect!.slots[s.architectPlatform!.index].type].short}` : ally ? name : `${name}  ${(d / 1000).toFixed(1)} km`;
       items.push({ s, x: p.x, y: p.y, d, label });
     }
     // Declutter: nearer (and locked) ships keep their spot, others stack upward.
@@ -997,6 +998,15 @@ export class HUD {
         m.dataset.health=s.hp/s.maxHp<.3?'low':s.hp/s.maxHp<.6?'mid':'high';
         m.setAttribute('aria-label',`Module ${s.architectPlatform.index+1}: ${Math.ceil(s.hp).toLocaleString()} / ${Math.round(s.maxHp).toLocaleString()} HP`);
       }else{delete m.dataset.health;m.removeAttribute('aria-label');}
+      let cds=m.querySelector('.module-cooldowns') as HTMLElement|null;
+      const tag=s.architectPlatform,owned=tag?.owner===this.pc.ship;
+      if(owned&&tag){
+        const a=tag.owner.architect!.slots[tag.index],skill=ARCHETYPES[a.type].skills[a.skill];
+        if(!cds){cds=el('div','module-cooldowns',m);cds.innerHTML='<i aria-label="Gun reload">▰</i><i aria-label="Skill cooldown">◆</i>';}
+        cds.style.display='';const indicators=cds.children;
+        const reload=s.spec.main!.reload*s.mods.reloadMul;
+        for(let k=0;k<2;k++){const e=indicators[k] as HTMLElement,remaining=k?a.skillTimer:a.reload,total=k?skill.cooldown:reload;e.style.setProperty('--ready',String(Math.max(0,Math.min(1,1-remaining/Math.max(.01,total)))));e.style.setProperty('--cool-color',k?`#${ARCHETYPES[a.type].color.toString(16).padStart(6,'0')}`:'#a8d8e5');e.title=`${k?skill.name:'Guns'}: ${a.disabled>0?'Disabled':remaining<=0?'Ready':remaining.toFixed(1)+'s'}`;e.textContent=a.disabled>0?'×':remaining>0?String(Math.ceil(remaining)):k?'◆':'▰';}
+      }else if(cds)cds.style.display='none';
       const sh = m.querySelector('.sh') as HTMLElement;
       sh.style.visibility = s.shield > 0 ? '' : 'hidden';
       if (s.shield > 0) setWidth(sh.firstChild as HTMLElement, s.shield / Math.max(1, s.shieldMax));

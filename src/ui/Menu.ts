@@ -1,3 +1,4 @@
+import { architectLoadoutEditor,savedArchitectLoadout,saveArchitectLoadout } from './ArchitectLoadout';
 import { fleetEditor } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId, SHIFT_SURGE, SHIFT_TEMPOS, type ShiftTempo } from '../config';
@@ -141,7 +142,7 @@ export class Menu {
     mapId: 'strait',
     teamSize: 6,
     difficulty: 'normal',
-    players: [{ shipId: 'yamato', device: 'mouse' }],
+    players: [{ shipId: 'yamato', device: 'mouse',architectLoadout:savedArchitectLoadout() }],
     seed: 1,
     escorts: 2,
     era: 'historic',
@@ -575,6 +576,7 @@ export class Menu {
             ]
           : [h('div', { class: 'skill-cards' }, ...cards)]),
         ...shiftPart,
+        ...(s.id==='architect'?[architectLoadoutEditor(pc.architectLoadout??savedArchitectLoadout(),v=>{pc.architectLoadout=v;saveArchitectLoadout(v);})]:[]),
         h('ul', { class: 'loadout' }, ...loadout(s).map((l) => h('li', {}, l)), ...(best ? [h('li', {}, `Best ${survival ? 'Survival' : 'Boss Rush'}: wave ${best.wave}, ${best.score.toLocaleString()} points`)] : [])),
       );
     };

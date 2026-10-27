@@ -27,3 +27,13 @@ it('allows Architect under titan rules and rejects the hidden module as a player
   expect(navalRules.pickAllowed('architect',{...settings,titans:false})).toBe(false);
   expect(navalRules.pickAllowed('architectPlatform',settings)).toBe(false);
 });
+import {loadoutPreset} from '../src/data/architectLoadout';
+it('shares custom loadouts and synchronized docked refits without divergence',()=>{
+ const settings={...DEFAULT_SETTINGS,type:'freeplay' as const,era:'mixed' as const};
+ const config=navalRules.config(settings,[{pick:'architect',team:0,name:'Builder',architectLoadout:loadoutPreset('unique')}],713);config.ai=[0,0];
+ const a=new Game(config),b=new Game(structuredClone(config)),x=new TurnApplier(a),y=new TurnApplier(b);
+ const valid=navalRules.cleanEdge({ar:{index:0,pick:{type:'resonance',skill:1}}},settings)!;
+ expect(valid.ar?.pick.type).toBe('resonance');expect(navalRules.cleanEdge({ar:{index:10,pick:{type:'swarm',skill:0}}},settings)).toBeNull();expect(navalRules.cleanEdge({ar:{index:0,pick:{type:'swarm',skill:3}}},settings)).toBeNull();
+ for(let k=0;k<100;k++){const t:Turn={k,e:k===0?[[0,0,valid]]:k===5?[[0,0,{sk:0}]]:undefined};for(let i=0;i<2;i++){x.applyTick(t,i);y.applyTick(JSON.parse(JSON.stringify(t)),i);}expect(x.hash()).toBe(y.hash());}
+ expect(a.humans()[0].architect!.slots[0].type).toBe('resonance');
+});

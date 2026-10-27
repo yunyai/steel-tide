@@ -1,3 +1,4 @@
+import { ELEMENT_STYLE } from '../skills/misc/ArchitectElements';
 import type { Game } from '../core/Game';
 import { bearingTo } from '../core/math';
 import type { HitOutcome, Team } from '../core/types';
@@ -170,7 +171,7 @@ export class Feedback {
       ev.on('shellHit', (h) => {
         if (h.target === pc.ship) this.hit(h.damage, h.attacker, h.x, h.z);
         if (!mine(h.attacker) || h.target.team === team || (h.secondary && h.damage <= 0)) return;
-        this.add(h.target, h.secondary ? 'sec' : 'main', h.outcome, h.damage);
+        this.add(h.target, h.element?`element:${h.element}`:h.secondary?'sec':'main',h.outcome,h.damage,'',h.element?`#${ELEMENT_STYLE[h.element].color.toString(16).padStart(6,'0')}`:'');
         if (!h.secondary && h.damage > 0) this.tick(h.outcome === 'citadel');
       }),
       ev.on('torpHit', (h) => {
@@ -186,7 +187,8 @@ export class Feedback {
       ev.on('skillHit', (h) => {
         if (h.ship === pc.ship) this.hit(h.damage, h.attacker, h.attacker.pos.x, h.attacker.pos.z);
         if (!mine(h.attacker) || h.ship.team === team || h.damage <= 0) return;
-        this.add(h.ship, `skill:${h.skill.id}`, 'skill', h.damage, h.skill.short, accentCss(h.skill.accent));
+        const reaction=h.skill.reaction,element=h.skill.element;
+        this.add(h.ship,reaction?`reaction:${[...reaction].sort().join('+')}`:`skill:${h.skill.id}`,'skill',h.damage,reaction?`${ELEMENT_STYLE[reaction[0]].short} + ${ELEMENT_STYLE[reaction[1]].short} · ${h.skill.short}`:h.skill.short,element?`#${ELEMENT_STYLE[element].color.toString(16).padStart(6,'0')}`:accentCss(h.skill.accent));
         this.tick(false);
       }),
       ev.on('shipSunk', (s) => {
@@ -212,7 +214,8 @@ export class Feedback {
     const merge = kind === 'skill' ? SKILL_MERGE : MERGE;
     let p = this.pops.find((q) => q.live && q.target === target && q.key === key && now - q.last < merge);
     if (!p) {
-      p = this.pops.find((q) => !q.live) ?? this.pops.reduce((a, b) => (a.last < b.last ? a : b));
+      const same=this.pops.filter(q=>q.live&&q.target===target);
+      p = same.length>=4?same.reduce((a,b)=>a.last<b.last?a:b):this.pops.find((q) => !q.live) ?? this.pops.reduce((a, b) => (a.last < b.last ? a : b));
       p.target = target;
       p.key = key;
       p.kind = kind;
@@ -237,7 +240,7 @@ export class Feedback {
     p.label.textContent = p.kind === 'skill' ? p.title : n > 1 ? `${LABEL[p.kind]} ×${n}` : LABEL[p.kind];
     p.num.textContent = p.damage > 0 ? Math.round(p.damage).toLocaleString() : '';
     p.dirty = true;
-    const cls = `pop k-${p.kind}${key === 'sec' ? ' sec' : ''}${p.el.classList.contains('fresh') ? ' fresh' : ''}`;
+    const cls = `pop k-${p.kind}${key === 'sec' ? ' sec' : ''}${key.startsWith('reaction:')?' elemental-reaction':key.startsWith('element:')?' elemental-hit':''}${p.el.classList.contains('fresh') ? ' fresh' : ''}`;
     if (p.el.className !== cls) p.el.className = cls;
   }
 

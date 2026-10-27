@@ -1,3 +1,4 @@
+import { SIM_PROTOCOL } from './protocol';
 import { type ClientMsg, LAN_PATH, type LobbyState, type LobbySummary, NAME_MAX, type ServerMsg } from './protocol';
 
 // The browser's link to the LAN lobby server on the page's own host. It reconnects by itself,
@@ -123,7 +124,7 @@ export class NetClient {
     const ws = new WebSocket(`${scheme}://${location.host}${LAN_PATH}`);
     this.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ t: 'hello', name: this._name, token: load(session, TOKEN_KEY) ?? undefined } satisfies ClientMsg));
+      ws.send(JSON.stringify({ t: 'hello', protocol:SIM_PROTOCOL, name: this._name, token: load(session, TOKEN_KEY) ?? undefined } satisfies ClientMsg));
     };
     ws.onmessage = (e) => {
       if (typeof e.data !== 'string') return;

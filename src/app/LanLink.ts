@@ -72,7 +72,7 @@ export class LanLink {
         chooseShip: (shipId, titans, era) => {
           l.hide();
           menu.showLanHangar(shipId, titans, era, (id) => {
-            l.pickShip(id);
+            l.pickShip(id,menu.captain.architectLoadout);
             l.show();
           });
         },

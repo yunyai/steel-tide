@@ -1538,7 +1538,8 @@ export class ShipView {
     if (this.pennant && this.root.visible) this.wave(time);
     if (!ship.alive) {
       const t = ship.deathTime;
-      if (ship.withdrawn) {
+      if(ship.architectPlatform||ship.architectDrone){const f=Math.min(1,t/2.2);y=ship.renderPos.y*(1-f)-Math.min(30,t*t*12);roll+=f*1.8;pitch+=f*.65;this.root.visible=t<3;}
+      else if (ship.withdrawn) {
         y -= t * t * 0.4;
       } else if (this.split) {
         // Broken in two: both halves hinge up about the keel at the break and go down fast.
@@ -1557,11 +1558,13 @@ export class ShipView {
     ship.turrets.forEach((t, i) => {
       const v = this.turrets[i];
       if (!v) return;
+      if(ship.architectDrone)this.root.scale.setScalar(.45);
+      if(ship.architectPlatform)v.yaw.visible=!(ship.alive&&ship.architectPlatform.owner.architect?.ultimate?.kind==='killbox');
       if(ship.architect)v.yaw.visible=ship.architect.slots[i].state==='docked';
       const moduleSlot=ship.architect?.slots[i]??(ship.architectPlatform?ship.architectPlatform.owner.architect?.slots[ship.architectPlatform.index]:undefined);
-      if(moduleSlot){const geo=elementalTurretGeometry(moduleSlot.element);(v.yaw.children[0] as Mesh).geometry=geo.house;(v.slide.children[0] as Mesh).geometry=geo.guns;(v.yaw.children[2] as Mesh).geometry=geo.glow;
-        // Physical focusing hardware breathes as its autonomous overdrive approaches readiness.
-        const charge=1-Math.min(1,moduleSlot.miniTimer/6);v.slide.scale.set(1,1+charge*.06,1+charge*.1);
+      if(moduleSlot){const geo=elementalTurretGeometry(moduleSlot.type);(v.yaw.children[0] as Mesh).geometry=geo.house;(v.slide.children[0] as Mesh).geometry=geo.guns;(v.yaw.children[2] as Mesh).geometry=geo.glow;
+        // Physical focusing hardware breathes as its selected ability approaches readiness.
+        const charge=1-Math.min(1,moduleSlot.skillTimer/4);v.slide.scale.set(1,1+charge*.06,1+charge*.1);
       }
       v.yaw.rotation.y = -(t.spec.facing + t.yaw) * DEG;
       // Knocked out (or dead): the barrels sag.

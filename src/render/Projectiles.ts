@@ -243,7 +243,7 @@ export class Projectiles {
       const st = GUN_STYLE[s.look];
       const plain = s.look === 'shell';
       const len = s.railgun ? 260 : Math.min(s.travelled + 1, ((s.secondary ? 18 : 25) + c * 80) * st.length);
-      const element=s.element?.owner.architect?.slots[s.element.slot]?.element;
+      const element=s.element?.kind;
       const col = element?new Color(ELEMENT_STYLE[element].color):s.railgun ? RAIL_COL : s.secondary || s.bomb ? SEC_COL : !plain ? st.color : s.ammo === 'AP' ? AP_COL : HE_COL;
       const width = s.railgun ? 2.5 : (0.35 + c * 2.2) * st.width;
       const minPx = s.secondary ? 1.1 : 1.6 + c * 2.5;

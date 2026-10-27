@@ -1,5 +1,7 @@
+import type { SupportAdmission } from '../skills/misc/ArchitectSupport';
+import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
-import { newArchitectState, clearArchitect, updateArchitect, preparePlatform, syncArchitectSlot, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
+import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
@@ -482,6 +484,10 @@ export interface FormState {
 export class Ship {
   architect: ArchitectState | null = null;
   architectPlatform: ArchitectPlatform | null = null;
+  architectSupport:SupportAdmission[]=[];
+  architectReveal:[number,number]=[0,0];
+  architectDrone:{owner:Ship;slot:number}|null=null;
+  architectLoadout:ArchitectLoadout=copyLoadout(undefined);
   readonly id: number;
   /** The hull as it sails now: the base hull, or its titan form during a Titan Shift. */
   spec: ShipSpec;
@@ -659,7 +665,7 @@ export class Ship {
    */
   private build(spec: ShipSpec): void {
     clearArchitect(this);
-    this.architect = spec.id === 'architect' ? newArchitectState(this.game.rng) : null;
+    this.architect = spec.id === 'architect' ? newArchitectState(this.game.rng,this.architectLoadout) : null;
     const game = this.game;
     this.spec = spec;
     this.colossus = spec.cls === 'TT';
@@ -916,6 +922,7 @@ export class Ship {
     }
     this.recomputeMods(dt);
     if (this.architectPlatform) preparePlatform(this);
+    if(this.architectDrone){this.mods.regenMul=0;this.speed=0;this.control.fire=false;this.turrets.forEach(t=>t.disabled=Infinity);}
     if (!this.alive) return;
     this.applyControl();
     const q = this.shiftQueued;
@@ -931,7 +938,7 @@ export class Ship {
     this.updateForm();
     this.updateShield(dt);
     this.updateSub(dt);
-    if (!this.architectPlatform && !wasAssembly && !wasCross && !this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
+    if (!this.architectPlatform && !this.architectDrone && !wasAssembly && !wasCross && !this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
     this.updateMain(dt);
     this.updateSecondaries(dt);
     this.updateTorpedoes(dt);
@@ -1289,13 +1296,17 @@ export class Ship {
   private updateMain(dt: number): void {
     const main = this.spec.main;
     if (!main) return;
+    const originalControl=this.control;
+    const hunt=huntedTarget(this);
+    if(hunt){const table=this.tableFor(this.ammo),d=Math.hypot(hunt.pos.x-this.pos.x,hunt.pos.z-this.pos.z),flight=table?solve(table,d).time:0;
+      this.control={...this.control,aimX:hunt.pos.x+Math.sin(hunt.heading)*hunt.speed*flight,aimZ:hunt.pos.z-Math.cos(hunt.heading)*hunt.speed*flight,aimY:hunt.pos.y>20?hunt.pos.y+12:undefined,fire:true};}
     const c = this.control;
     const aimDist = dist2D(this.pos.x, this.pos.z, c.aimX, c.aimZ);
     this.aimRange = aimDist;
     this.aimBearing = bearingTo(this.pos.x, this.pos.z, c.aimX, c.aimZ);
     const table = this.tableFor(this.ammo);
     const elev = table ? solve(table, aimDist).elevation : 0;
-    const traverse = main.traverse * this.mods.traverseMul * dt;
+    const traverse = main.traverse * this.mods.traverseMul * dt * (hunt?3:1);
     const canFireGuns = this.architect?.ultimate?.kind !== 'assembly' && !this.stepper?.flicker && !this.stepper?.cross && !this.stepper?.rush && (!this.isSub || this.depthState === 0 && this.pos.y > -1.5) && !this.mods.stunned && !this.mods.disarmed;
     for (const t of this.turrets) {
       if (t.reload > 0) t.reload -= dt;
@@ -1312,12 +1323,13 @@ export class Ship {
     }
     const slot = this.currentSlot;
     const broadAuto = !!this.stepper && this.stepper.broadUntil > this.game.time && this.stepper.broadTarget !== 0;
-    if ((c.fire && slot?.kind === 'gun' || broadAuto) && canFireGuns) {
+    if ((c.fire && slot?.kind === 'gun' || broadAuto || !!hunt) && canFireGuns) {
       for (let i = 0; i < this.turrets.length; i++) {
         const t = this.turrets[i];
         if (t.reload <= 0 && t.aligned && t.disabled <= 0) this.fireTurret(i, slot?.kind === 'gun' ? slot.ammo : this.ammo);
       }
     }
+    this.control=originalControl;
   }
 
   /** Fire one turret at the current aim point. `force` skips readiness checks (abilities). */
@@ -1642,6 +1654,8 @@ export class Ship {
     if (this.mods.invulnerable && !pierce) return 0;
     if (incomingStep(this, attacker, reflected, pierce, periodic)) return 0;
     const hostile = !!attacker && attacker.team !== this.team;
+    const huntOwner=attacker?.architectPlatform?.owner??attacker?.architectDrone?.owner??attacker;
+    if(!forwarded&&!reflected&&huntOwner?.architect&&huntOwner.architect.huntUntil>this.game.time&&huntOwner.architect.huntTarget===this.id)amount*=1.4;
     if (attacker?.stepper?.copy && !forwarded) amount *= 0.75;
     if (hostile && !pierce && this.mods.dodge > 0 && this.game.rng() < this.mods.dodge) return 0;
     let mul = this.mods.damageTakenMul;
@@ -1871,7 +1885,7 @@ export class Ship {
     this.stats.deaths++;
     this.extinguish();
     const credited = killer?.summonOwner ?? killer;
-    if (credited && credited.team !== this.team && !this.stepper?.copy && !this.architectPlatform) credited.stats.kills++;
+    if (credited && credited.team !== this.team && !this.stepper?.copy && !this.architectPlatform && !this.architectDrone) credited.stats.kills++;
     this.game.onShipSunk(this, credited ?? null);
   }
 

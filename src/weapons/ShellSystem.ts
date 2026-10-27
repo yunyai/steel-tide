@@ -46,7 +46,7 @@ export interface Shell {
   /** Called on each hull it hits. */
   onHit: ((target: Ship, x: number, z: number) => void) | null;
   /** How the round looks in flight. */
-  element?: {owner:Ship;slot:number;splash?:number};
+  element?: {owner:Ship;slot:number;splash?:number;kind?:import('../data/architectLoadout').ArchitectElement};
   look: GunLook;
 }
 
@@ -69,7 +69,7 @@ export interface FireOptions {
   /** Fly flat at this multiple of muzzle velocity (railgun mode is 3, with piercing). */
   flat?: number;
   onHit?: (target: Ship, x: number, z: number) => void;
-  element?: {owner:Ship;slot:number;splash?:number};
+  element?: {owner:Ship;slot:number;splash?:number;kind?:import('../data/architectLoadout').ArchitectElement};
   look?: GunLook;
 }
 
@@ -85,6 +85,7 @@ export class ShellSystem {
     const b = bearingTo(o.fromX, o.fromZ, o.toX, o.toZ);
     const hx = Math.sin(b);
     const hz = -Math.cos(b);
+    const element=o.element??(owner.architectPlatform?{owner:owner.architectPlatform.owner,slot:owner.architectPlatform.index}:undefined);
     const s: Shell = {
       id: this.nextId++,
       owner,
@@ -117,7 +118,7 @@ export class ShellSystem {
       cluster: o.cluster ?? null,
       straight: o.railgun || (o.flat ?? 0) > 0,
       onHit: o.onHit ?? null,
-      element:o.element??(owner.architectPlatform?{owner:owner.architectPlatform.owner,slot:owner.architectPlatform.index}:undefined),
+      element:element?{...element,kind:element.kind??element.owner.architect?.slots[element.slot]?.element}:undefined,
       look: o.look ?? 'shell',
     };
     if (s.straight) {
@@ -343,7 +344,7 @@ export class ShellSystem {
     if ((ship.stepper?.phaseUntil ?? 0) > g.time) return;
     const attacker = s.owner;
     attacker.stats.hits++;
-    if(s.element&&damage>0)elementalShellHit(s.element.owner,s.element.slot,ship,s.element.splash,s.spec.damage,{x:wx,y:wy,z:wz});
+    if(s.element&&damage>0)elementalShellHit(s.element.owner,s.element.slot,ship,s.element.splash,s.spec.damage,{x:wx,y:wy,z:wz},s.element.kind);
     if (s.onHit && ship.alive) s.onHit(ship, wx, wz);
     if (res.outcome === 'citadel') attacker.stats.citadels++;
     // Fires from HE, module damage from penetrations.
@@ -372,6 +373,7 @@ export class ShellSystem {
       ship.takeDamage(rod * attacker.mods.damageMul, attacker, attacker.mods.boltSkill);
     }
     g.events.emit('shellHit', {
+      element:s.element?.kind,
       attacker,
       target: ship,
       outcome: s.secondary && res.factor > 0 ? 'secondary' : res.outcome,

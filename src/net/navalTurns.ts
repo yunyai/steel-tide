@@ -1,3 +1,4 @@
+import { refitArchitect } from '../skills/misc/ArchitectRuntime';
 import { SIM_DT } from '../config';
 import type { Game } from '../core/Game';
 import type { ControlState, Ship } from '../ships/Ship';
@@ -72,6 +73,7 @@ export class TurnApplier implements LockstepSim {
         if (!s) continue;
         if (e.sp !== undefined) g.pickShip(s, e.sp);
         if (e.rd) g.redeploy(s);
+        if(e.ar)refitArchitect(s,e.ar.index,e.ar.pick);
         if (!s.autopilot) applyEdge(s.control, e);
       }
     }

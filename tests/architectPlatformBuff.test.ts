@@ -13,10 +13,10 @@ it('triples ordinary deployed shell damage and reloads in 3 seconds',()=>{
   expect(shells).toHaveLength(2);expect(shells[0].spec.damage*shells[0].dmgMul).toBe(s.spec.main!.ap!.damage*3);
   expect(m.turrets[0].reload).toBe(3);expect(s.spec.main!.reload).toBe(6);
 });
-it('stacks Citadel reload to 1.5 seconds without another damage multiplier',()=>{
+it('stacks Citadel reload to 1 second without another damage multiplier',()=>{
   const {g,s,m,slot}=setup();slot.state='citadel';m.refreshModifiers();preparePlatform(m);
   g.shells.shells=[];m.turrets[0].reload=0;m.fireTurret(0,'AP');
-  expect(m.turrets[0].reload).toBe(1.5);
+  expect(m.turrets[0].reload).toBe(1);
   expect(g.shells.shells[0].spec.damage*g.shells.shells[0].dmgMul).toBe(s.spec.main!.ap!.damage*3);
 });
 it('does not apply deployment bonuses to moving platforms or docked guns',()=>{
@@ -29,12 +29,12 @@ it('preserves reload percentage through recall and redeployment without resettin
   attachModule(s,slot);expect(s.turrets[0].reload).toBe(3);
   const again=materialize(s,slot);slot.state='deployed';again.refreshModifiers();preparePlatform(again);
   expect(again.turrets[0].reload).toBe(1.5);
-  slot.state='citadel';again.refreshModifiers();preparePlatform(again);expect(again.turrets[0].reload).toBe(.75);
+  slot.state='citadel';again.refreshModifiers();preparePlatform(again);expect(again.turrets[0].reload).toBe(.5);
   slot.state='deployed';again.refreshModifiers();preparePlatform(again);expect(again.turrets[0].reload).toBe(1.5);
 });
-it('adds Commanded Burst without interrupting docked or deployed reloads',()=>{
+it('activates Hunt without interrupting docked or deployed reloads',()=>{
   const {g,s,m}=setup();g.shells.shells=[];s.control.aimX=800;s.control.aimZ=-1000;const reloads=[m.turrets[0].reload,s.turrets[2].reload];s.activateSkill(1);
-  expect(g.shells.shells).toHaveLength(20);
+  expect(g.shells.shells).toHaveLength(0);
   expect(g.shells.shells.every(p=>p.spec.damage===30000&&p.dmgMul===s.mods.damageMul&&p.skill?.id==='architectBurst')).toBe(true);
   expect(m.turrets[0].reload).toBe(reloads[0]);expect(s.turrets[2].reload).toBe(reloads[1]);
 });

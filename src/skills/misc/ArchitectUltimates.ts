@@ -16,8 +16,8 @@ export function beginArchitectUltimate(s:Ship,kind:ArchitectUltimateKind):boolea
   const a=s.architect!,slots=available(s);
   if(slots.length<2)return s.failSkill('Assembly requires at least two surviving modules');
   const p=archAim(s);
-  const poses=kind==='killbox'?formation(s,slots,p.x,p.z,1000):null;
-  if(kind==='killbox'&&!poses)return s.failSkill('Killbox: no safe water for the complete formation');
+  const poses=kind==='killbox'?formation(s,slots,p.x,p.z,1500):null;
+  if(kind==='killbox'&&!poses)return s.failSkill('Grand Battery: no safe water for the complete formation');
   a.ultimate={kind,elapsed:0,members:slots.map(a=>a.index),x:p.x,z:p.z,aimX:s.control.aimX,aimY:s.control.aimY??4,aimZ:s.control.aimZ,locked:false,waves:0,fired:false,granted:[]};
   slots.forEach((slot,n)=>{
     const q=kind==='assembly'?dockPoint(s,slot.index):kind==='killbox'?poses![n]:airPosition(s,n,slots.length,slot.index);
@@ -67,7 +67,7 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
       if(u.kind==='assembly'){
         if(slot.entity?.alive)attachModule(s,slot);
         slot.state='assembling';slot.path=null;s.turrets[i].disabled=Infinity;
-      }else if(slot.entity?.alive){slot.state=u.kind==='citadel'?'citadel':'deployed';slot.coordinated=u.kind==='citadel';slot.path=null;}
+      }else if(slot.entity?.alive){if(slot.path)slot.entity.pos.set(slot.path.tx,slot.path.ty,slot.path.tz);slot.state=u.kind==='citadel'?'citadel':'deployed';if(u.kind==='citadel')slot.skillTimer=0;slot.path=null;if(u.kind==='killbox'&&slot.entity)slot.entity.turrets[0].reload=slot.index*.09;}
     }
   }
   if(u.kind==='assembly'){
@@ -88,29 +88,42 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
     }
     if(u.elapsed+1e-8>=4)endArchitectUltimate(s);
   }else if(u.kind==='killbox'){
-    while(u.waves<8&&u.elapsed+1e-8>=2.5+u.waves){
-      for(const i of u.members){const m=a.slots[i].entity;if(!m?.alive)continue;rail(s,m.pos.x,16,m.pos.z,u.x*2-m.pos.x,4,u.z*2-m.pos.z,120,12000,7,'killbox',i);}
-      u.waves++;
+    if(u.elapsed>=1.5){
+      for(const t of s.game.ships)if(t.alive&&t.team!==s.team&&!t.submerged&&!t.mods.ccImmune&&distToHull(t,u.x,u.z)<=1500)buff(t,'debuff:grandBattery',.1,m=>m.speedMul=Math.min(m.speedMul,.8));
+      // Each scheduled module stage is consumed once, even when that module was destroyed.
+      const count=u.members.length;
+      while(u.waves<count*4){
+        const stage=Math.floor(u.waves/count),n=u.waves%count;
+        const at=1.5+(stage===3?6:stage*2+n/Math.max(1,count-1)*.6);
+        if(u.elapsed+1e-8<at)break;
+        const slot=a.slots[u.members[n]],m=slot.entity;u.waves++;
+        if(!m?.alive||slot.state!=='deployed')continue;
+        for(const t of s.game.ships){
+          if(!s.alive)break;
+          if(!t.alive||t.team===s.team||t.submerged||Math.abs(t.pos.y)>120||distToHull(t,u.x,u.z)>1500||clearLine(s,u.x,u.z,t.pos.x,t.pos.z,16,t.pos.y+12)<1)continue;
+          const dealt=hurt(s,t,stage===3?90000:50000,{...s.skills[7].spec,element:slot.element});
+          if(dealt>0&&t.alive)applyElementMark(s,slot,t);
+        }
+        s.game.events.emit('architectShot',{ship:s,x:m.pos.x,y:75,z:m.pos.z,tx:u.x,ty:4,tz:u.z,width:stage===3?420:260,kind:'killbox',slot:slot.index});
+        m.turrets[0].recoil=1;
+      }
     }
-    if(u.elapsed+1e-8>=9.5){
-      for(const i of u.members){const slot=a.slots[i];if(!slot.entity?.alive)continue;for(const t of s.game.ships)if(t.alive&&t.team!==s.team&&!t.submerged&&Math.abs(t.pos.y)<120&&distToHull(t,u.x,u.z)<=1000&&clearLine(s,u.x,u.z,t.pos.x,t.pos.z,16,t.pos.y+12)===1)ultimateElementHit(s,slot,t,'killbox');}
-      endArchitectUltimate(s);
-    }
+    if(u.elapsed+1e-8>=7.5)endArchitectUltimate(s);
   }else{
     if(u.elapsed+1e-8>=1.5){
       // Read all slots before moving them so positions don't depend on incidental traversal order.
       for(let n=0;n<u.members.length;n++){
         const slot=a.slots[u.members[n]],m=slot.entity;if(!m?.alive||slot.state!=='citadel')continue;
         const p=airPosition(s,n,u.members.length,slot.index);m.pos.set(p.x,p.y,p.z);m.heading=p.heading;
-        if(!u.granted.includes(m.id)){raiseShield(m,25000,12);u.granted.push(m.id);}
+        if(!u.granted.includes(m.id)){raiseShield(m,150000,12);u.granted.push(m.id);}
       }
       const count=u.members.filter(i=>a.slots[i].state==='citadel'&&a.slots[i].entity?.alive).length;
-      if(count>=2)for(const t of s.game.ships){
+      if(count>=1)for(const t of s.game.ships){
         if(!t.alive||t.team!==s.team||Math.hypot(t.pos.x-s.pos.x,t.pos.z-s.pos.z)>900)continue;
-        const dr=Math.min(.4,count*.04);
+        const dr=Math.min(.6,.3+count*.03);
         buff(t,`architectCitadel:${s.id}`,.05,m=>{m.citadelDR=Math.max(m.citadelDR,dr);});
         if(!u.granted.includes(t.id)){
-          raiseShield(t,t.architectPlatform?25000:t===s?150000:75000,12);u.granted.push(t.id);
+          raiseShield(t,t===s?500000:150000,12);u.granted.push(t.id);
         }
       }
     }
@@ -122,7 +135,7 @@ export function endArchitectUltimate(s:Ship):void {
   a.ultimate=null;
   const reservations:ReturnType<typeof moduleLanding>[]=[];
   for(const i of u.members){
-    const slot=a.slots[i];slot.coordinated=false;if(slot.state==='destroyed')continue;
+    const slot=a.slots[i];if(slot.state==='destroyed')continue;
     if(u.kind==='assembly'){
       if(slot.entity?.alive)attachModule(s,slot);
       slot.state='docked';slot.path=null;s.turrets[i].disabled=slot.disabled;s.turrets[i].reload=slot.reload;
@@ -130,7 +143,7 @@ export function endArchitectUltimate(s:Ship):void {
       const m=slot.entity,p=moduleLanding(s,slot,m.pos.x,m.pos.z,m.heading,reservations.filter((p):p is NonNullable<typeof p>=>!!p),1000);
       if(p){reservations.push(p);moveModule(s,slot,p,'moving',1);}
       else moveModule(s,slot,dockPoint(s,i),'returning');
-    }else if(slot.entity?.alive){slot.state='deployed';slot.path=null;}
+    }else if(slot.entity?.alive){if(slot.path)slot.entity.pos.set(slot.path.tx,slot.path.ty,slot.path.tz);slot.state='deployed';slot.path=null;}
   }
   const st=s.skills[indexOf(u.kind)];if(st)st.time=0;
   s.game.events.emit('architectCommand',{ship:s,kind:'end'});

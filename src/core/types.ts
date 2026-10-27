@@ -259,6 +259,8 @@ export type SkillIcon =
   | 'fist';
 
 export interface SkillSpec {
+  element?:import('../data/architectLoadout').ArchitectElement;
+  reaction?:[import('../data/architectLoadout').ArchitectElement,import('../data/architectLoadout').ArchitectElement];
   /** Key into the skill registry (src/skills). */
   id: string;
   name: string;

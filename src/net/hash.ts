@@ -1,3 +1,4 @@
+import { ARCHITECT_TYPES } from '../data/architectLoadout';
 import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import type { Game } from '../core/Game';
 
@@ -29,17 +30,22 @@ export function stateHash(g: Game): number {
     h = mix(h, s.shield);
     h = mix(h, s.alive ? 1 : 0);
     h = mix(h, s.form ? 1 : 0);
+    for(const n of s.architectReveal)h=mix(h,n);
+    for(const a of s.architectSupport)for(const n of [a.owner,a.slot,a.until])h=mix(h,n);
+    for(const a of s.architectLoadout){h=mix(h,ARCHITECT_TYPES.indexOf(a.type));h=mix(h,a.skill);}
+    if(s.architectDrone){h=mix(h,s.architectDrone.owner.id);h=mix(h,s.architectDrone.slot);h=mix(h,s.expiresAt);}
     if (s.architect) {
       const a=s.architect;
-      for (const n of [a.fullHp,a.moduleHp,a.healthReady?1:0,a.linkUntil,a.linkTick,a.clearing?1:0]) h=mix(h,n);
+      for (const n of [a.huntTarget,a.huntUntil,a.fullHp,a.moduleHp,a.healthReady?1:0,a.linkUntil,a.linkTick,a.clearing?1:0]) h=mix(h,n);
       for (const slot of a.slots) {
-        for (const n of [ELEMENTS.indexOf(slot.element),slot.skillTimer,slot.miniTimer,slot.castGap,slot.opening?1:0,slot.coordinated?1:0,slot.aboard?1:0,slot.index,['docked','launching','deployed','moving','returning','destroyed','assembling','citadel'].indexOf(slot.state),slot.hp,slot.reload,slot.reloadScale,slot.disabled,slot.rebuild,slot.dockedFor,slot.entity?.id??0])h=mix(h,n);
+        for (const n of [ELEMENTS.indexOf(slot.element),slot.skillTimer,ARCHITECT_TYPES.indexOf(slot.type),slot.skill,slot.boostUntil,slot.reactionUntil,slot.castGap,slot.opening?1:0,slot.aboard?1:0,slot.index,['docked','launching','deployed','moving','returning','destroyed','assembling','citadel'].indexOf(slot.state),slot.hp,slot.reload,slot.reloadScale,slot.disabled,slot.rebuild,slot.dockedFor,slot.entity?.id??0])h=mix(h,n);
         if(slot.path)for(const n of [slot.path.x,slot.path.y,slot.path.z,slot.path.tx,slot.path.ty,slot.path.tz,slot.path.elapsed,slot.path.duration,slot.path.damage?1:0,...slot.path.hit])h=mix(h,n);
       }
       h=mix(h,a.elements.serial);
+      for(const d of a.elements.drones)for(const n of [d.id,d.slot,d.next])h=mix(h,n);
       for(const m of a.elements.marks)for(const n of [m.target,m.element?ELEMENTS.indexOf(m.element):-1,m.until,m.ready])h=mix(h,n);
       for(const p of a.elements.pulls)for(const n of [p.target,p.x,p.z,p.until])h=mix(h,n);
-      for(const j of a.elements.jobs)for(const n of [j.id,j.slot,ELEMENTS.indexOf(j.element),['skill','mini','coordinated','salvo','reaction','assembly','killbox'].indexOf(j.attack),j.x,j.y,j.z,j.tx,j.ty,j.tz,j.elapsed,j.next,j.count,j.interval,j.damage,j.radius,j.beam,j.chain?1:0,j.pull?1:0,j.slow?1:0,j.channel?1:0,j.mark?1:0])h=mix(h,n);
+      for(const j of a.elements.jobs)for(const n of [j.id,j.slot,ELEMENTS.indexOf(j.element),['skill','salvo','reaction','assembly','killbox'].indexOf(j.attack),j.x,j.y,j.z,j.tx,j.ty,j.tz,j.elapsed,j.next,j.count,j.interval,j.damage,j.radius,j.beam,j.chain?1:0,j.pull?1:0,j.slow?1:0,j.channel?1:0,j.mark?1:0,ARCHITECT_TYPES.indexOf(j.type),j.variant,j.target,j.underwater?1:0,j.support?1:0,j.projectile?1:0,j.speed,j.life])h=mix(h,n);
       for(const edge of a.links){h=mix(h,edge.a);h=mix(h,edge.b);}
       const u=a.ultimate;h=mix(h,u?1:0);
       if(u)for(const n of [['assembly','killbox','citadel'].indexOf(u.kind),u.elapsed,u.x,u.z,u.aimX,u.aimY,u.aimZ,u.locked?1:0,u.waves,u.fired?1:0,...u.members,...u.granted])h=mix(h,n);
@@ -58,7 +64,7 @@ export function stateHash(g: Game): number {
     }
   }
   h = mix(h, g.shells.shells.length);
-  for(const p of g.shells.shells)if(p.element)for(const n of [p.id,p.element.owner.id,p.element.slot,p.element.splash??0,p.x,p.y,p.z,p.vx,p.vy,p.vz,p.dmgMul,p.spec.damage])h=mix(h,n);
+  for(const p of g.shells.shells)if(p.element)for(const n of [p.id,p.element.owner.id,p.element.slot,p.element.kind?ELEMENTS.indexOf(p.element.kind):-1,p.element.splash??0,p.x,p.y,p.z,p.vx,p.vy,p.vz,p.dmgMul,p.spec.damage])h=mix(h,n);
   h = mix(h, g.torps.torps.length);
   h = mix(h, g.missiles.missiles.length);
   h = mix(h, g.air.squadrons.length);
