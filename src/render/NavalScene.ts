@@ -182,7 +182,7 @@ export class NavalScene implements BattleScene {
     const built = this.syncShips();
     this.warmUp(dt, built);
     const t = g.renderTime;
-    for (const [s, v] of this.views) v.update(s, t);
+    for (const [s, v] of this.views) {v.stepFold=this.stepperFx.foldPhase(s);v.update(s,t);}
     for (const w of this.wrecks) {
       w.t += dt;
       w.obj.position.y -= (4 + w.t * 7) * dt;
@@ -226,6 +226,8 @@ export class NavalScene implements BattleScene {
       this.skillFx.visible(s, v.root.visible && (team === -1 || contactVisible(s, team)));
     }
   }
+
+  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions]; }
 
   prepare(vp: Viewport, heightPx: number): void {
     this.architectFx.prepare(vp.team, heightPx);

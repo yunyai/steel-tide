@@ -85,6 +85,7 @@ export class PlayerController {
   private lockRange = 0;
   focus: Ship;
   private shakeAmt = 0;
+  private stepImpulse=0;
   private camPos = new Vector3();
   private stepCamera = false;
   private stepReturn = 0;
@@ -159,6 +160,16 @@ export class PlayerController {
 
   shake(amount: number): void {
     this.shakeAmt = Math.min(3, this.shakeAmt + amount * controls().shake);
+  }
+
+  /** A single gentle presentation impulse; it never enters the aim ray or camera path state. */
+  stepFinisher():void {if(!this.reduceMotion&&this.ship.alive&&!this.game.over)this.stepImpulse=.18;}
+  private applyStepImpulse(dt:number):void {
+    if(this.reduceMotion||!this.ship.alive||this.game.over){this.stepImpulse=0;return;}
+    if(this.stepImpulse<=0)return;
+    this.stepImpulse=Math.max(0,this.stepImpulse-dt);
+    const t=1-this.stepImpulse/.18,k=Math.sin(t*Math.PI)*(1-t)*controls().shake;
+    this.camera.position.y+=k*3;this.camera.updateMatrixWorld();
   }
 
   private maxRange(): number {
@@ -463,7 +474,7 @@ export class PlayerController {
       this.assist = null;
       this.shellCam.update(dt, false);
       cam.updateProjectionMatrix();cam.updateMatrixWorld();
-      return;
+      this.applyStepImpulse(dt);return;
     }
     if(this.stepCamera){
       this.stepCamera=false;this.stepReturn=0.5;this.stepPan=null;
@@ -549,6 +560,7 @@ export class PlayerController {
 
     if (looking) this.updateAim(tmpDir);
     else this.assist = null;
+    this.applyStepImpulse(dt);
   }
 
   /**

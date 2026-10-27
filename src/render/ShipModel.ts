@@ -1020,6 +1020,7 @@ export class ShipView {
   private split: Split | null = null;
   private wasAlive = true;
   private architectModel: ArchitectModel | null = null;
+  stepFold=0;
   private stepModel: StepperModel | null = null;
 
   constructor(readonly spec: ShipSpec, shadows = true) {
@@ -1408,7 +1409,7 @@ export class ShipView {
 
   update(ship: Ship, time: number): void {
     this.architectModel?.pose(time,ship);
-    this.stepModel?.pose(time,ship);
+    this.stepModel?.pose(time,ship,this.stepFold);
     if(this.stepModel) {
       this.material.transparent=!!ship.stepper?.copy;
       this.material.opacity=ship.stepper?.copy?0.48:1;

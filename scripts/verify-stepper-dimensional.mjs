@@ -58,6 +58,19 @@ try{
       times.sort((a,b)=>a-b);return{p50:times[95],p95:times[180],calls,hash:t.stateHash(g),pure:t.pure};
     });check(perf.pure,'Performance path mutated state');
     if(record){for(const index of [6,7,8]){await setup();await page.evaluate(index=>window.stepVisual.s.activateSkill(index),index);for(let i=0;i<110;i++){await page.evaluate(index=>{const t=window.stepVisual;t.run(2,index!==8);if(index===8)t.camera(true);t.draw(0);},index);await page.waitForTimeout(17);}}}
+    if(process.env.STEEL_STEP_COHESION&&name==='high-1280'){
+      for(const [index,label,frames] of [[0,'flash',8],[1,'ram',10],[2,'broad',20],[3,'over',8],[4,'back',30],[5,'side',6],[6,'flicker',80],[7,'cross',75],[8,'copies',12]]){
+        await setup();await page.evaluate(({index,frames})=>{const t=window.stepVisual;t.s.hp*=.5;t.s.activateSkill(index);if(index===5){t.s.pos.x+=100;t.s.prevPos.copy(t.s.pos);t.g.events.emit('blink',{ship:t.s,fromX:0,fromZ:t.s.pos.z,fromHeading:0,dodge:true});}if(index===2)t.s.control.fire=true;t.run(frames);t.b.huds[0].root.style.visibility='hidden';},{index,frames});
+        for(const angle of ['chase','side','overhead']){
+          await page.evaluate(({angle,index})=>{const t=window.stepVisual,{s,pc}=t;const zone=s.stepper?.cross??s.stepper?.flicker;const x=zone?.x??s.pos.x,z=zone?.z??s.pos.z,k=index>=6?3:1;
+            pc.camera.position.set(x+(angle==='side'?-480:angle==='overhead'?-30:-390)*k,(angle==='side'?75:angle==='overhead'?600:200)*k,z+(angle==='side'?0:angle==='overhead'?110:390)*k);pc.camera.lookAt(x,25,z);pc.camera.updateMatrixWorld(true);t.draw(0);},{angle,index});await shot(`cohesion-${label}-${angle}`);
+        }
+      }
+      if(record)for(const index of [0,1,2,3,4,5]){
+        await setup();await page.evaluate(index=>{const t=window.stepVisual;t.s.hp*=.5;t.s.activateSkill(index);if(index===2)t.s.control.fire=true;if(index===5){t.s.pos.x+=100;t.s.prevPos.copy(t.s.pos);t.g.events.emit('blink',{ship:t.s,fromX:0,fromZ:t.s.pos.z,fromHeading:0,dodge:true});}t.camera();t.b.huds[0].root.style.visibility='hidden';},index);
+        for(let i=0;i<45;i++){await page.evaluate(()=>window.stepVisual.run(1));await page.waitForTimeout(17);}
+      }
+    }
     if(process.env.STEEL_STEP_EXTRA){
       await setup();await page.evaluate(()=>{const t=window.stepVisual;t.s.activateSkill(7);t.run(100,true);t.b.viewports[0].team=1;t.draw(0);});await shot('enemy-cross');
       await setup();await page.evaluate(()=>{const t=window.stepVisual;t.s.activateSkill(8);t.run(60);t.camera(true);const copies=t.g.ships.filter(s=>s.summonOwner===t.s);copies[0].takeDamage(1e9,null,null,false,true);copies[1].withdraw();t.draw(.08);});await shot('copies-dissolve');

@@ -1,6 +1,7 @@
 import {
   ACESFilmicToneMapping,
   Color,
+  DepthTexture,
   HalfFloatType,
   PCFShadowMap,
   type PerspectiveCamera,
@@ -14,7 +15,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
+import { SpatialDistortionShader, projectDistortions, type SpatialDistortion } from './SpatialDistortion';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { Team } from '../core/types';
 import { ParticleSystem } from '../fx/Particles';
@@ -68,6 +69,7 @@ interface Post {
   composer: EffectComposer;
   scene: RenderPass;
   grade: ShaderPass;
+  distortion: ShaderPass;
   key: string;
 }
 
@@ -89,6 +91,7 @@ export interface Viewport {
 
 /** One battle's 3D world, of whatever kind; the renderer draws it into each viewport. */
 export interface BattleScene {
+  readonly distortions?: readonly SpatialDistortion[];
   readonly scene: Scene;
   /** Haze colour and density at a fog scale of 1. */
   readonly fog: { color: number; density: number };
@@ -161,11 +164,14 @@ export class Renderer {
       const rt = new WebGLRenderTarget(Math.max(1, w * pr), Math.max(1, h * pr), { type: HalfFloatType, samples: q.samples });
       const composer = new EffectComposer(this.gl, rt);
       composer.renderTarget2.samples = 0;
+      composer.renderTarget1.depthTexture = new DepthTexture(Math.max(1,w*pr),Math.max(1,h*pr));
+      composer.renderTarget2.depthTexture = new DepthTexture(Math.max(1,w*pr),Math.max(1,h*pr));
       composer.setPixelRatio(pr);
       composer.setSize(w, h);
       const pass = new RenderPass(scene, camera);
       composer.addPass(pass);
-      composer.addPass(new ShaderPass(CopyShader));
+      const distortion = new ShaderPass(SpatialDistortionShader);
+      composer.addPass(distortion);
       composer.addPass(new UnrealBloomPass(new Vector2(w, h), BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD));
       composer.addPass(new OutputPass());
       // The grade draws to the screen. Swapping after it would flip the composer's ping-pong each
@@ -173,11 +179,16 @@ export class Renderer {
       const grade = new ShaderPass(GradeShader);
       grade.needsSwap = false;
       composer.addPass(grade);
-      p = { composer, scene: pass, grade, key };
+      p = { composer, scene: pass, grade, distortion, key };
       this.posts[i] = p;
     }
     p.scene.scene = scene;
     p.scene.camera = camera;
+    const d=p.distortion.uniforms, fields=projectDistortions(this.battle?.distortions??[],camera);
+    d.tDepth.value=p.composer.readBuffer.depthTexture;
+    d.uCount.value=fields.length;d.uNear.value=camera.near;d.uFar.value=camera.far;
+    d.uReverse.value=this.gl.capabilities.reversedDepthBuffer?1:0;d.uAspect.value=camera.aspect;d.uHeight.value=h;
+    fields.forEach((f,j)=>{d.uShape.value[j].copy(f.shape);d.uDepth.value[j].copy(f.depth);});
     const u = p.grade.uniforms;
     u.uFlash.value = Math.min(0.85, this.flashK);
     u.uFlashColor.value.copy(this.flashColor);

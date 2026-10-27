@@ -143,9 +143,11 @@ export class NavalBattle implements ActiveBattle {
         pc.fovKick = spec.ult ? 12 : 5;
         if (spec.ult) {
           this.slow = SLOW_HOLD + SLOW_EASE;
-          renderer.flash(0.22, spec.accent);
+          if(a.ship.spec.id!=='stepper')renderer.flash(0.22, spec.accent);
         }
       }),
+      game.events.on('crossStep',e=>{if(e.phase==='finish')for(const pc of this.pcs)if(pc.ship===e.ship)pc.stepFinisher();}),
+      game.events.on('stepImpact',e=>{if(e.kind==='flicker'&&e.ship.stepper?.flicker?.count===19)for(const pc of this.pcs)if(pc.ship===e.ship)pc.stepFinisher();}),
       game.events.on('wave', (w) => {
         if (w.boss) this.slow = SLOW_HOLD + SLOW_EASE + 0.4;
       }),

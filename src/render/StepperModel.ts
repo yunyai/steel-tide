@@ -55,7 +55,7 @@ export class StepperModel {
     }
     this.pose(0);
   }
-  pose(time:number,ship?:Ship):void{
+  pose(time:number,ship?:Ship,fold=0):void{
     const st=ship?.alive&&!ship.withdrawn&&!ship.game.over?ship.stepper:null;
     const now=ship?.game.time??0,t=this.reduce?0:time;
     const cross=st?.cross,flicker=st?.flicker;
@@ -66,7 +66,7 @@ export class StepperModel {
     const phase=st&&st.phaseUntil>now?1:0,sideArmed=st&&st.sideUntil>now?1:0;
     this.plates.forEach((p,i)=>{
       const side=i<3?-1:1,n=i%3-1;
-      p.position.set(n*(105+spread*(cross?42:27))+rush*10,9+spread*(cross?35:23)+Math.sin(t*1.2+i)*.6,side*(25+spread*(cross?42:32)+broad*7));
+      p.position.set(n*(105+spread*(cross?42:27))+rush*10,9+spread*(cross?35:23)+Math.sin(t*1.2+i)*.6,side*(25+spread*(cross?42:32)+broad*7+fold*5));
       p.rotation.set(side*spread*(cross?.32:.16),side*(.055+n*spread*.14),n*(spread*.12+rush*.08));
     });
     this.core.position.y=48+spread*22+Math.sin(t*1.5)*.7;
@@ -81,8 +81,8 @@ export class StepperModel {
     const spectral=!!ship?.stepper?.copy;
     this.armor.transparent=spectral;this.armor.opacity=spectral?.35:1;this.armor.depthWrite=!spectral;
     this.armor.color.setHex(spectral?0xb9a6ee:0xffffff);
-    this.light.color.setHex(spectral?0x8bafff:st?.repair?0xb7ffe4:STEP.violet).multiplyScalar(1+ultimate*.35+broad*.2+sideArmed*.12);
-    this.white.color.setHex(STEP.white).multiplyScalar(1+phase*.25);
+    this.light.color.setHex(spectral?0x8bafff:st?.repair?0xb7ffe4:STEP.violet).multiplyScalar(1+ultimate*.35+broad*.2+sideArmed*.12+fold*.6);
+    this.white.color.setHex(STEP.white).multiplyScalar(1+phase*.25+fold*.5);
   }
   dispose():void{for(const g of this.owned)g.dispose();this.armor.dispose();this.light.dispose();this.white.dispose();}
 }

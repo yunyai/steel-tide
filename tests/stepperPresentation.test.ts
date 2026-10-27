@@ -41,7 +41,7 @@ it('bounds rapid teleport silhouettes, keeps finite geometry, and clears on batt
   expect(fx.ghosts.count).toBeGreaterThan(0);expect(fx.ghosts.count).toBeLessThanOrEqual(64);
   expect(fx.spatial.tears.count).toBeGreaterThan(0);expect(fx.spatial.tears.count).toBeLessThanOrEqual(384);
   expect(fx.spatial.shards.count).toBeGreaterThan(0);
-  expect(fx.light.count).toBeGreaterThan(0);expect(fx.light.count).toBeLessThanOrEqual(fx.light.max);
+  expect(fx.water.mesh.geometry.drawRange.count).toBeGreaterThan(0);expect(fx.light.count).toBeLessThanOrEqual(fx.light.max);
   for(const name of ['iA','iB','iW']){
     const a=fx.light.mesh.geometry.getAttribute(name);
     expect(Array.from(a.array).slice(0,fx.light.count*a.itemSize).every(Number.isFinite)).toBe(true);
@@ -86,12 +86,20 @@ it('snapshots both ends of a teleport before the ship moves again',async()=>{
   const {StepperFx}=await import('../src/render/StepperFx');
   const g=emptyGame('open',7,'freeplay'),s=place(g,'stepper',0,0,1500),fx=new StepperFx(new Scene(),g);
   g.events.emit('blink',{ship:s,fromX:300,fromZ:1500});s.pos.set(9000,0,9000);g.interpolate();fx.prepare(0,720);
-  const a=fx.light.mesh.geometry.getAttribute('iA');
-  expect(Array.from({length:fx.light.count},(_,i)=>a.getX(i)).every(x=>x<1000)).toBe(true);fx.dispose();
+  const a=fx.spatial.tears.geometry.getAttribute('iCurveA');
+  expect(fx.spatial.tears.count).toBeGreaterThan(0);expect(Array.from({length:fx.spatial.tears.count},(_,i)=>a.getX(i)).every(x=>x<1000)).toBe(true);fx.dispose();
 });
 it('releases every pooled instance buffer when a battle renderer is disposed',async()=>{
   const {StepperFx}=await import('../src/render/StepperFx');
   const g=emptyGame(),fx=new StepperFx(new Scene(),g);let releases=0;
   for(const m of [fx.ghosts,fx.spatial.tears,fx.spatial.shards])m.addEventListener('dispose',()=>releases++);
   fx.dispose();expect(releases).toBe(3);
+});
+it('keeps refraction viewport-specific and disables it under reduced motion',async()=>{
+  const {StepperFx}=await import('../src/render/StepperFx');
+  const g=emptyGame('open',7,'freeplay'),s=place(g,'stepper',1,0,1500);place(g,'yamato',0,0,-4000);s.mods.untargetable=true;
+  const fx=new StepperFx(new Scene(),g);g.events.emit('blink',{ship:s,fromX:300,fromZ:1500});fx.update(.08);fx.prepare(0,720);expect(fx.distortions).toHaveLength(0);
+  fx.prepare(1,720);expect(fx.distortions.length).toBeGreaterThan(0);fx.prepare(0,720);expect(fx.distortions).toHaveLength(0);fx.dispose();
+  vi.stubGlobal('matchMedia',()=>({matches:true}));const reduced=new StepperFx(new Scene(),g);
+  g.events.emit('blink',{ship:s,fromX:300,fromZ:1500});reduced.update(.08);reduced.prepare(1,720);expect(reduced.distortions).toHaveLength(0);expect(reduced.spatial.tears.count).toBeGreaterThan(0);reduced.dispose();
 });

@@ -1,19 +1,21 @@
 import { Color, type Scene } from 'three';
 import type { Game } from '../core/Game';
+import { contactVisible } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
 import type { Team } from '../core/types';
 import { audio } from '../fx/Audio';
 import { waveHeight } from '../world/Waves';
 import { FLICKER_RADIUS } from '../skills/misc/StepperRuntime';
 import { reducedMotion, smooth } from './ArchitectPose';
-import { quality } from './Quality';
+import { stepperSlashLayout } from './StepperSlashLayout';
 import { StepperSpatial } from './StepperSpatial';
+import type { SpatialDistortion } from './SpatialDistortion';
 import { Ribbons } from './Projectiles';
 
 const DARK = new Color(0x100b22), WHITE = new Color(0xf9f2ff).multiplyScalar(3);
 const VIOLET = new Color(0xad74ff).multiplyScalar(2), ENEMY = new Color(0xff476e).multiplyScalar(2);
-const hash = (n: number) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
-interface Finish { ship: Ship; x:number; z:number; radius:number; age:number }
+interface Sweep { ship:Ship; ax:number;az:number;bx:number;bz:number;cx:number;cz:number;age:number;seed:number }
+interface Finish { ship: Ship; x:number; z:number; radius:number; age:number; paths:Sweep[] }
 
 /** Stepper's ultimate boundaries and slash storm in two fixed-size batches, independent of simulation RNG. */
 export class CrossStepFx {
@@ -22,7 +24,10 @@ export class CrossStepFx {
   readonly dark = new Ribbons(3000, false, false);
   private finishes: Finish[] = [];
   private heard = new Map<number, number>();
-  private off: () => void;
+  private off: (() => void)[]=[];
+  private sweeps:Sweep[]=[];
+  private paths=new Map<number,Sweep[]>();
+  readonly distortions:SpatialDistortion[]=[];
   private local: Ship[] = [];
   private reduce = reducedMotion();
   constructor(private scene: Scene, private game: Game) {
@@ -31,16 +36,27 @@ export class CrossStepFx {
     this.dark.mesh.name = 'cross-step-fractures';
     this.dark.mesh.renderOrder = 5;
     scene.add(this.dark.mesh, this.light.mesh);
-    this.off = game.events.on('crossStep', e => {
+    this.off.push(game.events.on('crossStep', e => {
       if (e.phase !== 'finish') return;
       if (this.finishes.length >= 12) this.finishes.shift();
-      this.finishes.push({ ...e, age:0 });
+      this.finishes.push({ ...e, age:0,paths:Array.from({length:6},(_,i)=>{const n=48+i*2,p=stepperSlashLayout(n);return{ship:e.ship,ax:e.x+p.ax,az:e.z+p.az,bx:e.x+p.bx,bz:e.z+p.bz,cx:e.x+p.cx,cz:e.z+p.cz,age:0,seed:1000+n};}) });this.paths.delete(e.ship.id);
       if (!e.ship.stepper?.copy) audio.cue('crossStep','end','impact',e.x,20,e.z,this.local.includes(e.ship));
-    });
+    }),game.events.on('blink',e=>{
+      const f=e.ship.stepper?.cross;if(!f)return;
+      const p:Sweep={ship:e.ship,ax:e.fromX,az:e.fromZ,bx:e.ship.pos.x,bz:e.ship.pos.z,cx:f.x,cz:f.z,age:0,seed:f.jumps};
+      // Project the departure onto the actual attack boundary if this is the initial entry jump.
+      const d=Math.hypot(p.ax-f.x,p.az-f.z);if(d>1000){p.ax=f.x+(p.ax-f.x)*1000/d;p.az=f.z+(p.az-f.z)*1000/d;}
+      this.sweeps.push(p);if(this.sweeps.length>96)this.sweeps.shift();
+      const history=this.paths.get(e.ship.id)??[];history.push(p);if(history.length>10)history.shift();this.paths.set(e.ship.id,history);
+    }),game.events.on('respawn',e=>this.clearShip(e.ship)),game.events.on('shipChanged',e=>this.clearShip(e.old)));
   }
+  private clearShip(s:Ship):void{this.sweeps=this.sweeps.filter(p=>p.ship!==s);this.finishes=this.finishes.filter(p=>p.ship!==s);this.paths.delete(s.id);}
   update(dt: number, local: Ship[] = []): void {
     this.local = local;
-    if (this.game.over) { this.finishes = []; this.heard.clear(); return; }
+    if (this.game.over) { this.finishes = [];this.sweeps=[];this.paths.clear();this.distortions.length=0; this.heard.clear(); return; }
+    for(const p of this.sweeps)p.age+=dt;
+    this.sweeps=this.sweeps.filter(p=>p.age<.6&&p.ship.alive&&!p.ship.withdrawn);
+    for(const [id,paths]of this.paths)if(!paths[0]?.ship.alive||!paths[0]?.ship.stepper?.cross)this.paths.delete(id);
     for (const f of this.finishes) f.age += dt;
     this.finishes = this.finishes.filter(f => f.age < 0.7 && f.ship.alive && !f.ship.withdrawn);
     const active = new Set<number>();
@@ -56,7 +72,7 @@ export class CrossStepFx {
     for (const id of this.heard.keys()) if (!active.has(id)) this.heard.delete(id);
   }
   prepare(team: Team | -1, heightPx: number): void {
-    this.light.begin(); this.dark.begin(); this.spatial.begin();
+    this.light.begin(); this.dark.begin(); this.spatial.begin();this.distortions.length=0;
     this.light.material.uniforms.uViewportH.value = this.dark.material.uniforms.uViewportH.value = heightPx;
     if (!this.game.over) {
       for (const s of this.game.ships) {
@@ -67,43 +83,44 @@ export class CrossStepFx {
         if (flicker && !echo) this.flickerArea(flicker.x, flicker.z, color);
         const f = s.stepper?.cross;
         if (!f) continue;
+        // Damage cuts fill the complete zone independently of the random ship landing positions.
+        if(!echo){
+          const last=Math.min(59,Math.floor(f.elapsed*20)-1);
+          for(let i=Math.max(0,last-4);i<=last;i++){
+            const age=(f.elapsed-(i+1)*.05)/.23;if(age<0||age>=1)continue;
+            const p=stepperSlashLayout(i),lift=45+(i%3)*75;
+            this.spatial.arc(f.x+p.ax,25,f.z+p.az,f.x+p.cx,lift+100,f.z+p.cz,f.x+p.bx,35,f.z+p.bz,210+(i%3)*35,this.reduce?.3:age,color,1000+i,.85*(this.reduce?1-smooth((age-.4)/.6):1),i%2?.75:-.8);
+          }
+        }
         // All players see the exact zone. Copies share a zone and don't stack five boundaries.
         if (!echo) {
           this.ring(f.x,f.z,1000,color,0.8);
-          this.fracturedDome(f.x,f.z,f.elapsed,color);
+          this.fracturedDome(s,f.x,f.z,f.elapsed,color,team);
         }
-        const rate = echo ? 10 : 20;
-        const last = Math.floor(f.elapsed * rate);
-        const layers = echo ? 1 : 2;
-        for (let i = Math.max(0,last-layers); i <= last; i++) {
-          const age = f.elapsed - i / rate;
-          if (age < 0 || age > 0.22) continue;
-          const seed = i + s.id * 811;
-          const a = hash(seed) * Math.PI * 2, offset = (hash(seed+0.3)-0.5)*1500;
-          const half = Math.sqrt(1000000-offset*offset);
-          const dx = Math.cos(a), dz = Math.sin(a), px = -dz*offset, pz = dx*offset;
-          const ax = f.x + px-dx*half, az = f.z+pz-dz*half;
-          const bx = f.x + px+dx*half, bz = f.z+pz+dz*half;
-          const rising = i % 3 === 0;
-          const ay = waveHeight(ax,az,this.game.renderTime)+8+(rising?hash(seed+1)*360:0);
-          const by = waveHeight(bx,bz,this.game.renderTime)+8+(rising?hash(seed+2)*220:0);
-          this.spatial.blade(ax,ay+45,az,bx,by+45,bz,echo?150:360+hash(seed+4)*130,age/((layers+1)/rate),color,seed,echo?.28:.85,i%3===0?.35:1.15);
-        }
+      }
+      for(const p of this.sweeps){
+        if(!this.visible(p.ship,team))continue;
+        const echo=!!p.ship.stepper?.copy,color=team===-1||p.ship.team===team?VIOLET:ENEMY;
+        const age=p.age/.35;if(age>=0&&age<1)this.sweep(p,2,age,color,echo?.045:.13);
       }
       for (const f of this.finishes) {
         const color = team === -1 || f.ship.team === team ? VIOLET : ENEMY;
         const k = Math.max(0,1-f.age/0.7), radius = f.radius * (0.8+f.age*1.3);
         if (!f.ship.stepper?.copy) this.ring(f.x,f.z,radius,color,k);
         const echo=!!f.ship.stepper?.copy;
-        for (let i=0;i<(echo?2:6);i++) {
-          const a=i*Math.PI/6,dx=Math.cos(a)*f.radius,dz=Math.sin(a)*f.radius;
-          this.spatial.blade(f.x-dx,45+f.age*100,f.z-dz,f.x+dx,45+f.age*100,f.z+dz,echo?180:420,f.age/.7,color,i,echo?.3:.85,1.1);
+        const paths=f.paths.slice(echo?-2:-6);
+        for(const p of paths){
+          const collapse=this.reduce?.72:Math.max(.08,1-smooth(f.age/.24));
+          const path={...p,ax:f.x+(p.ax-f.x)*collapse,az:f.z+(p.az-f.z)*collapse,bx:f.x+(p.bx-f.x)*collapse,bz:f.z+(p.bz-f.z)*collapse,cx:f.x+(p.cx-f.x)*collapse,cz:f.z+(p.cz-f.z)*collapse};
+          this.sweep(path,2,.3,color,k*(echo?.22:.85));
         }
         if(!echo){
-          this.spatial.tear(f.x,550,f.z,.5,380,1500,f.age/.7,color,3,.95);
-          for(let i=0;i<28;i++){
-            const a=i*2.39996,r=this.reduce?420:120+f.age*1100;
-            this.spatial.shard(f.x+Math.cos(a)*r,80+(i%5)*65+f.age*150,f.z+Math.sin(a)*r,a+(this.reduce?0:f.age*2),20*k+5,3,color,k*.85);
+          this.spatial.tear(f.x,100,f.z,.5,220,220,f.age/.7,color,3,.85);
+          if(!this.reduce&&(team===-1||contactVisible(f.ship,team)))this.distortions.push({x:f.x,y:80,z:f.z,radius:650,strength:k,priority:this.local.includes(f.ship)?4:1});
+          for(let i=0;i<24;i++){
+            const p=paths[i%Math.max(1,paths.length)],a=p?Math.atan2(p.bz-f.z,p.bx-f.x):i*2.39996;
+            const r=this.reduce?280:100+smooth(f.age/.7)*750;
+            this.spatial.shard(f.x+Math.cos(a)*r,30+(i%4)*25+Math.sin(f.age*Math.PI/.7)*85,f.z+Math.sin(a)*r,a+(this.reduce?0:f.age*2),12*k+2,3,color,k*.65);
           }
         }
       }
@@ -111,14 +128,23 @@ export class CrossStepFx {
     this.light.end(); this.dark.end(); this.spatial.end();
   }
   /** Fragments and torn surfaces describe the broken volume; broad curved blades carry the attack. */
-  private fracturedDome(x:number,z:number,elapsed:number,color:Color):void {
-    const build=smooth(elapsed/.65),collapse=this.reduce?0:smooth((elapsed-2.5)/.5);
-    const radius=1000*(1-collapse*.82),count=quality().particles>=.8?20:12;
-    for(let i=0;i<count;i++){
-      const a=i*2.39996+(this.reduce?0:elapsed*.12),r=radius*(.65+hash(i+1)*.3),y=60+(i%4)*115*build;
-      this.spatial.shard(x+Math.cos(a)*r,y,z+Math.sin(a)*r,a+(this.reduce?0:elapsed*.35),16+hash(i+2)*18,2.8,color,build*.75);
-      if(i%4===0)this.spatial.tear(x+Math.cos(a)*r,y+60,z+Math.sin(a)*r,-a,100,300,.28,color,i,build*.5);
+  /** Curves inherit the real departure, arrival and center; sub-cuts share one flowing stroke. */
+  private sweep(p:Sweep,index:number,age:number,color:Color,opacity:number):void{
+    const dx=p.bx-p.ax,dz=p.bz-p.az,len=Math.max(1,Math.hypot(dx,dz)),offset=(index-2.5)*85;
+    const controlX=p.cx-dz/len*offset,controlZ=p.cz+dx/len*offset;
+    this.spatial.arc(p.ax,30,p.az,controlX,150+index*35,controlZ,p.bx,35,p.bz,170+index*12,this.reduce?.3:age,color,p.seed,opacity*(this.reduce?1-smooth((age-.4)/.6):1),index%2?.8:-.6);
+  }
+
+  private visible(ship:Ship,team:Team|-1):boolean{return ship.alive&&!ship.withdrawn&&!ship.mods.banished&&(team===-1||contactVisible(ship,team));}
+  private fracturedDome(ship:Ship,x:number,z:number,elapsed:number,color:Color,team:Team|-1):void {
+    if(!this.visible(ship,team))return;
+    const history=this.paths.get(ship.id)??[],collapse=this.reduce?0:smooth((elapsed-2.5)/.5);
+    for(let i=0;i<history.length;i++){
+      const p=history[i],k=1-collapse*.8,px=x+(p.bx-x)*k,pz=z+(p.bz-z)*k;
+      this.spatial.shard(px,45+(i%3)*25,pz,p.seed+(this.reduce?0:elapsed*.2),12,3,color,.6);
+      if(i>=history.length-3)this.sweep(p,2,.3,color,.05*(1-collapse));
     }
+    if(!this.reduce&&(team===-1||contactVisible(ship,team)))this.distortions.push({x,y:40,z,radius:500,strength:smooth((elapsed-2.3)/.7)*.5,priority:this.local.includes(ship)?3:1});
   }
   private ring(x:number,z:number,radius:number,color:Color,k:number): void {
     for (let i=0;i<96;i++) {
@@ -136,8 +162,8 @@ export class CrossStepFx {
       const by = waveHeight(bx,bz,this.game.renderTime)+8;
       // A dark under-stroke keeps the boundary legible on both sunlit and shaded water.
       this.dark.push(ax,ay,az,bx,by,bz,DARK,0.85,20,5);
-      this.light.push(ax,ay+0.5,az,bx,by+0.5,bz,color,0.95,9,2.5);
-      if (core) this.light.push(ax,ay+1,az,bx,by+1,bz,WHITE,0.75,2,0.8);
+      this.light.push(ax,ay+0.5,az,bx,by+0.5,bz,color,0.65,6,1.8);
+      if (core) this.light.push(ax,ay+1,az,bx,by+1,bz,WHITE,0.45,1.2,0.6);
     };
     for (let i = 0; i < 96; i++) {
       const a = i * Math.PI / 48, b = (i+1) * Math.PI / 48;
@@ -156,7 +182,7 @@ export class CrossStepFx {
     }
   }
   dispose(): void {
-    this.off();this.finishes=[];this.heard.clear();
+    this.off.forEach(f=>f());this.sweeps=[];this.paths.clear();this.distortions.length=0;this.finishes=[];this.heard.clear();
     this.scene.remove(this.light.mesh,this.dark.mesh); this.light.dispose();this.dark.dispose();this.spatial.dispose();
   }
 }
