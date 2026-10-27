@@ -5,7 +5,7 @@ import type { Team } from '../core/types';
 import { audio } from '../fx/Audio';
 import { Ribbons } from './Projectiles';
 import { waveHeight } from '../world/Waves';
-import { ASSEMBLY_MUZZLE, assemblyWorld, reducedMotion, satellitePose, smooth } from './ArchitectPose';
+import { ASSEMBLY_HEIGHT, ASSEMBLY_MUZZLE, assemblyWorld, reducedMotion, satellitePose, smooth } from './ArchitectPose';
 
 const GOLD=new Color(0xffbd66).multiplyScalar(1.6),BLUE=new Color(0x8be9ff).multiplyScalar(2),RED=new Color(0xff4668).multiplyScalar(2),WHITE=new Color(0xf0fbff).multiplyScalar(3);
 const ASSEMBLY_BEAM_LIFE=1.1;
@@ -143,17 +143,14 @@ export class ArchitectFx {
         const color=team===-1||shot.ship.team===team?BLUE:RED;
         // Hold the full blast briefly, then leave a readable afterglow.
         const k=shot.kind==='assembly'?1-smooth((shot.age-.18)/(ASSEMBLY_BEAM_LIFE-.18)):1-shot.age/.35;
-        let sx=shot.x,sy=shot.y,sz=shot.z;
+        const sx=shot.x,sy=shot.y,sz=shot.z;
         if(shot.kind==='assembly'){
-          // The muzzle flash converges onto the unchanged combat ray; no new damage origin.
+          // Keep the presentation level with the raised cannon. The event still supplies
+          // the obstacle-clipped range; its combat trajectory and damage stay in simulation.
           const h=Math.atan2(shot.tx-shot.x,-(shot.tz-shot.z));
-          const x=shot.x+Math.sin(h)*ASSEMBLY_MUZZLE,z=shot.z-Math.cos(h)*ASSEMBLY_MUZZLE,y=shot.y+101;
+          const x=shot.x+Math.sin(h)*ASSEMBLY_MUZZLE,z=shot.z-Math.cos(h)*ASSEMBLY_MUZZLE,y=shot.y-24+ASSEMBLY_HEIGHT;
           const distance=Math.hypot(shot.tx-shot.x,shot.tz-shot.z);
-          if(distance>ASSEMBLY_MUZZLE){
-            const join=Math.min(1,(ASSEMBLY_MUZZLE+180)/distance);
-            sx=shot.x+(shot.tx-shot.x)*join;sy=shot.y+(shot.ty-shot.y)*join;sz=shot.z+(shot.tz-shot.z)*join;
-            this.assemblyBeam(x,y,z,sx,sy,sz,color,k,shot.width);
-          }
+          if(distance>ASSEMBLY_MUZZLE)this.assemblyBeam(x,y,z,shot.tx,y,shot.tz,color,k,shot.width);
           const flash=1-smooth(shot.age/.42);
           this.shockRing(x,y,z,h,this.reduce?80:55+shot.age*240,color,flash*.85,8);
           this.shockRing(x,y,z,h,this.reduce?55:35+shot.age*130,WHITE,flash*.85,5);
@@ -163,9 +160,8 @@ export class ArchitectFx {
           }
           if(!this.reduce&&distance>ASSEMBLY_MUZZLE)for(let i=0;i<3;i++){
             const travel=(shot.age-i*.06)/.32;if(travel<=0||travel>=1)continue;
-            this.shockRing(x+(shot.tx-x)*travel,y+(shot.ty-y)*travel,z+(shot.tz-z)*travel,h,65+travel*95,color,(1-travel)*.65,5);
+            this.shockRing(x+(shot.tx-x)*travel,y,z+(shot.tz-z)*travel,h,65+travel*95,color,(1-travel)*.65,5);
           }
-          this.assemblyBeam(sx,sy,sz,shot.tx,shot.ty,shot.tz,color,k,shot.width);
         }else{
           r.push(sx,sy,sz,shot.tx,shot.ty,shot.tz,color,k*.75,shot.width*.3,3);
           r.push(sx,sy+1,sz,shot.tx,shot.ty+1,shot.tz,WHITE,k*.9,shot.width*.06,1);

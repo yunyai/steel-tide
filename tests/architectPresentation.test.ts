@@ -65,3 +65,19 @@ it('shows only surviving Assembly satellites and clears the cannon when the batt
   g.finish(-1,'test');view.update(s,g.renderTime);
   expect(view.root.getObjectByName('architect-final-assembly')!.visible).toBe(false);view.dispose();
 });
+
+it.each([4,400])('keeps the Assembly blast and travelling rings at muzzle height when aiming at y=%s',targetY=>{
+  const g=emptyGame('open',7,'freeplay'),s=place(g,'architect',0,0,1500),fx=new ArchitectFx(new Scene(),g);
+  const before=stateHash(g);
+  g.events.emit('architectShot',{ship:s,x:0,y:24,z:1500,tx:0,ty:targetY,tz:-4500,width:180,kind:'assembly'});
+  fx.update(.1,[s]);fx.prepare(0,720);
+  const geo=fx.ribbons.mesh.geometry,a=geo.getAttribute('iA'),b=geo.getAttribute('iB');
+  const beam=Array.from({length:fx.ribbons.count},(_,i)=>i).filter(i=>Math.abs(a.getZ(i)-b.getZ(i))>300);
+  expect(beam.length).toBeGreaterThan(0);
+  for(const i of beam){expect(a.getY(i)).toBeCloseTo(125);expect(b.getY(i)).toBeCloseTo(125);}
+  const rings=Array.from({length:fx.ribbons.count},(_,i)=>i).filter(i=>a.getZ(i)<500&&Math.abs(a.getZ(i)-b.getZ(i))<1);
+  expect(rings.length).toBeGreaterThan(0);
+  const ys=rings.flatMap(i=>[a.getY(i),b.getY(i)]);
+  expect((Math.min(...ys)+Math.max(...ys))/2).toBeCloseTo(125);
+  expect(stateHash(g)).toBe(before);fx.dispose();
+});
