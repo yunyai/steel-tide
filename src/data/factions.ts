@@ -365,7 +365,7 @@ export const FACTIONS: Record<Nation, Faction> = {
     },
   },
 
-  foundry: { id:'foundry',era:'misc',label:'The Foundry',short:'Foundry',focus:'Modular arsenals that assemble their own battlefield.',trait:{name:'Modular Arsenal',description:'Ten railgun modules share the hull’s HP: each carries 50k capacity when deployed. Recall returns surviving health; destroyed modules rebuild in 12 s using redistributed hull health.'} },
+  foundry: { id:'foundry',era:'misc',label:'The Foundry',short:'Foundry',focus:'Modular arsenals that assemble their own battlefield.',trait:{name:'Modular Arsenal',description:'Ten railgun modules share the hull’s HP: each reserves 100k hull capacity to field a 200k-HP platform. Recall returns surviving health; destroyed modules rebuild in 5 s using redistributed hull health.'} },
   fold: {
     id: 'fold', era: 'misc', label: 'The Fold', short: 'Fold',
     focus: 'Phase warships that fold distance into destructive steps.',

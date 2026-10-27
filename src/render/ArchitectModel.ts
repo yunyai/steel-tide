@@ -1,68 +1,180 @@
-import { BoxGeometry, Color, Float32BufferAttribute, CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, type BufferGeometry, type Material } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, TorusGeometry, Vector3, type BufferGeometry, type Material } from 'three';
 import type { ShipSpec } from '../core/types';
 import type { Ship } from '../ships/Ship';
+import { Parts } from './Geometry';
+import { ASSEMBLY_HEIGHT, ASSEMBLY_MUZZLE, reducedMotion, satellitePose, smooth } from './ArchitectPose';
 
-/** Ten physical docking cradles and the unfolding mass driver; all geometry is cosmetic. */
+const DARK=0x253541,EDGE=0x526b79,IVORY=0xd5d9d0,BLACK=0x0e1b25,GOLD=0xffbd66,CYAN=0x91edff;
+
+/** Architect alone uses these heavy gun houses; normal railgun ships keep their own silhouette. */
+export function architectTurretGeometry(){
+  const house=new Parts(),guns=new Parts();
+  house.cyl(12,14,5,0,0,0,DARK,{seg:12});
+  house.cyl(12.3,12.3,1.4,0,4,0,GOLD,{seg:12});
+  house.box(31,15,24,-4,5,0,IVORY,{taper:.18,slope:3});
+  house.box(24,3,18,-6,20,0,EDGE,{taper:.15});
+  house.box(9,9,26,11,8,0,DARK,{taper:.1});
+  for(const z of [-1,1]){
+    house.box(21,5,3,-7,9,z*12,EDGE);
+    house.box(12,1.3,2,-8,18,z*10,GOLD);
+    for(let x=-14;x<=-2;x+=4)house.box(2,3,1.5,x,12,z*14,BLACK);
+    guns.box(42,4,4,20,-2,z*6.5,DARK);
+    guns.box(36,2,1.6,21,0,z*6.5,CYAN);
+    guns.box(34,2,1.4,18,2.2,z*8.7,IVORY);
+    guns.box(34,2,1.4,18,2.2,z*4.3,IVORY);
+    guns.box(8,8,8,3,-4,z*6.5,EDGE,{taper:.1});
+    guns.box(6,7,7,40,-3.5,z*6.5,IVORY,{taper:.12});
+    guns.box(1,3,3,43.1,-1.5,z*6.5,BLACK);
+  }
+  return {house:house.merge(),guns:guns.merge(),pivotX:10,pivotY:15};
+}
+
+/** Mechanical silhouettes are merged by material; only clamps, outriggers and satellites articulate. */
 export class ArchitectModel {
   readonly root=new Group();
   readonly docks:Group[]=[];
+  private clamps:Group[][]=[];
+  private supports:Group[]=[];
+  private jets=new Group();
   private gun=new Group();
-  private segments:Group[]=[];
+  private cannon=new Group();
+  private rails:Group[]=[];
+  private vents:Group[]=[];
+  private satellites:Group[]=[];
   private owned:BufferGeometry[]=[];
-  private armor=new MeshStandardMaterial({color:0xffffff,vertexColors:true,metalness:.75,roughness:.38});
-  private amber=new MeshBasicMaterial({color:0xffc066,toneMapped:false});
-  private blue=new MeshBasicMaterial({color:0x9aeeff,toneMapped:false});
+  private armor=new MeshStandardMaterial({color:0xffffff,vertexColors:true,metalness:.65,roughness:.42});
+  private amber=new MeshBasicMaterial({color:GOLD,toneMapped:false});
+  private blue=new MeshBasicMaterial({color:CYAN,toneMapped:false});
+  private reduce=reducedMotion();
+  private point=new Vector3();
+
   constructor(make:(g:BufferGeometry,m:Material)=>Mesh,spec:ShipSpec){
-    this.root.name=spec.id==='architect'?'architect-foundry':'architect-platform-frame';
-    const boxes=(items:[number,number,number,number,number,number,number][],parent:Group,material:Material=this.armor)=>{
-      const geos=items.map(([w,h,d,x,y,z,c])=>{
-        const g=new BoxGeometry(w,h,d).toNonIndexed();g.translate(x,y,z);
-        const color=new Color(c),count=g.getAttribute('position').count,colors=new Float32Array(count*3);
-        for(let i=0;i<count;i++)colors.set([color.r,color.g,color.b],i*3);
-        g.setAttribute('color',new Float32BufferAttribute(colors,3));
-        return g;
-      });
-      const geo=mergeGeometries(geos);geos.forEach(g=>g.dispose());this.owned.push(geo);parent.add(make(geo,material));
+    const add=(parts:Parts,parent:Group,material:Material=this.armor)=>{
+      const geo=parts.merge();this.owned.push(geo);parent.add(make(geo,material));
     };
+    this.root.name=spec.id==='architect'?'architect-foundry':'architect-platform-frame';
     if(spec.id==='architect'){
-      const ribs:[number,number,number,number,number,number,number][]=[];
+      const frame=new Parts(),lights=new Parts();
       for(const side of [-1,1]){
-        ribs.push([435,7,6,0,20,side*40,0x1a2731],[420,2,2,0,25,side*41,0xefb35c]);
-        for(let i=0;i<5;i++)ribs.push([10,18,88,(i-2)*90,15,0,0x66737b]);
+        frame.box(430,9,7,0,16,side*41,DARK,{taper:.12});
+        frame.box(410,3,4,0,25,side*40,IVORY);
+        lights.box(405,1.2,1.3,0,29,side*40,GOLD);
+        for(let i=0;i<5;i++){
+          const x=(i-2)*90;
+          frame.box(12,14,80,x,10,0,EDGE,{taper:.1});
+          frame.box(62,5,4,x,15,side*44,IVORY);
+        }
       }
-      ribs.push([45,34,22,-50,35,0,0xc4ccc9],[24,13,35,-50,56,0,0x293b49],[70,5,22,145,25,0,0xc4ccc9]);
-      boxes(ribs,this.root);
-      boxes([[28,2,16,-50,65,0,0xffffff]],this.root,this.amber);
+      // A narrow armored control spine leaves the paired batteries exposed.
+      frame.box(310,6,13,-10,21,0,DARK,{taper:.2});
+      frame.box(55,24,21,-52,28,0,IVORY,{taper:.25,slope:8});
+      frame.box(32,15,19,-61,52,0,DARK,{taper:.2});
+      frame.box(39,4,25,-60,67,0,IVORY,{taper:.12});
+      frame.box(6,16,6,-67,71,0,EDGE);
+      frame.box(29,3,5,-67,86,0,DARK);
+      lights.box(26,2,1,-59,62,9,GOLD);lights.box(26,2,1,-59,62,-9,GOLD);
+      for(const x of [-223,222])frame.box(27,8,40,x,18,0,IVORY,{taper:.35});
+      add(frame,this.root);add(lights,this.root,this.amber);
       spec.main!.turrets.forEach((t,i)=>{
-        const dock=new Group();dock.name=`architect-dock-${i}`;dock.position.set(t.x,spec.freeboard,t.z??0);this.root.add(dock);this.docks.push(dock);
-        boxes([[76,9,36,0,0,0,0x697780],[54,6,30,0,6,0,0xcbd1cc],[10,12,5,-32,7,-17,0x293440],[10,12,5,32,7,17,0x293440]],dock);
-        boxes([[63,1.2,1.4,0,10,-13,0xffffff],[63,1.2,1.4,0,10,13,0xffffff]],dock,this.amber);
+        const socket=new Group();socket.name=`architect-socket-${i}`;socket.position.set(t.x,spec.freeboard,t.z??0);this.root.add(socket);
+        const p=new Parts();
+        p.box(71,2,31,0,0,0,BLACK);
+        for(const z of [-1,1]){p.box(70,6,3,0,0,z*16,EDGE);p.box(65,1,1,0,6,z*16,GOLD);}
+        for(const x of [-31,31])p.box(7,5,31,x,0,0,IVORY,{taper:.2});
+        p.cyl(13,15,2,0,2,0,EDGE,{seg:12});add(p,socket);
+        const clamps:Group[]=[];
+        for(const side of [-1,1]){
+          const clamp=new Group();clamp.position.set(0,5,side*15);socket.add(clamp);clamps.push(clamp);
+          add(new Parts().box(36,5,4,0,0,0,IVORY).box(8,8,5,-12,0,0,EDGE).box(8,8,5,12,0,0,EDGE),clamp);
+        }
+        this.clamps.push(clamps);
+        const dock=new Group();dock.name=`architect-dock-${i}`;socket.add(dock);this.docks.push(dock);
+        add(new Parts().box(54,5,25,0,3,0,IVORY,{taper:.15}).cyl(13,14,6,0,7,0,DARK,{seg:12}),dock);
       });
-      this.gun.name='architect-final-assembly';this.gun.position.y=70;this.root.add(this.gun);this.gun.visible=false;
-      boxes([[145,35,65,-20,0,0,0x344856],[125,8,72,-20,22,0,0xd5d8cf]],this.gun);
-      for(let i=0;i<10;i++){
-        const segment=new Group();segment.position.x=45+i*65;this.gun.add(segment);this.segments.push(segment);
-        boxes([[58,12,10,0,-20,-23,0xd1d5cd],[58,12,10,0,-20,23,0xd1d5cd],[15,56,60,-22,0,0,0x354956]],segment);
-        boxes([[65,3,3,4,-4,-15,0xffffff],[65,3,3,4,-4,15,0xffffff]],segment,this.blue);
+      this.gun.name='architect-final-assembly';this.root.add(this.gun);this.gun.position.y=ASSEMBLY_HEIGHT;this.gun.visible=false;
+      this.gun.add(this.cannon);
+      const breech=new Parts();
+      breech.box(120,48,62,-55,-25,0,DARK,{taper:.15});
+      breech.box(100,10,68,-60,23,0,IVORY,{taper:.2});
+      breech.box(100,10,68,-60,-34,0,EDGE,{taper:.15});
+      for(const z of [-1,1])breech.box(96,28,10,-60,-15,z*35,IVORY,{taper:.15});
+      for(const x of [-100,-65,-30])breech.box(9,58,74,x,-30,0,EDGE,{taper:.08});
+      add(breech,this.cannon);
+      for(const side of [-1,1]){
+        const rail=new Group();this.cannon.add(rail);this.rails.push(rail);
+        const p=new Parts();
+        p.box(350,24,18,171,-12,side*27,IVORY,{taper:.08});
+        p.box(360,10,12,171,-5,side*35,DARK);
+        for(let x=35;x<350;x+=55)p.box(11,36,26,x,-18,side*29,EDGE,{taper:.15});
+        p.box(40,42,28,329,-21,side*28,IVORY,{taper:.15});add(p,rail);
+        add(new Parts().box(345,5,3,171,-2.5,side*17,CYAN),rail,this.blue);
+        const vent=new Group();vent.position.set(-55,4,side*38);this.cannon.add(vent);this.vents.push(vent);
+        const fins=new Parts();for(let x=-35;x<=35;x+=14)fins.box(6,26,14,x,0,0,IVORY,{taper:.2});add(fins,vent);
       }
-      const coreGeo=new CylinderGeometry(10,10,720,10);coreGeo.rotateZ(Math.PI/2);coreGeo.translate(340,0,0);this.owned.push(coreGeo);this.gun.add(make(coreGeo,this.blue));
+      const collars=new Parts();
+      for(const x of [0,150,ASSEMBLY_MUZZLE])collars.add(new TorusGeometry(x===ASSEMBLY_MUZZLE?40:47,3.5,6,12),EDGE,x,0,0,{ry:Math.PI/2});
+      add(collars,this.cannon);
+      add(new Parts().barrel(7,4,ASSEMBLY_MUZZLE,-10,0,0,CYAN),this.cannon,this.blue);
+      // Reuse the same heavy gun silhouette in each cosmetic focusing satellite.
+      const turret=architectTurretGeometry();this.owned.push(turret.house,turret.guns);
+      const base=new Parts().box(56,10,32,-4,-8,0,IVORY,{taper:.2}).box(48,5,36,-4,-13,0,DARK).merge();this.owned.push(base);
+      for(let i=0;i<10;i++){
+        const sat=new Group();sat.name=`architect-satellite-${i}`;this.gun.add(sat);this.satellites.push(sat);
+        sat.add(make(base,this.armor),make(turret.house,this.armor));
+        const barrels=make(turret.guns,this.armor);barrels.position.set(turret.pivotX,turret.pivotY,0);sat.add(barrels);
+      }
     }else{
-      boxes([[70,8,38,0,11,0,0xc3ccc8],[68,4,5,0,17,-18,0x344b59],[68,4,5,0,17,18,0x344b59],[10,24,8,-29,2,-17,0x344b59],[10,24,8,29,2,17,0x344b59]],this.root);
-      boxes([[65,1,2,0,20,-15,0xffffff],[65,1,2,0,20,15,0xffffff]],this.root,this.amber);
+      const frame=new Parts();
+      frame.box(68,8,36,0,10,0,IVORY,{taper:.16});
+      frame.box(52,4,28,0,18,0,DARK,{taper:.1});
+      frame.cyl(13,15,5,0,21,0,EDGE,{seg:12});
+      for(const side of [-1,1]){
+        frame.box(62,6,5,0,5,side*19,EDGE);
+        frame.box(50,2,2,0,17,side*18,GOLD);
+      }
+      add(frame,this.root);
+      const footGeo=new Parts().box(8,5,17,0,-3,6,EDGE).box(18,8,12,0,-7,17,IVORY,{taper:.2}).box(12,2,9,0,-9,17,DARK).merge();this.owned.push(footGeo);
+      for(const x of [-24,24])for(const side of [-1,1]){
+        const leg=new Group();leg.position.set(x,8,side*15);leg.rotation.y=side===1?0:Math.PI;leg.name='architect-stabilizer';leg.add(make(footGeo,this.armor));this.root.add(leg);this.supports.push(leg);
+      }
+      const engines=new Parts(),glow=new Parts();
+      for(const x of [-24,24])for(const z of [-13,13]){
+        engines.cyl(5,7,7,x,-5,z,DARK,{seg:8});
+        glow.cyl(4,1,20,x,-23,z,CYAN,{seg:8});
+      }
+      add(engines,this.root);add(glow,this.jets,this.blue);this.root.add(this.jets);this.jets.visible=false;
     }
   }
-  pose(time:number,ship?:Ship):void {
-    for(let i=0;i<this.docks.length;i++)this.docks[i].visible=!ship?.architect||ship.architect.slots[i].state==='docked';
-    const u=ship?.architect?.ultimate;this.gun.visible=u?.kind==='assembly';
-    if(u?.kind==='assembly'&&ship){
-      const dx=u.aimX-ship.pos.x,dz=u.aimZ-ship.pos.z;
-      this.gun.rotation.y=-(Math.atan2(dx,-dz)-ship.heading);
-      this.gun.scale.x=Math.max(.02,Math.min(1,(u.elapsed-.4)/1.1));
-      const count=u.members.filter(i=>ship.architect!.slots[i].state!=='destroyed').length;
-      this.segments.forEach((g,i)=>{g.visible=i<count;g.position.y=Math.sin(time*8+i)*Math.max(0,1.5-u.elapsed)*8;});
-      this.blue.color.setRGB(1.3+Math.min(1,u.elapsed/3.5),2.2,2.7);
+
+  pose(_time:number,ship?:Ship):void {
+    for(let i=0;i<this.docks.length;i++){
+      const slot=ship?.architect?.slots[i],docked=!slot||slot.state==='docked';
+      this.docks[i].visible=docked;
+      const open=docked?1-smooth((slot?.dockedFor??1)/.25):1;
+      this.clamps[i].forEach((c,n)=>c.rotation.x=(n?1:-1)*open*.85);
     }
+    const module=ship?.architectPlatform,slot=module?.owner.architect?.slots[module.index];
+    const flight=!!slot&&(!!slot.path||slot.state==='citadel');
+    let folded=flight?1:0;
+    if(slot?.path){const p=slot.path,k=p.elapsed/p.duration;folded=Math.min(smooth(k*5),smooth((1-k)*5));}
+    this.supports.forEach(g=>g.rotation.x=folded*1.25);
+    this.jets.visible=flight&&!!ship?.alive&&!ship.game.over;
+    const u=ship?.architect?.ultimate;
+    this.gun.visible=!!ship?.alive&&!ship.game.over&&u?.kind==='assembly';
+    if(u?.kind==='assembly'&&ship){
+      const build=smooth((u.elapsed-.2)/1.3),charge=smooth((u.elapsed-1.5)/2),fire=Math.max(0,u.elapsed-3.5);
+      this.gun.rotation.y=-(Math.atan2(u.aimX-ship.pos.x,-(u.aimZ-ship.pos.z))-ship.renderHeading);
+      this.gun.position.y=40+(ASSEMBLY_HEIGHT-40)*build;
+      this.cannon.scale.setScalar(Math.max(.01,build));
+      this.cannon.position.x=-30*Math.sin(Math.min(1,fire/.5)*Math.PI)*(this.reduce?.25:1);
+      this.rails.forEach((r,i)=>r.position.z=(i?1:-1)*(1-charge)*13);
+      this.vents.forEach((v,i)=>v.rotation.x=(i?1:-1)*(.25+charge*.5+Math.min(1,fire*8)*.4));
+      this.satellites.forEach((g,i)=>{
+        g.visible=u.elapsed>=1.5&&u.members.includes(i)&&ship.architect!.slots[i].state==='assembling';
+        satellitePose(ship,i,this.reduce,this.point);g.position.copy(this.point);
+      });
+      this.blue.color.setRGB(.55+charge*.7,1.3+charge*.8,1.7+charge*.7);
+    }else this.blue.color.setHex(CYAN);
   }
   dispose():void {this.owned.forEach(g=>g.dispose());this.armor.dispose();this.amber.dispose();this.blue.dispose();}
 }

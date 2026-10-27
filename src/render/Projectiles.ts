@@ -66,7 +66,9 @@ varying float vAlong;
 varying vec4 vColor;
 varying float vDist;
 void main() {
-  float a = pow(1.0 - abs(vAcross), 1.5) * vColor.a;
+  // Interpolation can put an edge fractionally beyond 1. A negative fractional
+  // power becomes NaN, which bloom spreads across the entire frame.
+  float a = pow(max(0.0, 1.0 - abs(vAcross)), 1.5) * vColor.a;
 #ifdef TAPER
   a *= mix(0.05, 1.0, vAlong * vAlong);
 #endif

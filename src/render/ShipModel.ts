@@ -1,4 +1,4 @@
-import { ArchitectModel } from './ArchitectModel';
+import { ArchitectModel, architectTurretGeometry } from './ArchitectModel';
 import { StepperModel } from './StepperModel';
 import {
   AdditiveBlending,
@@ -918,7 +918,7 @@ function geometriesFor(spec: ShipSpec) {
   const turrets: TurretGeo[] = [];
   if (spec.main) {
     const shell = spec.main.ap ?? spec.main.he!;
-    for (const t of spec.main.turrets) turrets.push(turretGeometry(shell.caliber, t.barrels, spec.main.barrelLength, t.y, pal.upper, pal.accent, spec.model.turretStyle));
+    for (const t of spec.main.turrets) turrets.push(spec.id==='architect'||spec.id==='architectPlatform'?architectTurretGeometry():turretGeometry(shell.caliber, t.barrels, spec.main.barrelLength, t.y, pal.upper, pal.accent, spec.model.turretStyle));
   }
   const secs = new Map<string, TurretGeo>();
   for (const sg of spec.secondaries ?? []) {
@@ -1082,6 +1082,7 @@ export class ShipView {
       const yaw = new Group();
       if(spec.id==='architect') yaw.name=`architect-turret-${i}`;
       yaw.position.set(t.x, deckHeight(spec, t.x) + t.y, t.z ?? 0);
+      if(spec.id==='architect'||spec.id==='architectPlatform')yaw.position.y+=12;
       yaw.rotation.y = -t.facing * DEG;
       yaw.add(this.mesh(tg.house, shadows));
       const pitch = new Group();
