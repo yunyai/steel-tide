@@ -405,7 +405,7 @@ export class HUD {
         if (a.ship === pc.ship) {
           flash(this.skillEls[a.index].root, 'flash');
           if (sp.ult) {
-            const brief:Record<string,string>={architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Eight waves of crossfire · Hold the formation',architectCitadel:'Airborne battery · Protect allies within 900 m'};
+            const brief:Record<string,string>={flickerStep:'20 strikes · Fold, strike, repeat',crossStep:'60 cuts · Final convergence',afterimageStep:'Four echoes · Your attacks, multiplied',architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Eight waves of crossfire · Hold the formation',architectCitadel:'Airborne battery · Protect allies within 900 m'};
             this.callout(sp.name, brief[sp.id]??sp.description, c);
             this.flashScreen(c);
           }
@@ -510,6 +510,7 @@ export class HUD {
     const g = this.game;
     const pc = this.pc;
     const me = pc.ship;
+    this.root.classList.toggle('stepper-cinematic', me.spec.id === 'stepper' && me.alive && !g.over && me.skills.some(st => st.spec.ult && st.active));
     const e = this.e;
     const team = this.team;
     const enemy: Team = team === 0 ? 1 : 0;

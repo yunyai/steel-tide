@@ -1749,6 +1749,11 @@ select {
   animation: callout 2.2s ease-out forwards;
 }
 
+/* Leave Stepper's strike totals and spatial effects clear during its ultimate sequences. */
+.hud.stepper-cinematic .alerts { top: 16%; }
+.hud.stepper-cinematic .callout { font-size: clamp(1.8rem, 3.1vw, 2.6rem); }
+.hud.stepper-cinematic .callout small { font-size: 0.45em; }
+
 /* Boss warning: a red band across the screen. */
 .siren {
   position: absolute;

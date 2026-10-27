@@ -1,5 +1,6 @@
 import type { CrossState } from './CrossStep';
 import { MAP_HALF, SHELL_TIME_SCALE } from '../../config';
+import type { GameEventMap } from '../../core/Events';
 import type { Game } from '../../core/Game';
 import { canTrack } from '../../core/Targeting';
 import { distToHull, segmentHitsHull } from '../../core/hull';
@@ -124,7 +125,7 @@ export function safeStep(
     if (collides({ pos: p, heading: p.heading, spec: s.spec } as unknown as Ship)) return false;
   return true;
 }
-export function snapStep(s: Ship, p: Landing, dodge = false): void {
+export function snapStep(s: Ship, p: Landing, dodge = false, step?: GameEventMap['blink']['step']): void {
   const fromHeading = s.heading;
   const fromX = s.pos.x,
     fromZ = s.pos.z;
@@ -133,7 +134,7 @@ export function snapStep(s: Ship, p: Landing, dodge = false): void {
   s.heading = s.prevHeading = s.renderHeading = p.heading;
   s.prevPos.copy(s.pos);
   s.renderPos.copy(s.pos);
-  s.game.events.emit('blink', { ship: s, fromX, fromZ, fromHeading, dodge });
+  s.game.events.emit('blink', { ship: s, fromX, fromZ, fromHeading, dodge, step });
 }
 export function aimedLanding(s: Ship, range: number): Landing | null {
   const owner = s.stepper?.copy ? s.summonOwner! : s;

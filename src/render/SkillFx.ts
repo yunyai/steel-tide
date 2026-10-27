@@ -1,4 +1,3 @@
-import { ghostHull } from './ShipModel';
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -9,8 +8,6 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
-  MeshBasicMaterial,
-  TorusGeometry,
   Quaternion,
   type Scene,
   ShaderMaterial,
@@ -119,7 +116,6 @@ export class SkillFx {
   /** Beams already announced (charge and hum sounds play once). */
   private heard = new Set<number>();
   private shieldSound = 0;
-  private stepFades: { mesh: Mesh<import('three').BufferGeometry, MeshBasicMaterial>; life: number; max: number; ship: Ship; ownGeo: boolean }[] = [];
   private off: (() => void)[] = [];
   private time = 0;
   /** Spell circles drawn under fantasy casters for a moment after each cast. */
@@ -163,14 +159,8 @@ export class SkillFx {
       ev.on('strike', (e) => this.strikeLaunched(e.strike)),
       ev.on('strikeHit', (e) => this.strikeHit(e.strike)),
       ev.on('blink', (e) => this.blink(e.ship, e.fromX, e.fromZ, e.fromHeading, e.dodge)),
-      ev.on('stepImpact', e => {
-        const color=this.friendly(e.ship)?0xb388ff:0xff668f;
-        this.stepFade(e.ship,new Mesh(new TorusGeometry(e.radius,Math.max(4,e.radius*0.008),4,64),new MeshBasicMaterial({color,transparent:true,opacity:0.85,depthWrite:false})),e.x,3,e.z,0.7,true);
-        const ring=this.stepFades[this.stepFades.length-1];ring.mesh.rotation.x=Math.PI/2;
-        if(e.kind==='copies')audio.cue('afterimageStep','activate','transform',e.x,20,e.z,this.locals.includes(e.ship));
-        else {audio.play('hit',e.x,10,e.z,300,0.6);this.add.spawn({x:e.x,y:20,z:e.z,life:0.25,size:140,size1:15,color:0xf4edff,kind:PK.Glow});}
-      }),
       ev.on('skill', (e) => {
+        if (e.ship.spec.id==='stepper') return;
         if (eraOf(e.ship.spec) !== 'fantasy') return;
         const st = e.ship.skills[e.index];
         if (!st) return;
@@ -211,8 +201,6 @@ export class SkillFx {
       b.mesh.material.dispose();
     }
     this.bubbleGeo.dispose();
-    for(const f of this.stepFades){this.scene.remove(f.mesh);f.mesh.material.dispose();if(f.ownGeo)f.mesh.geometry.dispose();}
-    this.stepFades=[];
   }
 
   setViewport(heightPx: number): void {
@@ -333,24 +321,8 @@ export class SkillFx {
     this.flat.spawn({ x, y: y + 0.4, z, life: 18, size: r, size1: r * 2, color: 0xe8eef0, alpha: 0.6, kind: PK.Foam });
   }
 
-  private stepFade(ship: Ship, mesh: Mesh<import('three').BufferGeometry, MeshBasicMaterial>, x:number,y:number,z:number,life:number,ownGeo:boolean):void {
-    if(this.stepFades.length>=48){const old=this.stepFades.shift()!;this.scene.remove(old.mesh);old.mesh.material.dispose();if(old.ownGeo)old.mesh.geometry.dispose();}
-    mesh.position.set(x,y,z);this.scene.add(mesh);this.stepFades.push({mesh,life,max:life,ship,ownGeo});
-  }
-  private blink(s: Ship, fx: number, fz: number, fromHeading = s.heading, dodge = false): void {
-    if(s.spec.id==='stepper') {
-      for(const t of dodge ? [0,0.33,0.66] : [0]) {
-        const ghost=new Mesh(ghostHull(s.spec),new MeshBasicMaterial({color:dodge?0xd5baff:0xb388ff,transparent:true,opacity:0.5,depthWrite:false}));
-        ghost.rotation.y=Math.PI/2-fromHeading;
-        this.stepFade(s,ghost,fx+(s.pos.x-fx)*t,s.pos.y+3,fz+(s.pos.z-fz)*t,dodge?0.5-t*0.2:0.45,false);
-      }
-      if(dodge) {
-        const ring=new Mesh(new TorusGeometry(s.spec.beam*1.2,3,4,40),new MeshBasicMaterial({color:0xe5d4ff,transparent:true,opacity:0.9,depthWrite:false}));
-        ring.rotation.x=Math.PI/2;
-        this.stepFade(s,ring,s.pos.x,3,s.pos.z,0.25,true);
-        audio.cue('sideStep','activate','slash',s.pos.x,10,s.pos.z,this.locals.includes(s));
-      }
-    }
+  private blink(s: Ship, fx: number, fz: number, _fromHeading = s.heading, dodge = false): void {
+    if(s.spec.id==='stepper') return;
     const c = s.skills.find((k) => k.active)?.spec.accent ?? 0xb48cff;
     const L = s.spec.length;
     if(!dodge) audio.play('zap', s.pos.x, 10, s.pos.z, 100, 1);
@@ -413,7 +385,6 @@ export class SkillFx {
   update(dt: number): void {
     const g = this.game;
     this.time += dt;
-    for(let i=this.stepFades.length-1;i>=0;i--){const f=this.stepFades[i];f.life-=dt;f.mesh.material.opacity=Math.max(0,f.life/f.max)*0.55;if(f.life<=0){this.scene.remove(f.mesh);f.mesh.material.dispose();if(f.ownGeo)f.mesh.geometry.dispose();this.stepFades.splice(i,1);}}
     const r = this.ribbons;
     r.begin();
     for (const b of g.beams.beams) if (b.alive) this.beam(b, dt);
@@ -982,7 +953,6 @@ export class SkillFx {
 
   /** Hide a ship's bubble in viewports that cannot see the ship. */
   visible(ship: Ship, on: boolean): void {
-    for(const f of this.stepFades)if(f.ship===ship)f.mesh.visible=on;
     const b = this.bubbles.get(ship);
     if (b) b.mesh.visible = on && b.k > 0.01;
   }

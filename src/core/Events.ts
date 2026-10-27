@@ -50,7 +50,7 @@ export interface GameEventMap {
   architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox' };
   crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
   stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };
-  blink: { ship: Ship; fromX: number; fromZ: number; fromHeading?: number; dodge?: boolean };
+  blink: { ship: Ship; fromX: number; fromZ: number; fromHeading?: number; dodge?: boolean; step?: 'flash' | 'ram' | 'broad' | 'over' | 'back' };
   /** A ship refused to sink, or was raised from its wreck. */
   revive: { ship: Ship; skill: SkillSpec | null };
   shieldHit: { ship: Ship; amount: number };

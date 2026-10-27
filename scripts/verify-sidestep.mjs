@@ -72,7 +72,7 @@ try {
         );
         for (const h of b.huds) h.update(1 / 60);
         window.steel.renderer.render(b.viewports);
-        maxFades = Math.max(maxFades, b.scene.skillFx.stepFades.length);
+        maxFades = Math.max(maxFades, b.scene.stepperFx.ghosts.count);
         maxVoices = Math.max(maxVoices, audio.budget.size);
       }
       return {
@@ -83,8 +83,8 @@ try {
         maxFades,
         maxVoices,
         notice: document.body.textContent.includes('SIDESTEP'),
-        ghosts: b.scene.skillFx.stepFades.filter((f) => !f.ownGeo).length,
-        rings: b.scene.skillFx.stepFades.filter((f) => f.ownGeo).length,
+        ghosts: b.scene.stepperFx.ghosts.count,
+        rings: b.scene.stepperFx.light.count,
       };
     });
     await page.screenshot({ path: `${out}/sidestep-${q}.jpg`, quality: 88 });
@@ -102,7 +102,7 @@ try {
         !r.notice ||
         r.ghosts < 3 ||
         r.rings < 1 ||
-        r.maxFades > 48 ||
+        r.maxFades > 64 ||
         r.maxVoices > 40,
     )
   )

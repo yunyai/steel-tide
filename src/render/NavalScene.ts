@@ -1,4 +1,5 @@
 import { ArchitectFx } from './ArchitectFx';
+import { StepperFx } from './StepperFx';
 import { CrossStepFx } from './CrossStepFx';
 import { TorpedoAim, type TorpedoAimSource } from './TorpedoAim';
 import { contactVisible } from '../core/Targeting';
@@ -27,6 +28,7 @@ export class NavalScene implements BattleScene {
   readonly torpedoAim = new TorpedoAim();
   readonly architectFx: ArchitectFx;
   readonly crossFx: CrossStepFx;
+  readonly stepperFx: StepperFx;
   readonly aiming = new Map<PerspectiveCamera, TorpedoAimSource>();
   readonly scene = new Scene();
   readonly env: Environment;
@@ -52,6 +54,7 @@ export class NavalScene implements BattleScene {
   ) {
     this.scene.add(this.torpedoAim.root);
     this.crossFx = new CrossStepFx(this.scene, game);
+    this.stepperFx = new StepperFx(this.scene, game);
     this.architectFx = new ArchitectFx(this.scene, game);
     const q = quality();
     const gl = renderer.gl;
@@ -120,6 +123,7 @@ export class NavalScene implements BattleScene {
     this.warm = [];
     this.architectFx.dispose();
     this.crossFx.dispose();
+    this.stepperFx.dispose();
     this.torpedoAim.dispose();
     this.aiming.clear();
     this.effects.dispose();
@@ -198,6 +202,7 @@ export class NavalScene implements BattleScene {
     this.skillFx.views = this.effects.views;
     this.skillFx.update(dt);
     this.crossFx.update(dt, this.skillFx.locals);
+    this.stepperFx.update(dt, this.skillFx.locals);
     this.architectFx.update(dt, this.skillFx.locals);
     this.projectiles.update(g);
   }
@@ -214,7 +219,7 @@ export class NavalScene implements BattleScene {
   private visibility(team: Team | -1): void {
     for (const [s, v] of this.views) {
       v.side(team === -1 ? s.team === 0 : s.team === team);
-      v.setMode(shipViewMode(s, team));
+      v.setMode(s.stepper?.copy&&!s.alive?'hidden':shipViewMode(s, team));
     }
     for (const [s, v] of this.views) {
       if (v.dome) v.dome.visible = v.root.visible && v.glowing;
@@ -225,6 +230,7 @@ export class NavalScene implements BattleScene {
   prepare(vp: Viewport, heightPx: number): void {
     this.architectFx.prepare(vp.team, heightPx);
     this.crossFx.prepare(vp.team, heightPx);
+    this.stepperFx.prepare(vp.team, heightPx);
     this.torpedoAim.update(this.aiming.get(vp.camera), heightPx);
     this.visibility(vp.team);
     if (vp.hide) this.views.get(vp.hide as Ship)?.setMode('hidden');

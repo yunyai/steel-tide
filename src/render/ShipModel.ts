@@ -1,5 +1,6 @@
 import { ArchitectModel, architectTurretGeometry } from './ArchitectModel';
 import { StepperModel } from './StepperModel';
+import { stepperHullGeometry, stepperTurretGeometry } from './StepperGeometry';
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -918,7 +919,7 @@ function geometriesFor(spec: ShipSpec) {
   const turrets: TurretGeo[] = [];
   if (spec.main) {
     const shell = spec.main.ap ?? spec.main.he!;
-    for (const t of spec.main.turrets) turrets.push(spec.id==='architect'||spec.id==='architectPlatform'?architectTurretGeometry():turretGeometry(shell.caliber, t.barrels, spec.main.barrelLength, t.y, pal.upper, pal.accent, spec.model.turretStyle));
+    for (const t of spec.main.turrets) turrets.push(spec.id==='architect'||spec.id==='architectPlatform'?architectTurretGeometry():spec.id==='stepper'?stepperTurretGeometry():turretGeometry(shell.caliber, t.barrels, spec.main.barrelLength, t.y, pal.upper, pal.accent, spec.model.turretStyle));
   }
   const secs = new Map<string, TurretGeo>();
   for (const sg of spec.secondaries ?? []) {
@@ -935,7 +936,7 @@ function geometriesFor(spec: ShipSpec) {
     lp.box(2.2, 1.1, n * r * 2.1 + 0.4, -3.6, 0.4, 0, pal.upper);
     launcher = lp.merge();
   }
-  g = { hull: staticGeometry(spec.id === 'stepper' ? {...spec,beam:spec.beam*0.56} : spec), turrets, secs, launcher };
+  g = { hull: spec.id==='stepper'?stepperHullGeometry():staticGeometry(spec), turrets, secs, launcher };
   geoCache.set(spec.id, g);
   return g;
 }
@@ -1080,6 +1081,7 @@ export class ShipView {
     spec.main?.turrets.forEach((t, i) => {
       const tg = geo.turrets[i];
       const yaw = new Group();
+      if(spec.id==='stepper') yaw.name=`stepper-turret-${i}`;
       if(spec.id==='architect') yaw.name=`architect-turret-${i}`;
       yaw.position.set(t.x, deckHeight(spec, t.x) + t.y, t.z ?? 0);
       if(spec.id==='architect'||spec.id==='architectPlatform')yaw.position.y+=12;
@@ -1406,7 +1408,7 @@ export class ShipView {
 
   update(ship: Ship, time: number): void {
     this.architectModel?.pose(time,ship);
-    this.stepModel?.pose(time,!!ship.stepper?.copy);
+    this.stepModel?.pose(time,ship);
     if(this.stepModel) {
       this.material.transparent=!!ship.stepper?.copy;
       this.material.opacity=ship.stepper?.copy?0.48:1;

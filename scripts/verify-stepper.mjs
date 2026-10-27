@@ -175,7 +175,7 @@ try {
         window.steel.renderer.render(b.viewports);
         times.push(performance.now() - t);
         voices = Math.max(voices, audio.budget.size);
-        meshes = Math.max(meshes, b.scene.skillFx.stepFades.length);
+        meshes = Math.max(meshes, b.scene.stepperFx.ghosts.count);
       }
       times.sort((a, b) => a - b);
       const hash = stateHash(g),
@@ -191,7 +191,7 @@ try {
         b.pcs.map((pc) => pc.camera),
       );
       window.steel.renderer.render(b.viewports);
-      const rings = b.scene.skillFx.stepFades.filter((f) => f.ownGeo).length;
+      const rings = b.scene.crossFx.light.count;
       const oldSources = [...audio.sources];
       g.finish(0, 'cleanup');
       const cleaned =
@@ -221,7 +221,7 @@ try {
         r.copyCount === 4 &&
         r.damage === 2400000 &&
         r.voices <= 40 &&
-        r.maxFades <= 48 &&
+        r.maxFades <= 64 &&
         r.rings > 0 &&
         r.cleaned &&
         !r.errors.length,

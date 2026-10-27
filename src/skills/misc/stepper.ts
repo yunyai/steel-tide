@@ -45,7 +45,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
       activate(s) {
         const p = aimedLanding(s, 3500);
         if (!p) return s.failSkill('Flash-step: destination blocked; no safe water');
-        snapStep(s, p);
+        snapStep(s, p, false, 'flash');
       },
       aiShouldUse(s, _g, t) {
         return !!t && Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) > 2200;
@@ -72,7 +72,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
         for (let d = 0; d <= r * 2; d += 20)
           if (!safeStep(s, p.x + forwardX(h) * d, p.z + forwardZ(h) * d, h, true))
             return s.failSkill('Ram-step: rush corridor blocked');
-        snapStep(s, p);
+        snapStep(s, p, false, 'ram');
         stepState(s).rush = { x0: p.x, z0: p.z, x1: end.x, z1: end.z, elapsed: 0, hit: [] };
       },
       update(s, g, dt, st) {
@@ -115,7 +115,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
         if (!t) return s.failSkill('Broadstep: aim at a detected enemy within 3 km');
         const p = aroundTarget(s, t, 700, true);
         if (!p) return s.failSkill('Broadstep: no safe broadside position');
-        snapStep(s, p);
+        snapStep(s, p, false, 'broad');
         const a = stepState(s);
         a.broadUntil = g.time + 8;
         a.broadTarget = t.id;
@@ -166,7 +166,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
           heading: h,
         };
         if (!safeStep(s, p.x, p.z, h)) return s.failSkill('Overstep: rearward landing blocked');
-        snapStep(s, p);
+        snapStep(s, p, false, 'over');
         const b = bearingTo(s.pos.x, s.pos.z, t.pos.x, t.pos.z);
         for (let i = 0; i < 8; i++) {
           const v = s.localToWorld(-s.spec.length / 2 - 15, 0, (i - 3.5) * 7);
@@ -208,7 +208,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
           }
         }
         if (!p) return s.failSkill('Backstep: no safe retreat 2 km away');
-        snapStep(s, p);
+        snapStep(s, p, false, 'back');
         stepState(s).phaseUntil = g.time + 2;
         buff(s, 'backStep', 2, (m) => {
           m.invulnerable = true;
