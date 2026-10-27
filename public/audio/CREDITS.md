@@ -2,7 +2,7 @@
 
 All current game audio plays packaged recordings: weapons, impacts, abilities, interface feedback, and naval/ground ambience and engine loops. There are no runtime oscillators or generated noise, including in fallback paths. Missing primary files use another appropriate recording; if every suitable recording fails, that sound is skipped.
 
-43 curated derivatives, about 3.4 MB total. Exact source paths, licenses, cuts, pitch/filtering, crossfades, codecs and source hashes are recorded in [manifest.json](manifest.json). `scripts/packageAudio.py` reproduces the new derivatives from licensed source packs.
+57 curated derivatives, about 3.6 MB total. Exact source paths, licenses, cuts, pitch/filtering, crossfades, codecs and source hashes are recorded in [manifest.json](manifest.json). `scripts/packageAudio.py` and `scripts/packageFleetAudio.py` reproduce the derivatives from the licensed source packs.
 
 ## Libraries and licenses
 
@@ -61,3 +61,24 @@ All current game audio plays packaged recordings: weapons, impacts, abilities, i
 Ambient and engine loops are PCM16 mono at 32 kHz, circularly crossfaded before packaging to avoid lossy-codec padding at the seam. One-shots are AAC at 44.1 kHz. Pitch changes and recorded-note sequences are edits of licensed recordings. Every audible WebAudio source is a decoded sample.
 
 Shared ability families intentionally reuse appropriate recordings across ship skills. There is no added music system.
+
+## Fleet presentation expansion
+
+Additional recordings by Helton Yan (CC BY 4.0) and Kenney (CC0 1.0), from the packs linked above. Detailed edits and original filenames are also in [manifest.json](manifest.json).
+
+| Packaged file | Original recording | Author | Edits |
+| --- | --- | --- | --- |
+| arcane-charge.m4a | MAGSpel_Anime Ability Charge 5.wav | Helton Yan | First 1.65s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| energy-charge.m4a | MAGSpel_Anime Ability Charge 12.wav | Helton Yan | First 1.8s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| energy-heavy.m4a | MAGSpel_Anime Ability Release 5.wav | Helton Yan | First 2.1s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| energy-pulse.m4a | MAGSpel_Anime Ability Release 9.wav | Helton Yan | First 1.3s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| cut-heavy.m4a | FGHTClth_Anime Swing 3.wav | Helton Yan | First 0.65s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| cut-light.m4a | FGHTClth_Anime Swing 2.wav | Helton Yan | First 0.55s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| blast-heavy.m4a | EXPLDsgn_Anime Explosion 4.wav | Helton Yan | First 1.8s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| blast-shock.m4a | EXPLDsgn_Anime Explosion 7.wav | Helton Yan | First 1.4s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| ward-rise.m4a | MAGSpel_Anime Ability Ready 6.wav | Helton Yan | First 1.4s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| phase-arrival.m4a | MAGSpel_Anime Ability Ready 7.wav | Helton Yan | First 1.2s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| sensor-ping.m4a | Audio/computerNoise_002.ogg | Kenney | -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| mechanical-hit.m4a | Audio/impactMetal_003.ogg | Kenney | -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| plasma-shot.m4a | Audio/laserLarge_002.ogg | Kenney | -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |
+| jet-release.m4a | Audio/thrusterFire_002.ogg | Kenney | -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s. |

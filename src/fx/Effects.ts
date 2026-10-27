@@ -1,3 +1,4 @@
+import {fleetWeapon} from './FleetAudio';
 import type { Vector3 } from 'three';
 import { MAP_SIZE, MAX_FIRES } from '../config';
 import type { Game } from '../core/Game';
@@ -49,7 +50,7 @@ export class Effects {
   ) {
     const ev = game.events;
     this.off.push(
-      ev.on('gunFired', (e) => this.muzzle(e.x, e.y, e.z, e.bearing, e.caliber, e.secondary, e.look)),
+      ev.on('gunFired', (e) => this.muzzle(e.x, e.y, e.z, e.bearing, e.caliber, e.secondary, e.look, fleetWeapon(e.ship.spec,e.look))),
       ev.on('splash', (e) => this.splash(e.x, e.z, e.caliber)),
       ev.on('terrainHit', (e) => this.dirt(e.x, e.y, e.z, e.caliber)),
       ev.on('shellHit', (e) => this.hit(e.x, e.y, e.z, e.caliber, e.outcome, e.attacker, e.target)),
@@ -71,7 +72,8 @@ export class Effects {
       ev.on('skill', (e) => {
         const ult = !!e.ship.skills[e.index].spec.ult;
         const skill = e.ship.skills[e.index].spec;
-        audio.cue(skill.id, 'activate', skill.icon === 'beam' || skill.icon === 'laser' ? 'beam' : skill.icon === 'blade' ? 'slash' : ult ? 'impact' : 'charge', e.ship.pos.x, e.ship.pos.y + 10, e.ship.pos.z, this.locals.includes(e.ship));
+        const beamOwnsSound=this.game.beams.beams.some(b=>b.alive&&b.owner===e.ship&&b.skill.id===skill.id);
+        if(!beamOwnsSound&&!audio.shipCue(e.ship.spec,skill,e.ship.pos.x,e.ship.pos.y+10,e.ship.pos.z,this.locals.includes(e.ship))) audio.cue(skill.id, 'activate', skill.icon === 'beam' || skill.icon === 'laser' ? 'beam' : skill.icon === 'blade' ? 'slash' : ult ? 'impact' : 'charge', e.ship.pos.x, e.ship.pos.y + 10, e.ship.pos.z, this.locals.includes(e.ship));
         this.skillBurst(e.ship, e.ship.skills[e.index].spec, ult);
       }),
       ev.on('shift', e => { if (!e.quiet) audio.cue('titanShift', e.on ? 'activate' : 'end', 'transform', e.ship.pos.x, e.ship.pos.y, e.ship.pos.z, this.locals.includes(e.ship)); }),
@@ -144,13 +146,13 @@ export class Effects {
     }
   }
 
-  muzzle(x: number, y: number, z: number, bearing: number, caliber: number, secondary: boolean, look: GunLook = 'shell'): void {
+  muzzle(x: number, y: number, z: number, bearing: number, caliber: number, secondary: boolean, look: GunLook = 'shell', asset?: string): void {
     const st = GUN_STYLE[look];
     const c = caliber / 1000;
     const dx = Math.sin(bearing);
     const dz = -Math.cos(bearing);
     const d = this.near(x, z);
-    audio.play('gun', x, y, z, caliber, secondary ? 0.35 : 1);
+    audio.play('gun', x, y, z, caliber, secondary ? 0.35 : 1, {asset});
     if (d > 14000) return;
     const k = secondary ? 0.6 : 1;
     for (let i = 0; i < 3; i++) {

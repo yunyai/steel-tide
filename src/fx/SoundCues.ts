@@ -1,3 +1,4 @@
+import { FLEET_AUDIO_ASSETS } from './FleetAudio';
 import type { AudioCategory } from './VoiceBudget';
 
 export const SOUND_KINDS = ['gun', 'explosion', 'splash', 'hit', 'torpedo', 'missile', 'flak', 'depth', 'zap', 'thunder', 'laser', 'nuke', 'shield', 'charge', 'ricochet', 'collapse'] as const;
@@ -42,7 +43,7 @@ export function cueAsset(ability: string, event: CueEvent, family: CueFamily): s
   return FAMILY_ASSETS[OVERRIDES[ability]?.[event] ?? (event === 'impact' ? 'impact' : family)];
 }
 export function allAudioAssets(): string[] {
-  return [...new Set([...Object.values(UI_ASSETS), ...Object.values(FAMILY_ASSETS), ...Object.values(WORLD_ASSETS), ...GUN_ASSETS, ...Object.values(LOOP_ASSETS)])];
+  return [...new Set([...FLEET_AUDIO_ASSETS, ...Object.values(UI_ASSETS), ...Object.values(FAMILY_ASSETS), ...Object.values(WORLD_ASSETS), ...GUN_ASSETS, ...Object.values(LOOP_ASSETS)])];
 }
 export function worldAsset(kind: SoundKind, size: number): string {
   return kind === 'gun' ? GUN_ASSETS[size < 150 ? 0 : size < 300 ? 1 : 2] : WORLD_ASSETS[kind];

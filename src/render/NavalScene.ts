@@ -1,3 +1,4 @@
+import { FleetFx } from './FleetFx';
 import { ArchitectFx } from './ArchitectFx';
 import { StepperFx } from './StepperFx';
 import { CrossStepFx } from './CrossStepFx';
@@ -26,6 +27,7 @@ const SHORE_HALF = MAP_HALF + 500;
 /** A naval battle's 3D scene: sky, sea, islands, ships, shells and every effect. */
 export class NavalScene implements BattleScene {
   readonly torpedoAim = new TorpedoAim();
+  readonly fleetFx: FleetFx;
   readonly architectFx: ArchitectFx;
   readonly crossFx: CrossStepFx;
   readonly stepperFx: StepperFx;
@@ -53,6 +55,7 @@ export class NavalScene implements BattleScene {
     readonly game: Game,
   ) {
     this.scene.add(this.torpedoAim.root);
+    this.fleetFx = new FleetFx(this.scene, game);
     this.crossFx = new CrossStepFx(this.scene, game);
     this.stepperFx = new StepperFx(this.scene, game);
     this.architectFx = new ArchitectFx(this.scene, game);
@@ -123,6 +126,7 @@ export class NavalScene implements BattleScene {
     this.warm = [];
     this.architectFx.dispose();
     this.crossFx.dispose();
+    this.fleetFx.dispose();
     this.stepperFx.dispose();
     this.torpedoAim.dispose();
     this.aiming.clear();
@@ -201,6 +205,7 @@ export class NavalScene implements BattleScene {
     this.effects.update(dt);
     this.skillFx.views = this.effects.views;
     this.skillFx.update(dt);
+    this.fleetFx.update(dt);
     this.crossFx.update(dt, this.skillFx.locals);
     this.stepperFx.update(dt, this.skillFx.locals);
     this.architectFx.update(dt, this.skillFx.locals);
@@ -230,6 +235,7 @@ export class NavalScene implements BattleScene {
   get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions]; }
 
   prepare(vp: Viewport, heightPx: number): void {
+    this.fleetFx.prepare(vp.team);
     this.architectFx.prepare(vp.team, heightPx);
     this.crossFx.prepare(vp.team, heightPx);
     this.stepperFx.prepare(vp.team, heightPx);

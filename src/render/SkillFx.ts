@@ -1,3 +1,4 @@
+import {fleetCue} from '../fx/FleetAudio';
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -115,6 +116,7 @@ export class SkillFx {
   private bubbleGeo = new SphereGeometry(1, 40, 20);
   /** Beams already announced (charge and hum sounds play once). */
   private heard = new Set<number>();
+  private fired = new Set<number>();
   private shieldSound = 0;
   private off: (() => void)[] = [];
   private time = 0;
@@ -401,7 +403,9 @@ export class SkillFx {
       for (const st of s.skills) if (st.active) this.titanSkill(s, st, dt);
     }
     r.end();
-    if (this.heard.size > 200) this.heard.clear();
+    const live=new Set(g.beams.beams.filter(b=>b.alive).map(b=>b.id));
+    for(const id of this.heard)if(!live.has(id))this.heard.delete(id);
+    for(const id of this.fired)if(!live.has(id))this.fired.delete(id);
   }
 
   private beam(b: Beam, dt: number): void {
@@ -410,8 +414,12 @@ export class SkillFx {
     const charging = b.age < b.charge;
     if (!this.heard.has(b.id)) {
       this.heard.add(b.id);
-      if (b.charge > 0) audio.play('charge', b.x0, b.y0, b.z0, b.charge, 1);
-      window.setTimeout(() => audio.play('laser', b.x1, b.y1, b.z1, b.time, 1), b.charge * 1000);
+      if (b.charge > 0) audio.play('charge', b.x0, b.y0, b.z0, b.charge, .75,{asset:fleetCue(b.owner.spec,b.skill)?.assets[0]});
+
+    }
+    if(!charging&&!this.fired.has(b.id)){
+      this.fired.add(b.id);const cue=fleetCue(b.owner.spec,b.skill,'release');
+      audio.play('laser',b.x0,b.y0,b.z0,b.time,.8,{asset:cue?.assets[0]});
     }
     if (b.mode === 'orbital') {
       const x = b.x1;

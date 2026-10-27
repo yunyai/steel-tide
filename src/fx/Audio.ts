@@ -1,3 +1,5 @@
+import { fleetCue, variantAsset } from './FleetAudio';
+import type { ShipSpec, SkillSpec } from '../core/types';
 import { Vector3 } from 'three';
 import { sound } from '../input/Settings';
 import { allAudioAssets, cueAsset, LOOP_ASSETS, recordedFallbacks, UI_ASSETS, worldAsset, worldCategory, type AudioBattleMode, type CueEvent, type CueFamily, type LoopKind, type SoundKind, type UiSound } from './SoundCues';
@@ -31,6 +33,7 @@ interface SampleOptions {
 }
 
 export class AudioEngine {
+  private cueSequence = new Map<string,number>();
   private ctx: AudioContext | null = null;
   private master!: GainNode;
   private effects!: GainNode;
@@ -129,6 +132,7 @@ export class AudioEngine {
   }
 
   stopBattle(): void {
+    this.cueSequence.clear();
     this.battleActive = false;
     this.generation++;
     this.pending = [];
@@ -262,7 +266,7 @@ export class AudioEngine {
   }
 
   /** One decoded recording per voice, with physical attenuation and a short bounded delay. */
-  play(kind: SoundKind, x: number, y: number, z: number, size = 100, gain = 1, options: { category?: AudioCategory; priority?: number; asset?: string } = {}): void {
+  play(kind: SoundKind, x: number, y: number, z: number, size = 100, gain = 1, options: { category?: AudioCategory; priority?: number; asset?: string; rate?: number } = {}): void {
     if (!this.ctx || !this.battleActive || this.muted || this.ctx.state !== 'running') return;
     const { d, pan } = this.nearest(x, y, z);
     const c = size / 1000;
@@ -279,10 +283,16 @@ export class AudioEngine {
         bus: category === 'ability' ? this.abilities : this.weapons, category, priority, key, gain: vol,
         pan: Math.max(-1, Math.min(1, pan * 0.8)), cutoff: Math.max(260, 14000 / (1 + d / 900)),
         delay: priority >= 2 ? Math.min(0.08, d / SOUND_SPEED) : Math.min(0.35, d / SOUND_SPEED),
-        rate: kind === 'explosion' ? size < 0.7 ? 1.15 : size > 2 ? 0.85 : 1 : 1,
+        rate: options.rate ?? (kind === 'explosion' ? size < 0.7 ? 1.15 : size > 2 ? 0.85 : 1 : 1),
         duration: (kind === 'laser' || kind === 'charge') && size < 20 ? Math.max(0.2, Math.min(12, size)) : undefined,
       });
     });
+  }
+
+  shipCue(ship:ShipSpec,skill:SkillSpec,x:number,y:number,z:number,local=false):boolean {
+    const cue=fleetCue(ship,skill);if(!cue)return false;
+    const key=`${ship.id}:${skill.id}`,seq=this.cueSequence.get(key)??0;this.cueSequence.set(key,seq+1);
+    this.play(cue.kind,x,y,z,cue.kind==='explosion'?2:100,local?cue.gain:cue.gain*.6,{category:'ability',priority:local?3:1,asset:variantAsset(cue.assets,seq),rate:cue.rate+(seq%3-1)*.025});return true;
   }
 
   cue(ability: string, event: CueEvent, family: CueFamily, x: number, y: number, z: number, local = false): void {

@@ -490,5 +490,141 @@
     "modifications": "2\u20135 s excerpt; rate 1; mono; normalized to -25 LUFS / -3 dBTP; 32 kHz PCM16, circular crossfade 0.3 s; 1600 Hz low-pass",
     "archive": "https://ftpmirror.your.org/pub/misc/sonniss/sonniss.zip",
     "sourceCrc32": "33677287"
+  },
+  {
+    "file": "arcane-charge.m4a",
+    "sourceFile": "MAGSpel_Anime Ability Charge 5.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 1.65s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "45e3f4b7"
+  },
+  {
+    "file": "energy-charge.m4a",
+    "sourceFile": "MAGSpel_Anime Ability Charge 12.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 1.8s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "06311f73"
+  },
+  {
+    "file": "energy-heavy.m4a",
+    "sourceFile": "MAGSpel_Anime Ability Release 5.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 2.1s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "6ffa9010"
+  },
+  {
+    "file": "energy-pulse.m4a",
+    "sourceFile": "MAGSpel_Anime Ability Release 9.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 1.3s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "4bced175"
+  },
+  {
+    "file": "cut-heavy.m4a",
+    "sourceFile": "FGHTClth_Anime Swing 3.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 0.65s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "8703ca2b"
+  },
+  {
+    "file": "cut-light.m4a",
+    "sourceFile": "FGHTClth_Anime Swing 2.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 0.55s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "bf53f0a4"
+  },
+  {
+    "file": "blast-heavy.m4a",
+    "sourceFile": "EXPLDsgn_Anime Explosion 4.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 1.8s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "ba94b282"
+  },
+  {
+    "file": "blast-shock.m4a",
+    "sourceFile": "EXPLDsgn_Anime Explosion 7.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 1.4s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "1defe018"
+  },
+  {
+    "file": "ward-rise.m4a",
+    "sourceFile": "MAGSpel_Anime Ability Ready 6.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 1.4s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "2e8aae43"
+  },
+  {
+    "file": "phase-arrival.m4a",
+    "sourceFile": "MAGSpel_Anime Ability Ready 7.wav",
+    "author": "Helton Yan",
+    "source": "https://heltonyan.itch.io/retroanimesfx",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "modifications": "First 1.2s excerpt; 80ms fade out; -21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s.",
+    "sourceCrc32": "74468331"
+  },
+  {
+    "file": "sensor-ping.m4a",
+    "sourceFile": "Audio/computerNoise_002.ogg",
+    "author": "Kenney",
+    "source": "https://kenney.nl/assets/sci-fi-sounds",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "-21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s."
+  },
+  {
+    "file": "mechanical-hit.m4a",
+    "sourceFile": "Audio/impactMetal_003.ogg",
+    "author": "Kenney",
+    "source": "https://kenney.nl/assets/sci-fi-sounds",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "-21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s."
+  },
+  {
+    "file": "plasma-shot.m4a",
+    "sourceFile": "Audio/laserLarge_002.ogg",
+    "author": "Kenney",
+    "source": "https://kenney.nl/assets/sci-fi-sounds",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "-21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s."
+  },
+  {
+    "file": "jet-release.m4a",
+    "sourceFile": "Audio/thrusterFire_002.ogg",
+    "author": "Kenney",
+    "source": "https://kenney.nl/assets/sci-fi-sounds",
+    "license": "CC0 1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "modifications": "-21 LUFS/-3dBTP normalization; mono 44.1kHz AAC 96kbit/s."
   }
 ]

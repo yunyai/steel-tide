@@ -1,3 +1,4 @@
+import { addFleetDetails, FLEET_DETAILS } from './FleetDetails';
 import { ArchitectModel, architectTurretGeometry } from './ArchitectModel';
 import { StepperModel } from './StepperModel';
 import { stepperHullGeometry, stepperTurretGeometry } from './StepperGeometry';
@@ -645,6 +646,7 @@ function staticGeometry(spec: ShipSpec): BufferGeometry {
   const pal = m.palette;
   const fb = spec.freeboard;
   const L = spec.length;
+  const refreshed=!!FLEET_DETAILS[spec.id];
   const upperPaint = m.camo === 'dazzle' || m.camo === 'baltic' ? camoFn(spec, pal.upper) : pal.upper;
 
   if (spec.sub) {
@@ -655,6 +657,7 @@ function staticGeometry(spec: ShipSpec): BufferGeometry {
     p.cyl(0.18, 0.2, 4.5, ct.x + 1.5, fb + ct.h - 0.2, 0, pal.accent);
     p.cyl(0.14, 0.16, 3.6, ct.x - 1, fb + ct.h - 0.2, 0, pal.accent);
     p.box(ct.len * 0.6, 0.4, spec.beam * 0.45, ct.x - ct.len * 0.2, fb + ct.h * 0.55, 0, pal.upper);
+    addFleetDetails(p,spec);
     return p.merge();
   }
 
@@ -664,7 +667,14 @@ function staticGeometry(spec: ShipSpec): BufferGeometry {
     const base = b.y ?? stack;
     stack = base + b.h;
     const y0 = fb + base - 0.3;
-    p.box(b.len, b.h + 0.3, b.w, b.x, y0, b.z ?? 0, upperPaint, { taper: m.flightDeck ? 0 : 0.04 });
+    p.box(b.len, b.h + 0.3, b.w, b.x, y0, b.z ?? 0, upperPaint, { taper: m.flightDeck ? 0 : refreshed ? .12 : .04, slope: refreshed&&!m.flightDeck?Math.min(2,b.h*.2):0 });
+    if(refreshed&&!m.flightDeck){
+      p.box(b.len*.92,.35,b.w*.9,b.x,y0+b.h,b.z??0,pal.upper);
+      for(const side of [-1,1])for(let j=0;j<Math.min(8,Math.floor(b.len/5));j++){
+        const wx=b.x-b.len*.36+j*b.len*.72/Math.max(1,Math.min(8,Math.floor(b.len/5))-1);
+        p.box(Math.min(2,b.len*.04),.6,.22,wx,y0+b.h*.65,(b.z??0)+side*b.w*.46,0x263d4c);
+      }
+    }
     if (!m.flightDeck && b.h >= 3) p.box(b.len * 1.004, 0.45, b.w * 1.01, b.x, y0 + b.h - 1.1, b.z ?? 0, STRIPE);
     if (!m.flightDeck && b.len > 20) {
       for (const sx of [-1, 1]) {
@@ -769,7 +779,15 @@ function staticGeometry(spec: ShipSpec): BufferGeometry {
       const y = base + sl.h * 0.12 + r * rowH;
       const w = sl.w * (1 - r * 0.18);
       p.box(0.3, 0.3, w * 1.06, sl.x, y + rowH, 0, pal.upper);
-      p.box(0.5, rowH * 0.92, w, sl.x + 0.5, y + rowH * 0.05, 0, m.sailColor ?? 0xe6dcc4, { slope: -0.8, taper: 0.06 });
+      if(refreshed){
+        const points:number[]=[];
+        const pt=(u:number,v:number)=>[sl.x+.5+Math.sin(u*Math.PI)*Math.sin(v*Math.PI)*w*.12,y+rowH*(.05+.92*v),(u-.5)*w*(1-.06*v)];
+        for(let a=0;a<8;a++)for(let b=0;b<5;b++){
+          const v0=pt(a/8,b/5),v1=pt((a+1)/8,b/5),v2=pt(a/8,(b+1)/5),v3=pt((a+1)/8,(b+1)/5);
+          for(const tri of [[v0,v1,v2],[v2,v1,v3],[v2,v1,v0],[v3,v1,v2]])for(const v of tri)points.push(...v);
+        }
+        const cloth=new BufferGeometry();cloth.setAttribute('position',new BufferAttribute(new Float32Array(points),3));cloth.computeVertexNormals();p.add(cloth,m.sailColor??0xe6dcc4);
+      }else p.box(0.5, rowH * 0.92, w, sl.x + 0.5, y + rowH * 0.05, 0, m.sailColor ?? 0xe6dcc4, { slope: -0.8, taper: 0.06 });
     }
     p.cyl(0.25, 0.25, 2, sl.x, top + 2.6, 0, pal.accent, { seg: 5 });
   }
@@ -876,7 +894,7 @@ function staticGeometry(spec: ShipSpec): BufferGeometry {
     const len = L * (0.86 + fd.overhang);
     const w = spec.beam * 0.98;
     const cx = L * 0.02;
-    p.box(len, 0.7, w, cx, y, 0, m.hullStyle === 'block' ? pal.deck : 0x7a6146);
+    p.box(len, 0.7, w, cx, y, 0, refreshed ? pal.deck : m.hullStyle === 'block' ? pal.deck : 0x7a6146);
     p.box(len * 0.98, 0.04, 0.5, cx, y + 0.7, w / 2 - 1.2, 0xe8e8e0);
     p.box(len * 0.98, 0.04, 0.5, cx, y + 0.7, -w / 2 + 1.2, 0xe8e8e0);
     for (let i = 0; i < 12; i++) p.box(6, 0.04, 0.45, cx - len / 2 + 14 + i * (len - 28) / 11, y + 0.7, 0, 0xe8e8e0);
@@ -896,9 +914,11 @@ function staticGeometry(spec: ShipSpec): BufferGeometry {
     for (let i = 0; i < 9; i++) {
       const px = cx - len / 2 + 12 + Math.floor(i / 3) * 11;
       const pz = (i % 3 - 1) * 9;
-      planeParts(p, planeCol, px, y + 2.1, pz, 0, 0.9);
+      if(refreshed&&look&&look!=='plane')p.add(flyerGeometry(look,planeCol),planeCol,px,y+2.4,pz,{sx:.75,sy:.75,sz:.75});
+      else planeParts(p, planeCol, px, y + 2.1, pz, 0, 0.9);
     }
   }
+  addFleetDetails(p,spec);
   return p.merge();
 }
 
@@ -935,6 +955,15 @@ function geometriesFor(spec: ShipSpec) {
     for (let i = 0; i < n; i++) lp.barrel(r, r, 8, -3.5, 0.95, (i - (n - 1) / 2) * r * 2.1, pal.upper, 8);
     lp.box(2.2, 1.1, n * r * 2.1 + 0.4, -3.6, 0.4, 0, pal.upper);
     launcher = lp.merge();
+  }
+  if(FLEET_DETAILS[spec.id]) for(const t of turrets){
+    const p=new Parts();p.list.push(t.house);
+    const k=Math.max(1,(spec.main?.he?.caliber??150)/100);
+    for(const side of [-1,1]){
+      p.box(k*2.2,k*.65,k*.3,-k*.5,k*.2,side*k*1.6,pal.upper,{taper:.2});
+      p.box(k*1.6,k*.14,k*.32,-k*.6,k*.85,side*k*1.6,pal.accent);
+    }
+    p.box(k*.65,k*.45,k*.65,-k,k*1.15,0,pal.upper,{taper:.25});t.house=p.merge();
   }
   g = { hull: spec.id==='stepper'?stepperHullGeometry():staticGeometry(spec), turrets, secs, launcher };
   geoCache.set(spec.id, g);
