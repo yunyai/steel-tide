@@ -2,8 +2,8 @@ import type {ShipSpec,SkillSpec} from '../core/types';
 import {eraOf} from '../data/factions';
 import {skillTreatment} from '../render/FleetStyle';
 import type {SoundKind} from './SoundCues';
-export const FLEET_AUDIO_ASSETS=['arcane-charge','energy-charge','energy-heavy','energy-pulse','cut-heavy','cut-light','blast-heavy','blast-shock','ward-rise','phase-arrival','sensor-ping','mechanical-hit','plasma-shot','jet-release'].map(s=>`/audio/${s}.m4a`);
-const a=(...names:string[])=>names.map(n=>`/audio/${n}.m4a`);
+export const FLEET_AUDIO_ASSETS=['arcane-charge','energy-charge','energy-heavy','energy-pulse','cut-heavy','cut-light','blast-heavy','blast-shock','ward-rise','phase-arrival','sensor-ping','mechanical-hit','plasma-shot','jet-release'].map(s=>`${import.meta.env.BASE_URL}audio/${s}.m4a`);
+const a=(...names:string[])=>names.map(n=>`${import.meta.env.BASE_URL}audio/${n}.m4a`);
 export interface FleetCue {assets:string[];kind:SoundKind;gain:number;rate:number}
 export function fleetCue(ship:ShipSpec,skill:SkillSpec,event: 'activate'|'release'='activate'):FleetCue|undefined{
  if(ship.id==='stepper'||ship.nation==='foundry')return;
@@ -33,5 +33,5 @@ export function fleetCue(ship:ShipSpec,skill:SkillSpec,event: 'activate'|'releas
 export function variantAsset(assets:readonly string[],sequence:number):string{return assets[sequence%assets.length];}
 export function fleetWeapon(ship:ShipSpec,look:string|undefined):string|undefined{
  if(ship.id==='stepper'||ship.nation==='foundry'||!look||look==='shell')return;
- return look==='rail'?'/audio/mechanical-hit.m4a':look==='laser'||look==='plasma'?'/audio/plasma-shot.m4a':look==='soulfire'?'/audio/phase-arrival.m4a':look==='runefire'?'/audio/blast-shock.m4a':'/audio/energy-pulse.m4a';
+ return look==='rail'?`${import.meta.env.BASE_URL}audio/mechanical-hit.m4a`:look==='laser'||look==='plasma'?`${import.meta.env.BASE_URL}audio/plasma-shot.m4a`:look==='soulfire'?`${import.meta.env.BASE_URL}audio/phase-arrival.m4a`:look==='runefire'?`${import.meta.env.BASE_URL}audio/blast-shock.m4a`:`${import.meta.env.BASE_URL}audio/energy-pulse.m4a`;
 }
