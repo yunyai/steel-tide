@@ -1,12 +1,12 @@
 import { ARCHITECT_BATTERY_FLIGHT, type ArchitectBatteryCast, type ArchitectBatteryStage } from '../../data/architectBattery';
-import { planArchitectBatteryLayout, buildArchitectBatteryPaths } from './ArchitectBatteryPose';
+import { planArchitectBatteryLayout, buildArchitectBatteryPaths, planArchitectBatteryFormation, BATTERY_TRANSPORT_TIME } from './ArchitectBatteryPose';
 import { applyElementMark, ultimateElementHit } from './ArchitectElements';
 import type { Ship } from '../../ships/Ship';
 import { MAP_HALF } from '../../config';
 import { bearingTo } from '../../core/math';
 import { distToHull, segmentHitsHull } from '../../core/hull';
 import { hurt, buff } from '../kit';
-import { available, archAim, attachModule, clearLine, dockPoint, formation, moduleLanding, moveModule, raiseShield, updateModulePath } from './ArchitectRuntime';
+import { available, archAim, attachModule, clearLine, dockPoint, moduleLanding, moveModule, raiseShield, updateModulePath } from './ArchitectRuntime';
 
 export type ArchitectUltimateKind='assembly'|'killbox'|'citadel';
 export interface ArchitectUltimate {
@@ -19,16 +19,15 @@ export function beginArchitectUltimate(s:Ship,kind:ArchitectUltimateKind):boolea
   const a=s.architect!,slots=available(s);
   if(slots.length<2)return s.failSkill('Assembly requires at least two surviving modules');
   const p=archAim(s);
-  const poses=kind==='killbox'?formation(s,slots,p.x,p.z,1500):null;
-  if(kind==='killbox'&&!poses)return s.failSkill('Grand Battery: no safe water for the complete formation');
+  const poses=kind==='killbox'?planArchitectBatteryFormation(p,slots.length,(x,z)=>s.game.map.heightAt(x,z)):null;
   const battery:ArchitectBatteryCast|null=kind==='killbox'?{
     id:s.game.battery.beginCast(s),generation:s.game.battery.generation(s),startedAt:s.game.time,
-    members:slots.map((slot,n)=>{const q=poses![n],carrier={x:q.x,y:0,z:q.z,heading:q.heading};return {slot:slot.index,carrier,layout:planArchitectBatteryLayout(carrier,{x:p.x,y:4,z:p.z},(x,z)=>s.game.map.heightAt(x,z))};}),
+    members:slots.map((slot,n)=>{const q=poses![n],carrier={x:q.x,y:q.y,z:q.z,heading:q.heading};return {slot:slot.index,carrier,layout:planArchitectBatteryLayout(carrier,{x:p.x,y:4,z:p.z},(x,z)=>s.game.map.heightAt(x,z))};}),
   }:null;
   a.ultimate={battery,kind,elapsed:0,members:slots.map(a=>a.index),x:p.x,z:p.z,aimX:s.control.aimX,aimY:s.control.aimY??4,aimZ:s.control.aimZ,locked:false,waves:0,fired:false,granted:[]};
   slots.forEach((slot,n)=>{
     const q=kind==='assembly'?dockPoint(s,slot.index):kind==='killbox'?poses![n]:airPosition(s,n,slots.length,slot.index);
-    moveModule(s,slot,q,'assembling',1.5);
+    moveModule(s,slot,q,'assembling',kind==='killbox'?BATTERY_TRANSPORT_TIME:1.5);
   });
   s.game.events.emit('architectCommand',{ship:s,kind});return true;
 }
@@ -138,12 +137,13 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
     if(u.elapsed+1e-8>=13.5)endArchitectUltimate(s);
   }
 }
-export function endArchitectUltimate(s:Ship):void {
+export function endArchitectUltimate(s:Ship,recalling=false):void {
   const a=s.architect,u=a?.ultimate;if(!a||!u)return;
   a.ultimate=null;
   const reservations:ReturnType<typeof moduleLanding>[]=[];
   for(const i of u.members){
     const slot=a.slots[i];if(slot.state==='destroyed')continue;
+    if(recalling)continue;
     if(u.kind==='assembly'){
       if(slot.entity?.alive)attachModule(s,slot);
       slot.state='docked';slot.path=null;s.turrets[i].disabled=slot.disabled;s.turrets[i].reload=slot.reload;
@@ -153,6 +153,6 @@ export function endArchitectUltimate(s:Ship):void {
       else moveModule(s,slot,dockPoint(s,i),'returning');
     }else if(slot.entity?.alive){if(slot.path)slot.entity.pos.set(slot.path.tx,slot.path.ty,slot.path.tz);slot.state='deployed';slot.path=null;}
   }
-  const st=s.skills[indexOf(u.kind)];if(st)st.time=0;
+  const st=s.skills[indexOf(u.kind)];if(st){st.time=0;if(st.active){st.active=false;s.game.events.emit('skillEnd',{ship:s,index:st.index});}}
   s.game.events.emit('architectCommand',{ship:s,kind:'end'});
 }

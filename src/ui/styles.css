@@ -3963,3 +3963,12 @@ select {
 @media(max-width:520px){.arsenal-editor{padding:10px;}.arsenal-presets select{max-width:100%;}.arsenal-detail label{flex-wrap:wrap;gap:6px;}.arsenal-detail select{flex-basis:100%;}.arsenal-transfer-actions button{flex:1 1 auto;}}
 .module-skill-cooldown[data-phase="paused"] { --cool-color:#8aa5b3; color:#c4d9e3; }
 .module-skill-cooldown[data-phase="disabled"] { --cool-color:#b5968d; color:#ffd5c6; }
+
+.arsenal-omissions { display:flex; flex-wrap:wrap; gap:8px 14px; margin:0 0 12px; }
+.arsenal-omissions label { display:flex; align-items:center; gap:7px; color:#a7bdc8; font-size:12px; min-width:0; }
+.arsenal-omissions select { min-width:0; max-width:100%; }
+.architect-docking { display:flex; justify-content:center; flex-wrap:wrap; gap:3px 12px; color:#d7e9f1; background:#07131ee8; padding:4px 7px; font-size:11px; line-height:1.35; margin:1px 0 5px; font-variant-numeric:tabular-nums; }
+.architect-docking b { color:#91e2f0; font-weight:600; }
+.architect-slot[data-capacitor="charged"] { box-shadow:inset 0 2px #91e2f0; }
+.sk.cons[data-utility="drive"] .nm { color:#91e2f0; }
+@media(max-width:520px) { .arsenal-omissions label { flex:1 1 130px; } .arsenal-omissions select { flex:1; } }

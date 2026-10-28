@@ -1,5 +1,7 @@
 import type { Input } from '../input/Input';
 
+const availableOption=(option:HTMLOptionElement):boolean=>!option.disabled&&!(option.parentElement instanceof HTMLOptGroupElement&&option.parentElement.disabled);
+
 /** DOM focus keeps keyboard, mouse and controller menus on the same actions. */
 export class MenuNavigation {
   private nextMove = 0;
@@ -50,8 +52,9 @@ export class MenuNavigation {
   move(root: HTMLElement, direction: number): void {
     const active = document.activeElement;
     if (active instanceof HTMLSelectElement && root.contains(active)) {
-      const i = Number(active.dataset.menuOption ?? active.selectedIndex);
-      const next = i + direction;
+      const i = active.multiple ? Number(active.dataset.menuOption ?? active.selectedIndex) : active.selectedIndex;
+      let next = i + direction;
+      while (next >= 0 && next < active.options.length && !availableOption(active.options[next])) next += direction;
       if (next >= 0 && next < active.options.length) {
         active.dataset.menuOption = String(next);
         if (!active.multiple) {
@@ -75,8 +78,10 @@ export class MenuNavigation {
     if (active instanceof HTMLSelectElement) {
       if (active.multiple) {
         const option = active.options[Number(active.dataset.menuOption ?? Math.max(0, active.selectedIndex))];
-        if (option) option.selected = !option.selected;
-        active.dispatchEvent(new Event('change', { bubbles: true }));
+        if (option && availableOption(option)) {
+          option.selected = !option.selected;
+          active.dispatchEvent(new Event('change', { bubbles: true }));
+        }
       } else {
         const controls = this.controls(root);
         controls[(controls.indexOf(active) + 1) % controls.length]?.focus();

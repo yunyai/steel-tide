@@ -2,11 +2,14 @@ import type { ArchitectType } from '../../data/architectLoadout';
 import type { ArchitectBatteryArc, ArchitectBatteryCarrier, ArchitectBatteryHeadPose, ArchitectBatteryLayout, ArchitectBatteryPoint, ArchitectBatteryStage } from '../../data/architectBattery';
 import { MAP_HALF } from '../../config';
 
-export const BATTERY_HEAD_SCALE=2.25;
-export const BATTERY_HEAD_RADIUS=145;
+// The entire articulated head is about three ordinary turrets across, including its chassis.
+export const BATTERY_HEAD_SCALE=1.05;
+export const BATTERY_HEAD_RADIUS=100;
+export const BATTERY_TRANSPORT_TIME=.9;
+export const BATTERY_READY_TIME=1.5;
 const clamp=(x:number)=>Math.max(0,Math.min(1,x));
 const smooth=(x:number)=>{const t=clamp(x);return t*t*(3-2*t);};
-const socketX:Record<ArchitectType,number>={furnace:110,cryo:133.5,storm:110,gravity:110,prism:123,sentinel:124.5,abyss:110,restoration:110,bastion:110,resonance:110,swarm:110};
+const socketX:Record<ArchitectType,number>={furnace:110,cryo:133.5,storm:110,gravity:110,prism:123,sentinel:124.5,abyss:110,restoration:110,bastion:110,resonance:110,swarm:110,vector:110};
 const socketY:Partial<Record<ArchitectType,number>>={cryo:5,prism:13,sentinel:5};
 export interface BatteryPathInput {
   readonly carrier:ArchitectBatteryCarrier; readonly center:ArchitectBatteryPoint; readonly radius:number;
@@ -27,26 +30,26 @@ export interface BatteryHeadPose extends ArchitectBatteryHeadPose {
 export function architectBatteryHeadPosition(carrier:ArchitectBatteryCarrier,center:ArchitectBatteryPoint,layout:ArchitectBatteryLayout,head:0|1):ArchitectBatteryPoint {
   const side=head?1:-1;
   if(layout==='folded')return {x:carrier.x+Math.sin(carrier.heading)*side*26,y:carrier.y+12,z:carrier.z-Math.cos(carrier.heading)*side*26};
-  const angle=Math.atan2(carrier.z-center.z,carrier.x-center.x),radius=Math.hypot(carrier.x-center.x,carrier.z-center.z),offset=(layout==='wide'?9:6)*Math.PI/180;
-  return {x:center.x+Math.cos(angle+side*offset)*radius,y:carrier.y+13,z:center.z+Math.sin(angle+side*offset)*radius};
+  const angle=Math.atan2(carrier.z-center.z,carrier.x-center.x),offset=side*(layout==='wide'?108:82);
+  return {x:carrier.x-Math.sin(angle)*offset,y:carrier.y+13,z:carrier.z+Math.cos(angle)*offset};
 }
 
-/** Test complete feet, swept barrel footprints and both sides of each solid truss. */
-export function planArchitectBatteryLayout(carrier:ArchitectBatteryCarrier,center:ArchitectBatteryPoint,groundHeight:(x:number,z:number)=>number):ArchitectBatteryLayout {
-  const wet=(x:number,z:number)=>Math.abs(x)<MAP_HALF-8&&Math.abs(z)<MAP_HALF-8&&groundHeight(x,z)<0;
-  for(const layout of ['wide','compact'] as const){
-    let fits=true;
-    for(const head of [0,1] as const){
-      const p=architectBatteryHeadPosition(carrier,center,layout,head),yaw=Math.atan2(center.z-p.z,center.x-p.x),fx=Math.cos(yaw),fz=Math.sin(yaw);
-      for(let i=0;i<24;i++){const a=i*Math.PI/12;if(!wet(p.x+Math.cos(a)*BATTERY_HEAD_RADIUS,p.z+Math.sin(a)*BATTERY_HEAD_RADIUS))fits=false;}
-      for(let d=-200;d<=310;d+=25)for(const side of [-50,0,50])if(!wet(p.x+fx*d-fz*side,p.z+fz*d+fx*side))fits=false;
-      const dx=p.x-carrier.x,dz=p.z-carrier.z,len=Math.hypot(dx,dz)||1;
-      for(let d=0;d<=len;d+=20)for(const side of [-24,0,24])if(!wet(carrier.x+dx*d/len-dz/len*side,carrier.z+dz*d/len+dx/len*side))fits=false;
-    }
-    if(fits)return layout;
-  }
-  // The original targetable hub was validated by formation(). Cosmetic scale cannot veto it.
-  return 'folded';
+/** Full machinery hovers over solid terrain; islands never change its silhouette or membership. */
+export function planArchitectBatteryLayout(_carrier:ArchitectBatteryCarrier,_center:ArchitectBatteryPoint,_groundHeight:(x:number,z:number)=>number):ArchitectBatteryLayout {
+  return 'wide';
+}
+
+/** A translated ring preserves separation at map edges without clipping or omitting a hub.
+ * The 600m square covers both heads, their barrel sweep, trusses and hover clearance.
+ * Sampling is fixed and deterministic, shared by simulation and the frozen render paths. */
+export function planArchitectBatteryFormation(center:{x:number;z:number},count:number,groundHeight:(x:number,z:number)=>number):ArchitectBatteryCarrier[] {
+  const radius=1500,limit=MAP_HALF-radius-320,cx=Math.max(-limit,Math.min(limit,center.x)),cz=Math.max(-limit,Math.min(limit,center.z));
+  return Array.from({length:Math.max(0,count)},(_,i)=>{
+    const angle=i*Math.PI*2/count,x=cx+Math.sin(angle)*radius,z=cz-Math.cos(angle)*radius;
+    let y=55;
+    for(let dx=-300;dx<=300;dx+=20)for(let dz=-300;dz<=300;dz+=20)y=Math.max(y,groundHeight(x+dx,z+dz)+72);
+    return {x,y,z,heading:Math.atan2(center.x-x,-(center.z-z))};
+  });
 }
 
 export function architectBatteryImpactCell(input:BatteryPathInput,head:0|1):ArchitectBatteryPoint {
@@ -106,8 +109,8 @@ export function buildArchitectBatteryPaths(input:BatteryPathInput):readonly [Arc
 /** One pose drives receiver/barrel transforms and launch sockets. No game or render state is written. */
 export function getArchitectBatteryHeadPose(input:BatteryPoseInput):BatteryHeadPose {
   const full=architectBatteryHeadPosition(input.carrier,input.center,input.layout,input.head),hardware=architectBatteryHardware(input.type,input.layout),scale=hardware.scale;
-  const elapsed=input.elapsed,recovery=1-smooth((elapsed-8.15)/.65),shutter=smooth(elapsed/.35)*recovery,carriage=smooth((elapsed-.35)/.6)*recovery,lock=smooth((elapsed-.95)/.35)*recovery;
-  const position={x:input.carrier.x+(full.x-input.carrier.x)*carriage,y:full.y-(input.layout==='folded'?65:170)*(1-carriage),z:input.carrier.z+(full.z-input.carrier.z)*carriage};
+  const elapsed=input.elapsed,recovery=1-smooth((elapsed-8.15)/.65),shutter=smooth((elapsed-.9)/.24)*recovery,carriage=smooth((elapsed-.9)/.4)*recovery,lock=smooth((elapsed-1.2)/.3)*recovery;
+  const position={x:input.carrier.x+(full.x-input.carrier.x)*carriage,y:full.y-12*(1-carriage),z:input.carrier.z+(full.z-input.carrier.z)*carriage};
   const solved=input.path?{path:input.path,yaw:Math.atan2(input.path.control.z-input.path.muzzle.z,input.path.control.x-input.path.muzzle.x),pitch:Math.atan2(input.path.control.y-input.path.muzzle.y,Math.hypot(input.path.control.x-input.path.muzzle.x,input.path.control.z-input.path.muzzle.z))}:solve(input,input.head);
   const yaw=input.layout==='folded'?input.carrier.heading-Math.PI/2:solved.yaw,pitch=input.layout==='folded'?Math.PI/2:solved.pitch+(1-lock)*.65,extension=.3+.7*lock;
   const kick=input.stage===3?42:28,attack=input.stage===3?.09:.07,release=input.stage===3?.4:.26,age=input.recoilAge??Infinity;

@@ -91,7 +91,7 @@ export class NavalBattle implements ActiveBattle {
   ) {
     const { menu, menuLayer, renderer, hudLayer, input, canvas } = shell;
     audio.beginBattle();
-    this.batteryAudio=new ArchitectBatteryAudio(game);
+    this.batteryAudio=new ArchitectBatteryAudio(game,audio,impulse=>this.scene.effects.onShake?.(impulse));
     menu.hide();
     menuLayer.style.pointerEvents = 'none';
     this.scene = new NavalScene(renderer, game);
@@ -160,6 +160,7 @@ export class NavalBattle implements ActiveBattle {
         if (w.boss) this.slow = SLOW_HOLD + SLOW_EASE + 0.4;
       }),
       game.events.on('shipSunk', (s) => {
+        if (s.ship.architectPlatform || s.ship.architectDrone) return;
         const k = s.killer;
         const me = this.mine;
         if (me && k && s.ship.team !== me.team && (k === me || k.summonOwner === me)) this.slow = SLOW_HOLD + SLOW_EASE;

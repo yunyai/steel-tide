@@ -1,4 +1,5 @@
 import { architectSkillPresentation,architectModuleSkillPresentation,architectIncomingBattery } from './ArchitectSkillPresentation';
+import { architectDockingStatus,architectUtilityStatus } from '../skills/misc/ArchitectRuntime';
 import { ARCHETYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
@@ -280,6 +281,7 @@ export class HUD {
     el('i', 'ticks', hp);
     e.status = el('div', 'status-row', ck);
     if (me.architect) {
+      e.docking=el('div','architect-docking',ck);e.docking.setAttribute('aria-label','Docking protection, repair and capacitors');
       const battery=el('div','architect-battery',ck);battery.setAttribute('aria-label','Modular arsenal');
       for(let i=0;i<10;i++){
         const item=el('div','architect-slot',battery);item.innerHTML=`<b>${i+1}</b><span>DOCK</span><i></i>`;this.moduleEls.push(item);
@@ -380,6 +382,7 @@ export class HUD {
         if (mine(rb.ship)) this.ribbon(rb.kind);
       }),
       ev.on('shipSunk', (s) => {
+        if (s.ship.architectPlatform || s.ship.architectDrone) return;
         const k = s.killer;
         const line = el('div', '', e.killfeed);
         if (k) {
@@ -542,12 +545,18 @@ export class HUD {
 
     this.updateHull(dt);
     this.updateSkills();
+    if(me.architect){
+      const docking=architectDockingStatus(me);
+      setText(e.docking,`Dock ${docking.count}/10 · DR ${Math.round(docking.damageReduction*100)}% · Hull +${Math.round(!me.alive||me.mods.healBlock?0:docking.hullRegenPerSecond*me.mods.regenMul).toLocaleString()}/s · CAP ${docking.capacitors} ready / ${docking.chargingCycles} half`);
+      e.docking.title='Each docked platform: 2% hull protection, up to 20%. After 2s: platform repair 20%/s and hull repair 0.04%/s. Capacitors store one 18k elemental bolt per two ordinary docked firing cycles.';
+    }
     if(me.architect)this.moduleEls.forEach((item,i)=>{
       const a=me.architect!.slots[i],state=a.state;
       item.dataset.state=state;item.dataset.health=a.hp/me.architect!.moduleHp<.3?'low':a.hp/me.architect!.moduleHp<.6?'mid':'high';item.style.setProperty('--health',`${Math.max(0,a.hp/me.architect!.moduleHp)}`);
       setText(item.querySelector('span')!,state==='destroyed'?`${Math.ceil(a.rebuild)}s`:state==='docked'?'DOCK':state==='deployed'?'SET':state==='citadel'?'AIR':state==='returning'?'HOME':state==='assembling'?'BUILD':'MOVE');
       const theme=ARCHETYPES[a.type];item.querySelector('b')!.textContent=`${i+1} ${theme.short}`;item.querySelector('b')!.style.color=`#${theme.color.toString(16).padStart(6,'0')}`;
-      item.title=`${theme.name} ${i+1} · ${architectModuleSkillPresentation(me,i).label} · ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP`;
+      item.dataset.capacitor=a.capacitorCharged?'charged':a.capacitorCycles?'half':'empty';
+      item.title=`${theme.name} ${i+1} · ${architectModuleSkillPresentation(me,i).label} · ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP · capacitor ${a.capacitorCharged?'18k ready':`${a.capacitorCycles}/2 firing cycles`}`;
       item.setAttribute('aria-label',item.title);
     });
 
@@ -912,10 +921,29 @@ export class HUD {
     });
     me.consumables.forEach((c, i) => {
       const ce = this.consEls[i];
+      const utility=c.spec.type==='search'?architectUtilityStatus(me):null;
+      const drive=utility?.kind==='drive';
+      const mode=drive?'drive':'search';
+      if(c.spec.type==='search'&&ce.root.dataset.utility!==mode){
+        ce.root.dataset.utility=mode;
+        const svg=ce.root.querySelector('.hx svg');if(svg)svg.outerHTML=drive?glyph('blink'):consumableIcon('search');
+        setText(ce.root.querySelector('.nm')!,drive?'DRIVE':SEARCH_SHORT[eraOf(me.spec)]);
+      }
+      if(drive){
+        const a=me.architect!,active=a.drive?Math.max(0,.65-a.drive.elapsed):Math.max(0,a.mobileUntil-me.game.time);
+        ce.root.style.setProperty('--p',String(Math.min(1,utility.cooldown/18)));
+        setText(ce.t,active>0?String(Math.ceil(active)):utility.cooldown>0?String(Math.ceil(utility.cooldown)):utility.ready?'':'!');
+        const charges=ce.root.querySelector('.ch') as HTMLElement;charges.hidden=true;charges.style.display='none';
+        ce.root.classList.toggle('active',active>0);ce.root.classList.toggle('ready',utility.ready&&active<=0);ce.root.classList.toggle('cool',!utility.ready&&active<=0);ce.root.classList.remove('empty');
+        ce.root.title=`${utility.label} · ${utility.hullDash?650:400} m / 0.65s${utility.mobileBattery?' · mobile battery 6s':''} · ${active>0?`Active ${active.toFixed(1)}s · `:''}${utility.ready?'Ready':utility.reason}${utility.cooldown>0?` · recharge ${utility.cooldown.toFixed(1)}s`:''}`;
+        ce.root.setAttribute('aria-label',ce.root.title);return;
+      }
+      if(c.spec.type==='search'){ce.root.title=consumableLabel(c.spec.type,me.spec);ce.root.setAttribute('aria-label',ce.root.title);}
       const p = c.active > 0 ? 0 : c.cooldown > 0 ? Math.min(1, c.cooldown / c.spec.cooldown) : c.charges <= 0 ? 1 : 0;
       ce.root.style.setProperty('--p', p.toFixed(3));
       setText(ce.t, c.active > 0 ? String(Math.ceil(c.active)) : c.cooldown > 0 ? String(Math.ceil(c.cooldown)) : '');
       const ch = ce.root.querySelector('.ch') as HTMLElement;
+      ch.hidden=false;
       setText(ch, c.charges > 50 ? '' : String(c.charges));
       ch.style.display = c.charges > 50 ? 'none' : '';
       const ready = c.charges > 0 && c.cooldown <= 0;

@@ -1,6 +1,6 @@
 import { arsenalTeam } from './ArchitectTargets';
 import { ARCHETYPES, validSelection, copyLoadout, type ArchitectLoadout, type ArchitectType } from '../../data/architectLoadout';
-import { newElementState, updateElements, moduleLinked, type ArchitectElement, type ElementState } from './ArchitectElements';
+import { newElementState, updateElements, moduleLinked, elementTarget, fireCapacitorBolt, type ArchitectElement, type ElementState } from './ArchitectElements';
 import { ensureArchitectHealth, detachArchitectHealth, returnArchitectHealth, rebuildArchitectHealth, ARCHITECT_FULL_HP, MODULE_COMBAT_HP, PLATFORM_HEALTH_RATIO } from './ArchitectHealth';
 import { Vector3 } from 'three';
 import type { Ship, TurretState } from '../../ships/Ship';
@@ -18,6 +18,8 @@ export interface ModuleSlot {
   type:ArchitectType; skill:0|1; element:ArchitectElement; skillTimer:number; castGap:number; opening:boolean; boostUntil:number; reactionUntil:number; aboard:boolean; index:number; state:ModuleMode; hp:number; reload:number; reloadScale:number; disabled:number; rebuild:number; dockedFor:number;
   entity:Ship|null;
   path:{ x:number;y:number;z:number;tx:number;ty:number;tz:number;elapsed:number;duration:number;hit:number[];damage:boolean }|null;
+  capacitorCycles:0|1;capacitorCharged:boolean;
+  follow:{x:number;z:number}|null;
 }
 export interface ArchitectState {
   huntTarget:number;huntUntil:number;elements:ElementState; fullHp:number;moduleHp:number;healthReady:boolean;healthTransfer:boolean;
@@ -25,12 +27,76 @@ export interface ArchitectState {
   links:{a:number;b:number}[];linkUntil:number;linkTick:number;
   ultimate:ArchitectUltimate|null;
   clearing:boolean;
+  drive:{dx:number;dz:number;elapsed:number;distance:number}|null;
+  mobileUntil:number;capacitorReadyAt:number;
 }
 export interface ArchitectPlatform { owner:Ship; index:number }
 export const MODULE_HP=MODULE_COMBAT_HP;
 export function newArchitectState(_rng:()=>number=()=>.5,loadout?:ArchitectLoadout):ArchitectState {
   const selections=copyLoadout(loadout);
-  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:1,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false};
+  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:2/3,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null,capacitorCycles:0,capacitorCharged:false,follow:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false,drive:null,mobileUntil:0,capacitorReadyAt:0};
+}
+export function architectDockingStatus(s:Ship){
+  const a=s.architect,slots=a?.slots.filter(v=>v.state==='docked'&&v.hp>0)??[];
+  return {count:slots.length,damageReduction:Math.min(.2,slots.length*.02),hullRegenPerSecond:(a?.fullHp??0)*Math.min(.004,slots.filter(v=>v.dockedFor>2).length*.0004),capacitors:a?.slots.filter(v=>v.capacitorCharged).length??0,chargingCycles:a?.slots.reduce((n,v)=>n+v.capacitorCycles,0)??0};
+}
+export function architectUtilityStatus(s:Ship){
+  const a=s.architect;if(!a)return null;
+  const vectors=a.slots.filter(v=>v.type==='vector'&&v.state!=='destroyed'&&(v.entity?.hp??v.hp)>0),hullDash=vectors.some(v=>v.skill===0),mobileBattery=vectors.some(v=>v.skill===1);
+  const drive=vectors.length>0,c=s.consumables.find(v=>v.spec.type==='search'),cooldown=drive?Math.max(0,s.architectDriveReadyAt-s.game.time):Math.max(0,c?.cooldown??0);
+  const reason=!s.alive?'Ship sunk':!drive?(!c||c.charges<=0?'No Search charges':cooldown>0?'Search reloading':''):a.ultimate?.kind==='assembly'?'Final Assembly active':s.mods.banished?'Banished':s.mods.stunned?'Stunned':s.mods.rooted?'Rooted':s.mods.feared?'Feared':a.drive?'Drive active':cooldown>0?'Drive reloading':'';
+  return {kind:drive?'drive' as const:'search' as const,label:drive?(hullDash&&mobileBattery?'Hull Dash + Mobile Battery':hullDash?'Hull Dash':'Mobile Battery'):'Search',ready:!reason,reason,cooldown,duration:drive?18:c?c.spec.duration+c.spec.cooldown:0,hullDash,mobileBattery};
+}
+export function activateArchitectDrive(s:Ship):boolean{
+  const status=architectUtilityStatus(s),a=s.architect;if(!a||status?.kind!=='drive')return false;
+  if(!status.ready)return s.failSkill(status.reason);
+  const dx=s.control.aimX-s.pos.x,dz=s.control.aimZ-s.pos.z,d=Math.hypot(dx,dz);if(d<1)return s.failSkill('Drive: aim away from the hull');
+  a.drive={dx:dx/d,dz:dz/d,elapsed:0,distance:Math.min(d,status.hullDash?650:400)};s.architectDriveReadyAt=s.game.time+18;
+  if(status.mobileBattery){a.mobileUntil=s.game.time+6;for(const slot of a.slots){const m=slot.entity;slot.follow=slot.state==='deployed'&&m?.alive?{x:m.pos.x-s.pos.x,z:m.pos.z-s.pos.z}:null;}}
+  return true;
+}
+/** Small swept steps stop at the last legal footprint, including thin terrain and walls. */
+function moveArchitectLegally(m:Ship,x:number,z:number):boolean{
+  const dx=x-m.pos.x,dz=z-m.pos.z,n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/8)),ox=m.pos.x,oz=m.pos.z;
+  const owner=m.architectPlatform?.owner??m;
+  // Match the physical vertical span used by elemental hull intersections.
+  const bottom=m.pos.y-m.spec.draft,top=m.pos.y+m.spec.freeboard+30;
+  const ignoreShip=(o:Ship)=>o.architectDrone?.owner===owner||o.pos.y-o.spec.draft>top||bottom>o.pos.y+o.spec.freeboard+30;
+  for(let i=1;i<=n;i++){
+    const nx=ox+dx*i/n,nz=oz+dz*i/n;
+    if(!safeStep(m,nx,nz,m.heading,false,[],ignoreShip))return false;
+    m.pos.x=nx;m.pos.z=nz;
+  }
+  return true;
+}
+function updateArchitectDrive(s:Ship,dt:number):void{
+  const a=s.architect!,p=a.drive;
+  if(p){
+    if(a.ultimate?.kind==='assembly'||s.mods.stunned||s.mods.rooted||s.mods.feared||s.mods.banished)a.drive=null;
+    else {const step=Math.min(dt,.65-p.elapsed),d=p.distance*step/.65;p.elapsed+=step;
+      if(!moveArchitectLegally(s,s.pos.x+p.dx*d,s.pos.z+p.dz*d)||p.elapsed>=.65-1e-8)a.drive=null;
+    }
+  }
+  if(a.mobileUntil>s.game.time){
+    if(!a.ultimate&&!s.mods.stunned&&!s.mods.rooted&&!s.mods.feared&&!s.mods.banished)for(const slot of a.slots){
+      const m=slot.entity;if(slot.state!=='deployed'||!m?.alive||m.mods.stunned||m.mods.rooted||m.mods.feared||m.mods.banished)continue;
+      slot.follow??={x:m.pos.x-s.pos.x,z:m.pos.z-s.pos.z};
+      const dx=s.pos.x+slot.follow.x-m.pos.x,dz=s.pos.z+slot.follow.z-m.pos.z,k=Math.min(1,1200*dt/Math.max(1,Math.hypot(dx,dz)));
+      moveArchitectLegally(m,m.pos.x+dx*k,m.pos.z+dz*k);
+    }
+  }else for(const slot of a.slots)slot.follow=null;
+}
+export function recordArchitectGunCycle(s:Ship,index:number):void{
+  const slot=s.architect?.slots[index];if(!slot||slot.state!=='docked'||slot.hp<=0||slot.capacitorCharged)return;
+  if(slot.capacitorCycles===0)slot.capacitorCycles=1;else{slot.capacitorCycles=0;slot.capacitorCharged=true;}
+}
+function updateCapacitors(s:Ship):void{
+  const a=s.architect!;if(a.capacitorReadyAt>s.game.time||a.ultimate?.kind==='assembly'||s.mods.stunned||s.mods.disarmed||s.mods.silenced)return;
+  for(const slot of a.slots){
+    if(slot.state!=='docked'||slot.hp<=0||slot.disabled>0||!slot.capacitorCharged)continue;
+    const target=elementTarget(s,slot,true);if(!target)continue;
+    if(fireCapacitorBolt(s,slot,target)){slot.capacitorCharged=false;a.capacitorReadyAt=s.game.time+.6;return;}
+  }
 }
 export function dockPoint(s:Ship,i:number):Vector3 {
   const t=s.spec.main!.turrets[i];return s.localToWorld(t.x,s.spec.freeboard+t.y,t.z??0);
@@ -65,6 +131,7 @@ function disableDocked(s:Ship,a:ModuleSlot):void {
 }
 export function materialize(s:Ship,a:ModuleSlot):Ship {
   if(a.entity?.alive)return a.entity;
+  if(a.state==='docked'){a.reload=Math.max(0,s.turrets[a.index].reload);a.disabled=Math.max(0,s.turrets[a.index].disabled);}
   detachArchitectHealth(s,a);
   const p=dockPoint(s,a.index);
   const m=s.game.addShip(s.game.shipSpec('architectPlatform'),s.team,`${s.name} · ${a.index+1}`,p.x,p.z,s.heading);
@@ -84,11 +151,12 @@ export function moveModule(s:Ship,a:ModuleSlot,p:{x:number;y?:number;z:number;he
   disableDocked(s,a);
 }
 export function attachModule(s:Ship,a:ModuleSlot):void {
-  setModuleReloadScale(a,1);
+  setModuleReloadScale(s,a,architectGunReloadScale(s,'docked'));
   const m=a.entity;
   if(m){a.hp=m.hp;a.reload=Math.max(0,m.turrets[0].reload);a.disabled=Math.max(0,m.turrets[0].disabled);m.withdraw();}
   returnArchitectHealth(s,a);
   a.entity=null;a.path=null;a.state='docked';a.dockedFor=0;
+  a.follow=null;
   const t=s.turrets[a.index];if(t){t.disabled=a.disabled;t.reload=a.reload;}
 }
 export function deployModules(s:Ship):boolean {
@@ -105,6 +173,7 @@ export function deployModules(s:Ship):boolean {
   s.game.events.emit('architectCommand',{ship:s,kind:'deploy'});return true;
 }
 export function recallModules(s:Ship):boolean {
+  if(s.architect?.ultimate)endArchitectUltimate(s,true);
   const slots=available(s).filter(a=>a.state!=='docked');
   if(!slots.length)return s.failSkill('Recall: all surviving modules are docked');
   for(const a of slots){const p=dockPoint(s,a.index);moveModule(s,a,p,'returning');}
@@ -147,15 +216,16 @@ export function connectModules(s:Ship):boolean {
   a.linkUntil=s.game.time+10;a.linkTick=0;return true;
 }
 /** Keep the completed fraction of a reload when changing deployment modes. */
-function setModuleReloadScale(slot:ModuleSlot,scale:number):void {
+function setModuleReloadScale(s:Ship,slot:ModuleSlot,scale:number):void {
   if(slot.reloadScale===scale)return;
-  const turret=slot.entity?.turrets[0];
+  const turret=slot.entity?.turrets[0]??(slot.state==='docked'?s.turrets[slot.index]:undefined);
   slot.reload=(turret?.reload??slot.reload)*scale/slot.reloadScale;
   if(turret)turret.reload=slot.reload;
   slot.reloadScale=scale;
 }
-function platformReloadScale(slot:ModuleSlot):number {
-  return slot.state==='citadel'?1/6:slot.entity?.architectPlatform?.owner.architect?.ultimate?.kind==='killbox'?.25:slot.state==='deployed'?.5:1;
+export function architectGunReloadScale(s:Ship,state:ModuleMode):number {
+  const base=state==='docked'?2/3:state==='citadel'?1/6:s.architect?.ultimate?.kind==='killbox'&&state==='deployed'?.25:state==='deployed'?.5:1;
+  return base/(s.architect!.huntUntil>s.game.time?1.25:1);
 }
 export function commandedBurst(s:Ship,_spec:SkillSpec):boolean {
  const eligible=(t:Ship)=>canTrack(s,t)&&Math.hypot(t.pos.x-s.pos.x,t.pos.z-s.pos.z)<=6000;
@@ -163,7 +233,8 @@ export function commandedBurst(s:Ship,_spec:SkillSpec):boolean {
  const aimed=candidates.filter(t=>Math.hypot(t.pos.x-s.control.aimX,t.pos.z-s.control.aimZ)<=Math.max(250,t.spec.length/2)).sort((a,b)=>Math.hypot(a.pos.x-s.control.aimX,a.pos.z-s.control.aimZ)-Math.hypot(b.pos.x-s.control.aimX,b.pos.z-s.control.aimZ)||a.id-b.id)[0];
  const target=aimed??candidates.find(t=>t.id===s.control.targetId);
  if(!target)return s.failSkill('Hunt: aim at a tracked enemy within 6 km');
- s.architect!.huntTarget=target.id;s.architect!.huntUntil=s.game.time+10;return true;
+ s.architect!.huntTarget=target.id;s.architect!.huntUntil=s.game.time+10;
+ for(const slot of s.architect!.slots)setModuleReloadScale(s,slot,architectGunReloadScale(s,slot.state));return true;
 }
 export function huntedTarget(s:Ship):Ship|null {
  const a=s.architect;if(!a||a.huntUntil<=s.game.time)return null;
@@ -173,6 +244,8 @@ export function destroyPlatform(m:Ship):void {
   const tag=m.architectPlatform;if(!tag)return;
   const a=tag.owner.architect;if(!a||a.clearing)return;
   const slot=a.slots[tag.index];slot.skillTimer=ARCHETYPES[slot.type].skills[slot.skill].cooldown;slot.castGap=0;slot.opening=false;slot.hp=0;slot.state='destroyed';slot.rebuild=5;slot.entity=null;slot.path=null;slot.disabled=0;
+  slot.capacitorCycles=0;slot.capacitorCharged=false;
+  slot.follow=null;
   disableDocked(tag.owner,slot);
   m.game.events.emit('architectCommand',{ship:tag.owner,kind:'destroy'});
 }
@@ -210,24 +283,27 @@ export function updateModulePath(s:Ship,a:ModuleSlot,dt:number):void {
 export function updateArchitect(s:Ship,dt:number):void {
   const a=s.architect;if(!a)return;
   ensureArchitectHealth(s);
+  updateArchitectDrive(s,dt);
   let repairBudget=0;
   for(const slot of a.slots){
     const t=s.turrets[slot.index];
     if(slot.state==='docked'){
+      setModuleReloadScale(s,slot,architectGunReloadScale(s,'docked'));
       slot.reload=Math.max(0,t.reload);slot.disabled=Math.max(0,t.disabled);slot.dockedFor+=dt;
-      if(slot.dockedFor>2)repairBudget+=Math.min(a.moduleHp-slot.hp,a.moduleHp*.1*Math.min(dt,slot.dockedFor-2));
+      if(slot.hp>0&&slot.dockedFor>2){const time=Math.min(dt,slot.dockedFor-2);repairBudget+=Math.max(0,Math.min(a.moduleHp-slot.hp,a.moduleHp*.2*time))/PLATFORM_HEALTH_RATIO+a.fullHp*.0004*time;}
     }else if(slot.state==='destroyed'){
       slot.rebuild-=dt;disableDocked(s,slot);
-      if(slot.rebuild<=1e-8){slot.state='docked';slot.reloadScale=1;slot.rebuild=0;rebuildArchitectHealth(s,slot);slot.reload=0;slot.disabled=0;slot.dockedFor=0;t.disabled=0;t.reload=0;}
+      if(slot.rebuild<=1e-8){slot.state='docked';slot.reloadScale=architectGunReloadScale(s,'docked');slot.rebuild=0;rebuildArchitectHealth(s,slot);slot.reload=0;slot.disabled=0;slot.dockedFor=0;t.disabled=0;t.reload=0;}
     }else{
       disableDocked(s,slot);
       if(slot.entity?.alive){slot.hp=slot.entity.hp;slot.reload=Math.max(0,slot.entity.turrets[0].reload);slot.disabled=Math.max(0,slot.entity.turrets[0].disabled);}
       if(!a.ultimate)updateModulePath(s,slot,dt);
     }
   }
-  if(repairBudget>0)s.heal(repairBudget/PLATFORM_HEALTH_RATIO);
+  if(repairBudget>0)s.heal(repairBudget*s.mods.regenMul);
   updateArchitectUltimate(s,dt);
   updateElements(s,dt);
+  updateCapacitors(s);
   if(a.linkUntil>s.game.time){
     a.linkTick+=dt;
     while(a.linkTick+1e-8>=.25){
@@ -250,7 +326,7 @@ export function preparePlatform(m:Ship):void {
   if(!s.alive||!a||a.clearing||s.game.over||!slot||slot.entity!==m){m.withdraw();return;}
   m.mods.regenMul=0;m.mods.knockImmune=true;m.pushX=m.pushZ=0;m.speed=0;m.throttle=2;
   m.mods.damageMul*=s.mods.damageMul;m.mods.apDamageMul*=s.mods.apDamageMul;m.mods.reloadMul*=s.mods.reloadMul;
-  setModuleReloadScale(slot,platformReloadScale(slot));
+  setModuleReloadScale(s,slot,architectGunReloadScale(s,slot.state));
   if(slot.state==='deployed'||slot.state==='citadel'){
     m.mods.damageMul*=3;m.mods.reloadMul*=slot.reloadScale/(slot.state!=='citadel'&&a.ultimate?.kind!=='killbox'&&moduleLinked(s,slot)?1.25:1);if(a.ultimate?.kind==='killbox')m.mods.damageMul*=1.5;
   }
@@ -293,5 +369,6 @@ export function refitArchitect(s:Ship,index:number,pick:import('../../data/archi
  const a=s.architect?.slots[index];if(!a||a.state!=='docked'){const reason='Refit: recall this platform first';s.failSkill(reason);return result(false,reason);}
  if(a.type===pick.type&&a.skill===pick.skill)return result(true);
  s.architectLoadout[index]={...pick};a.type=pick.type;a.skill=pick.skill;a.element=ARCHETYPES[a.type].element;a.skillTimer=ARCHETYPES[a.type].skills[a.skill].cooldown;a.opening=false;
+ a.capacitorCycles=0;a.capacitorCharged=false;
  s.architect!.elements.jobs=s.architect!.elements.jobs.filter(j=>j.slot!==index||!j.channel);return result(true);
 }

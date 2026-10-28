@@ -43,7 +43,7 @@ describe('Architect arsenal',()=>{
     expect(s.activateSkill(4)).toBe(true);run(g,2);
     expect(slot.state).toBe('docked');expect(slot.hp).toBe(20000);
     expect(s.turrets[0].disabled).toBe(0);expect(s.turrets[0].reload).toBeGreaterThan(2.9);
-    run(g,3);expect(slot.hp).toBeGreaterThan(20000);expect(slot.hp).toBeLessThanOrEqual(200000);
+    s.addEffect({id:'test-no-passive',time:100,apply(m){m.regenMul=1;}});run(g,3);expect(slot.hp).toBeGreaterThan(20000);expect(slot.hp).toBeLessThanOrEqual(200000);
   });
   it('rebuilds destroyed platforms after five seconds without kill or score rewards',()=>{
     const {g,s,t}=deploy();const slot=s.architect!.slots[0],m=slot.entity!;
@@ -121,10 +121,10 @@ describe('Architect ultimates',()=>{
     expect(s.takeDamage(10000,t)).toBeGreaterThan(0);
     run(g,.4);expect(t.stats.received).toBeGreaterThanOrEqual(1320000);expect(s.pos.distanceTo(p)).toBeCloseTo(0);
   });
-  it('requires two available modules and preserves charge on invalid ultimates',()=>{
+  it('hovers a complete Battery over terrain and preserves charge with fewer than two survivors',()=>{
     const {g,s}=arena();s.meter=1;
     g.map.heightAt=()=>10;
-    expect(s.activateSkill(7)).toBe(false);expect(s.skills[7].meter).toBe(1);
+    expect(s.activateSkill(7)).toBe(true);expect(s.skills[7].meter).toBe(0);expect(s.activateSkill(4)).toBe(true);s.meter=1;
     for(const a of s.architect!.slots.slice(0,9)){a.state='destroyed';a.hp=0;a.rebuild=5;}
     expect(s.activateSkill(6)).toBe(false);expect(s.skills[6].meter).toBe(1);
   });

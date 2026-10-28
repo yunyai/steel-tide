@@ -64,6 +64,7 @@ export function safeStep(
   heading = s.heading,
   ignoreEnemies = false,
   reservations: Landing[] = [],
+  ignoreShip: (other: Ship) => boolean = () => false,
 ): boolean {
   if (!Number.isFinite(x + z + heading)) return false;
   const fx = forwardX(heading),
@@ -114,6 +115,7 @@ export function safeStep(
       o.alive &&
       !o.deep &&
       !o.mods.banished &&
+      !ignoreShip(o) &&
       !(
         ignoreEnemies &&
         (o.team !== s.team || (s.stepper?.copy && (o === s.summonOwner || o.summonOwner === s.summonOwner)))

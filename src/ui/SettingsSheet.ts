@@ -261,7 +261,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
     };
     actions.prepend(reset);
     return [
-      h('p', { class: 'lede' }, 'Click a key, then press the one you want. Warships, tanks and titans share the helm, weapon and camera keys; a key taken by another action moves to your old key, or is left unbound when that would clash.'),
+      h('p', { class: 'lede' }, 'Click a key, then press the one you want. Defaults: Space locks targets in both layouts; U follows your shot. Middle mouse always locks. Customized titan bindings keep their skill keys; if one shares the lock key, use middle mouse or rebind lock. Warships, tanks and titans share the helm, weapon and camera keys; a key taken by another action moves to your old key, or is left unbound when that would clash.'),
       status,
       table,
     ];

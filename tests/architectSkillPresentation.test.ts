@@ -57,3 +57,18 @@ it('ignores generic shields when presenting Fortify and derives no active time f
  const g=emptyGame('open',1,'freeplay'),s=place(g,'architect',0,0,3000);s.shield=900000;s.shieldTime=99;
  expect(architectSkillPresentation(s,5).activeRemaining).toBe(0);s.mods.silenced=true;expect(s.activateSkill(5)).toBe(false);expect(architectSkillPresentation(s,5).activeRemaining).toBe(0);
 });
+it('shows Vector as the shared manual utility even while the retained Search is cooling down',()=>{
+ const g=emptyGame('open',1,'freeplay'),s=place(g,'architect',0,0,3000);s.architect!.slots[0].type='vector';s.architect!.slots[0].skill=0;
+ s.consumables.find(c=>c.spec.type==='search')!.cooldown=50;
+ expect(architectModuleSkillPresentation(s,0)).toMatchObject({name:'Hull Dash',phase:'ready',label:expect.stringMatching(/manual utility/)});
+ s.architectDriveReadyAt=g.time+9;
+ expect(architectModuleSkillPresentation(s,0)).toMatchObject({eta:9,phase:'recharging',progress:.5,label:expect.stringMatching(/9.0s/)});
+ s.architectDriveReadyAt=0;s.mods.rooted=true;
+ expect(architectModuleSkillPresentation(s,0)).toMatchObject({phase:'disabled',label:expect.stringMatching(/Rooted/i)});
+});
+
+it('never displays retained Search recharge as a destroyed Vector drive timer',()=>{
+ const g=emptyGame('open',1,'freeplay'),s=place(g,'architect',0,0,3000),slot=s.architect!.slots[0];slot.type='vector';slot.state='destroyed';slot.hp=0;
+ s.architectDriveReadyAt=g.time+9;s.consumables.find(c=>c.spec.type==='search')!.cooldown=50;
+ expect(architectModuleSkillPresentation(s,0)).toMatchObject({eta:9,phase:'disabled',label:expect.stringMatching(/Platform destroyed/)});
+});

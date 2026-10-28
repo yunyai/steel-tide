@@ -2,6 +2,8 @@ import { ARCHETYPES,ARCHITECT_TYPES,copyLoadout,loadoutPreset,type ArchitectLoad
 import { ARCHITECT_LOADOUT_FILENAME,ARCHITECT_LOADOUT_MAX_BYTES,parseArchitectLoadout,serializeArchitectLoadout } from '../data/architectLoadoutTransfer';
 import { ArchitectEditorState,type ArchitectApply,type ArchitectApplyResult } from './ArchitectEditorState';
 import { h } from './dom';
+import { menuFeedback } from './MenuFeedback';
+import { bindings,keyName } from '../input/Keybinds';
 const KEY='steel-tide.architect-loadout.v1';
 export function savedArchitectLoadout():ArchitectLoadout{try{return copyLoadout(JSON.parse(localStorage.getItem(KEY)??'null'));}catch{return copyLoadout(undefined);}}
 export function saveArchitectLoadout(value:ArchitectLoadout):void{try{localStorage.setItem(KEY,JSON.stringify(copyLoadout(value)));}catch{/* Private browsers still keep the current battle selection. */}}
@@ -13,10 +15,11 @@ export interface ArchitectEditor {
 }
 export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectApply,editable:readonly boolean[]=Array(10).fill(true)):ArchitectEditor {
   const state=new ArchitectEditorState(value,editable);
-  let slot=0,omitted:ArchitectType='resonance',candidate:ArchitectLoadout|null=null,disposed=false,hasResult=false,previewing=false;
+  let slot=0,omitted:ArchitectType[]=['resonance','vector'],candidate:ArchitectLoadout|null=null,disposed=false,hasResult=false,previewing=false;
   let lastSyncKey=JSON.stringify(value)+editable.join();
   const root=h('section',{class:'arsenal-editor','aria-label':'Architect turret loadout'});
-  const title=h('h3',{},'Platform arsenal'),note=h('p',{class:'arsenal-note'},'Ten platforms · one automatic skill each · elemental guns work while docked');
+  const stopFeedback=menuFeedback(root);
+  const title=h('h3',{},'Platform arsenal'),note=h('p',{class:'arsenal-note'},`Ten platforms · ${ARCHITECT_TYPES.length} types · elemental guns work while docked. Vector specializes your manual utility; other skills fire automatically when deployed.`);
   const presets=h('div',{class:'arsenal-presets'}),slots=h('div',{class:'arsenal-slots',role:'group','aria-label':'Platform slots'}),detail=h('div',{class:'arsenal-detail'});
   const result=h('p',{class:'arsenal-result',role:'status','aria-live':'polite','aria-atomic':'true'});
   const disclosure=h('button',{type:'button',class:'arsenal-disclosure','aria-expanded':'false'},'Import / export');
@@ -73,7 +76,20 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
   const close=h('button',{type:'button','data-menu-back':'transfer'},'Close');close.onclick=closeTransfer;
   transfer.append(transferNote,h('div',{class:'arsenal-transfer-actions'},copy,download),h('label',{class:'arsenal-json-label'},'Loadout JSON',text),h('div',{class:'arsenal-transfer-actions'},choose,applyImport,close),file,transferStatus);
   for(const [id,label] of [['balanced','Balanced'],['elemental','Elemental'],['support','Support'],['shuffle','Shuffle'],['unique','One of each']] as [ArsenalPreset,string][]){const b=h('button',{type:'button'},label);b.onclick=()=>commit(loadoutPreset(id,omitted,Math.random));presets.append(b);}
-  const omit=h('select',{'aria-label':'Type omitted by One of each'});for(const t of ARCHITECT_TYPES)omit.append(h('option',{value:t},`Omit ${ARCHETYPES[t].name}`));omit.value=omitted;omit.onchange=()=>omitted=omit.value as ArchitectType;presets.append(omit);
+  const omissions=h('div',{class:'arsenal-omissions',role:'group','aria-label':'One of each omissions'});
+  const omitSelectors=[0,1].map(index=>{
+    const omit=h('select',{'aria-label':`Omitted type ${index+1} for One of each`});
+    for(const t of ARCHITECT_TYPES)omit.append(h('option',{value:t},ARCHETYPES[t].name));
+    omit.value=omitted[index];
+    omit.onchange=()=>{
+      const next=omit.value as ArchitectType;
+      if(ARCHITECT_TYPES.includes(next)&&next!==omitted[1-index])omitted[index]=next;
+      syncOmissions();
+    };
+    omissions.append(h('label',{},`Omit ${index+1}`,omit));return omit;
+  });
+  function syncOmissions():void {omitSelectors.forEach((select,index)=>{select.value=omitted[index];for(const option of select.options)option.disabled=option.value===omitted[1-index];});}
+  syncOmissions();
   const slotButtons=Array.from({length:10},(_,i)=>{
     const b=h('button',{type:'button','data-arsenal-key':`slot-${i}`},h('b'),h('small'));
     b.onclick=()=>{slot=i;render();};slots.append(b);return b;
@@ -96,10 +112,10 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
     });
     const pick=state.selection(slot),a=ARCHETYPES[pick.type];
     slotLabel.textContent=`Platform ${slot+1}`;select.setAttribute('aria-label',`Platform ${slot+1} type`);select.value=pick.type;select.disabled=!state.canEdit(slot);
-    cards.forEach((b,i)=>{const skill=a.skills[i];b.setAttribute('aria-pressed',String(pick.skill===i));b.disabled=!state.canEdit(slot);b.children[0].textContent=skill.name;b.children[1].textContent=skill.description;b.children[2].textContent=`${skill.cooldown}s recharge · automatic when deployed`;});
+    cards.forEach((b,i)=>{const skill=a.skills[i];b.setAttribute('aria-pressed',String(pick.skill===i));b.disabled=!state.canEdit(slot);b.children[0].textContent=skill.name;b.children[1].textContent=skill.description;b.children[2].textContent=pick.type==='vector'?`18s drive recharge · utility ${keyName(bindings().utility)} / D-pad right`:`${skill.cooldown}s recharge · automatic when deployed`;});
     lockNote.hidden=state.canEdit(slot);lockNote.textContent=state.isPending(slot)?'Refit pending. Waiting for battle confirmation.':'Refitting requires a living captain, a docked platform and no transformation. Refits start the selected skill’s cooldown.';
     if(candidate&&!transfer.hidden&&previewing)preview();
   }
-  root.append(title,note,presets,disclosure,transfer,slots,detail,result);render();
-  return {el:root,sync(accepted,editable){const key=JSON.stringify(accepted)+editable.join();if(key===lastSyncKey)return;lastSyncKey=key;state.sync(accepted,editable);if(hasResult)report(state.result);render();},resolve(index,pick,accepted,reason){state.resolve(index,pick,accepted,reason);if(hasResult)report(state.result);render();},dispose(){disposed=true;}};
+  root.append(title,note,presets,omissions,disclosure,transfer,slots,detail,result);render();
+  return {el:root,sync(accepted,editable){const key=JSON.stringify(accepted)+editable.join();if(key===lastSyncKey)return;lastSyncKey=key;state.sync(accepted,editable);if(hasResult)report(state.result);render();},resolve(index,pick,accepted,reason){state.resolve(index,pick,accepted,reason);if(hasResult)report(state.result);render();},dispose(){disposed=true;stopFeedback();}};
 }

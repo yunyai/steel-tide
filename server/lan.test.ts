@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import type { ClientMsg, LobbyState, ServerMsg, Turn } from '../src/net/protocol';
+import { SIM_PROTOCOL } from '../src/net/protocol';
 import { eraOf } from '../src/data/factions';
 import { SHIPS, SHIP_BY_ID } from '../src/data/ships';
 import { attachLan, type LanOptions, LobbyServer } from './lan';
@@ -37,7 +38,7 @@ class Client {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/lan`);
     await new Promise((res, rej) => (ws.once('open', res), ws.once('error', rej)));
     const c = new Client(ws);
-    c.send({ t: 'hello', protocol:3, name, token });
+    c.send({ t: 'hello', protocol:SIM_PROTOCOL, name, token });
     await c.next('welcome');
     return c;
   }
@@ -425,7 +426,7 @@ describe('LobbyServer without sockets', () => {
     const peer = s.connect((m) => sent.push(m));
     s.receive(peer, { t: 'create', name: 'x' });
     expect(sent).toEqual([]);
-    s.receive(peer, { t: 'hello', protocol:3, name: '' });
+    s.receive(peer, { t: 'hello', protocol:SIM_PROTOCOL, name: '' });
     expect(sent[0]).toMatchObject({ t: 'welcome' });
     s.close();
   });
@@ -442,4 +443,7 @@ it('rejects incompatible clients before joining a lobby',()=>{
 
 it('refuses protocol 2 peers before joining the delayed-flight simulation',()=>{
  const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',protocol:2,name:'Old Battery'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
+});
+it('refuses protocol 3 peers before joining the Vector and docked-capacitor simulation',()=>{
+ const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',protocol:3,name:'Old Architect'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
 });

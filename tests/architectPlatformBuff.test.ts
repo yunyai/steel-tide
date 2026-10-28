@@ -26,7 +26,7 @@ it('does not apply deployment bonuses to moving platforms or docked guns',()=>{
 });
 it('preserves reload percentage through recall and redeployment without resetting it',()=>{
   const {s,m,slot}=setup();m.refreshModifiers();preparePlatform(m);m.turrets[0].reload=1.5;
-  attachModule(s,slot);expect(s.turrets[0].reload).toBe(3);
+  attachModule(s,slot);expect(s.turrets[0].reload).toBe(2);
   const again=materialize(s,slot);slot.state='deployed';again.refreshModifiers();preparePlatform(again);
   expect(again.turrets[0].reload).toBe(1.5);
   slot.state='citadel';again.refreshModifiers();preparePlatform(again);expect(again.turrets[0].reload).toBe(.5);
@@ -36,7 +36,7 @@ it('activates Hunt without interrupting docked or deployed reloads',()=>{
   const {g,s,m}=setup();g.shells.shells=[];s.control.aimX=800;s.control.aimZ=-1000;const reloads=[m.turrets[0].reload,s.turrets[2].reload];s.activateSkill(1);
   expect(g.shells.shells).toHaveLength(0);
   expect(g.shells.shells.every(p=>p.spec.damage===30000&&p.dmgMul===s.mods.damageMul&&p.skill?.id==='architectBurst')).toBe(true);
-  expect(m.turrets[0].reload).toBe(reloads[0]);expect(s.turrets[2].reload).toBe(reloads[1]);
+  expect(m.turrets[0].reload).toBeCloseTo(reloads[0]/1.25);expect(s.turrets[2].reload).toBeCloseTo(reloads[1]/1.25);
 });
 it('survives three seconds of 50k-per-second incoming damage without special protection',()=>{
   const {m}=setup();m.shield=0;m.colossus=false;

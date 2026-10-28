@@ -1,7 +1,7 @@
 import type { SupportAdmission } from '../skills/misc/ArchitectSupport';
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
-import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
+import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
@@ -488,6 +488,7 @@ export class Ship {
   architectReveal:[number,number]=[0,0];
   architectDrone:{owner:Ship;slot:number}|null=null;
   architectLoadout:ArchitectLoadout=copyLoadout(undefined);
+  architectDriveReadyAt=0;
   readonly id: number;
   /** The hull as it sails now: the base hull, or its titan form during a Titan Shift. */
   spec: ShipSpec;
@@ -931,6 +932,7 @@ export class Ship {
       this.shiftNow(q.form, q.time, q.unlock);
     }
     updateConsumables(this, dt);
+    const wasDrive=!!this.architect?.drive;
     updateArchitect(this, dt);
     const wasAssembly = this.architect?.ultimate?.kind === 'assembly';
     const wasCross = !!this.stepper?.cross;
@@ -938,7 +940,7 @@ export class Ship {
     this.updateForm();
     this.updateShield(dt);
     this.updateSub(dt);
-    if (!this.architectPlatform && !this.architectDrone && !wasAssembly && !wasCross && !this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
+    if (!this.architectPlatform && !this.architectDrone && !wasAssembly && !wasDrive && !wasCross && !this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
     this.updateMain(dt);
     this.updateSecondaries(dt);
     this.updateTorpedoes(dt);
@@ -1075,7 +1077,7 @@ export class Ship {
       c.throttleSet = null;
       if (this.architect?.ultimate?.kind === 'assembly') {
         if (c.consumable >= 0) activateConsumable(this, c.consumable);
-        if (c.skill === 5) this.activateSkill(5);
+        if ([1,4,5].includes(c.skill)) this.activateSkill(c.skill);
       }
     }
     // Edge-triggered inputs are consumed by the first tick that sees them.
@@ -1088,7 +1090,7 @@ export class Ship {
   /** Ready to trigger: off cooldown (or meter full for an ultimate) and not already running. */
   skillReady(i: number): boolean {
     const st = this.skills[i];
-    if (this.architect?.ultimate && i !== 5) return false;
+    if (this.architect?.ultimate && ![1,4,5].includes(i)) return false;
     if (!st || !this.alive || st.active || this.mods.stunned || this.mods.silenced) return false;
     return st.spec.ult ? st.meter >= 1 && !this.isSummon : st.cooldown <= 0;
   }
@@ -1126,7 +1128,7 @@ export class Ship {
   activateSkill(i: number, mirrored = false): boolean {
     this.skillFailure = '';
     ensureArchitectHealth(this);
-    if (this.architect?.ultimate && i !== 5) return this.failSkill('Arsenal transformation active; Fortify remains available');
+    if (this.architect?.ultimate && ![1,4,5].includes(i)) return this.failSkill('Arsenal transformation active; Hunt, Recall and Fortify remain available');
     if (this.stepper?.flicker || this.stepper?.cross || this.stepper?.rush) return this.failSkill('Step sequence already active');
     const echo = mirrored && this.stepper?.copy && this.summonOwner?.alive && i !== 8;
     if (this.stepper?.copy && !echo) return false;
@@ -1306,7 +1308,7 @@ export class Ship {
     this.aimBearing = bearingTo(this.pos.x, this.pos.z, c.aimX, c.aimZ);
     const table = this.tableFor(this.ammo);
     const elev = table ? solve(table, aimDist).elevation : 0;
-    const traverse = main.traverse * this.mods.traverseMul * dt * (hunt?3:1);
+    const traverse = main.traverse * this.mods.traverseMul * dt * (this.architect?(this.architect.huntUntil>this.game.time?3:2):1);
     const canFireGuns = this.architect?.ultimate?.kind !== 'assembly' && !this.stepper?.flicker && !this.stepper?.cross && !this.stepper?.rush && (!this.isSub || this.depthState === 0 && this.pos.y > -1.5) && !this.mods.stunned && !this.mods.disarmed;
     for (const t of this.turrets) {
       if (t.reload > 0) t.reload -= dt;
@@ -1384,6 +1386,7 @@ export class Ship {
       });
     }
     t.reload = this.mods.reloadOverride > 0 ? this.mods.reloadOverride : main.reload * this.mods.reloadMul;
+    if(this.architect){t.reload*=architectGunReloadScale(this,this.architect.slots[index].state);if(!force)recordArchitectGunCycle(this,index);}
     t.recoil = 0.6;
     this.stats.shotsFired += t.spec.barrels;
     g.events.emit('gunFired', { ship: this, x: tp.x, y: muzzleY, z: tp.z, bearing: brg, caliber: shell.caliber, secondary: false, look: main.look });
@@ -1659,6 +1662,9 @@ export class Ship {
     if (attacker?.stepper?.copy && !forwarded) amount *= 0.75;
     if (hostile && !pierce && this.mods.dodge > 0 && this.game.rng() < this.mods.dodge) return 0;
     let mul = this.mods.damageTakenMul;
+    if(this.architect)mul*=1-architectDockingStatus(this).damageReduction;
+    const platform=this.architectPlatform,owner=platform?.owner.architect;
+    if(platform&&owner?.ultimate?.kind==='killbox'&&owner.ultimate.elapsed>=1.5-1e-8&&owner.slots[platform.index].state==='deployed')mul*=.6;
     if (attacker && this.game.exposed[attacker.team] > 0) mul *= 1.25;
     if (this.mods.marked && hostile) mul *= 1.25;
     if (hostile && attacker.ambushReady && !attacker.mods.untargetable) {

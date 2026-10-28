@@ -52,6 +52,12 @@ export function architectTurretGeometry(type:ArchitectType='furnace'){
   if(type==='bastion')for(const z of [-1,1]){house.box(43,23,5,0,9,z*17,IVORY,{taper:.15});glow.box(30,12,1,0,14,z*20,accent);}
   if(type==='resonance')for(const z of [-1,1]){house.box(4,32,5,-15,20,z*16,IVORY);glow.box(14,3,5,-10,49,z*16,accent);}
   if(type==='swarm')for(const z of [-1,1])for(const x of [-17,-7,3]){house.box(8,18,9,x,22,z*16,IVORY);house.box(5,2,6,x,40,z*16,BLACK);glow.box(3,1,4,x,42,z*16,accent);}
+  if(type==='vector')for(const side of [-1,1]){
+    house.box(35,7,6,-9,24,side*17,IVORY,{rz:-.25,taper:.5});
+    house.cyl(4,5,8,-24,25,side*15,DARK,{seg:8,rz:Math.PI/2});
+    glow.cyl(3.5,3.5,1,-28.5,25,side*15,accent,{seg:8,rz:Math.PI/2});
+    glow.box(26,1.5,1,-8,31,side*17,accent,{rz:-.25});
+  }
   for(const z of [-1,1]){glow.box(18,1.4,1.5,-7,22,z*11,accent);glow.box(4,6,1.4,6,13,z*13,accent);}
   if(element==='furnace')for(const z of [-1,1])for(let x=-22;x<=-10;x+=4)glow.box(1.5,9,1,x,18,z*13.6,accent);
   if(element==='cryo')for(const z of [-1,1])glow.cyl(2.7,2.7,17,-12,18,z*15,accent,{seg:8,rz:Math.PI/2});
@@ -192,7 +198,7 @@ export class ArchitectModel {
       this.clamps[i].forEach((c,n)=>c.rotation.x=(n?1:-1)*open*.85);
     }
     const module=ship?.architectPlatform,slot=module?.owner.architect?.slots[module.index];
-    const flight=!!slot&&(!!slot.path||slot.state==='citadel');
+    const flight=!!slot&&(!!slot.path||slot.state==='citadel'||module?.owner.architect?.ultimate?.kind==='killbox');
     let folded=flight?1:0;
     if(slot?.path){const p=slot.path,k=p.elapsed/p.duration;folded=Math.min(smooth(k*5),smooth((1-k)*5));}
     this.supports.forEach(g=>g.rotation.x=folded*1.25);

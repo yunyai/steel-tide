@@ -1,15 +1,25 @@
 import { expect, it } from 'vitest';
-import { buildArchitectBatteryPaths, getArchitectBatteryHeadPose, planArchitectBatteryLayout, sampleArchitectBatteryArc } from '../src/skills/misc/ArchitectBatteryPose';
+import { buildArchitectBatteryPaths, getArchitectBatteryHeadPose, planArchitectBatteryLayout, planArchitectBatteryFormation, sampleArchitectBatteryArc } from '../src/skills/misc/ArchitectBatteryPose';
 import { ARCHITECT_TYPES } from '../src/data/architectLoadout';
 
 const carrier={x:0,y:0,z:-1500,heading:Math.PI},center={x:0,y:0,z:0};
 const water=()=>-100;
 const input={carrier,center,radius:1500,slot:0,stage:0 as const,type:'furnace' as const,layout:'wide' as const,groundHeight:water};
 
-it('uses the full paired footprints and truss spans to compact, then folds without rejecting a legal hub',()=>{
+it('keeps full paired artillery over islands instead of folding or omitting heads',()=>{
   expect(planArchitectBatteryLayout(carrier,center,water)).toBe('wide');
-  expect(planArchitectBatteryLayout(carrier,center,(x)=>Math.abs(x)>310?40:-100)).toBe('compact');
-  expect(planArchitectBatteryLayout(carrier,center,(x)=>Math.abs(x)>40?40:-100)).toBe('folded');
+  expect(planArchitectBatteryLayout(carrier,center,()=>600)).toBe('wide');
+  const ground=(x:number,z:number)=>Math.abs(x-2300)<600&&Math.abs(z-2200)<800?420:-100;
+  const a=planArchitectBatteryFormation({x:4400,z:4400},10,ground);
+  expect(a).toEqual(planArchitectBatteryFormation({x:4400,z:4400},10,ground));
+  expect(a).toHaveLength(10);expect(new Set(a.map(p=>`${p.x}:${p.z}`)).size).toBe(10);
+  for(const p of a){expect(Math.abs(p.x)).toBeLessThan(4200);expect(Math.abs(p.z)).toBeLessThan(4200);expect(p.y).toBeGreaterThanOrEqual(55);for(let x=-260;x<=260;x+=20)for(let z=-260;z<=260;z+=20)expect(p.y).toBeGreaterThan(ground(p.x+x,p.z+z)+35);}
+});
+
+it('transports only ordinary hubs before building machinery between .9 and 1.5 seconds',()=>{
+  const {g,fx}=fixture();run(g,.85);g.interpolate();fx.prepare(0);expect(fx.stats.machinery.heads).toBe(0);
+  run(g,.4);g.interpolate();fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);
+  const pose=getArchitectBatteryHeadPose({...input,head:0,elapsed:1.5});expect(pose.carriage).toBe(1);expect(pose.lock).toBe(1);fx.dispose();
 });
 
 it('keeps two separated cosmetic cells inside each spoke and shares launch sockets with deployed receiver poses',()=>{
@@ -79,7 +89,7 @@ it('keeps the ten ordinary turrets, logical platforms and HP pools while renderi
  expect(owner.architect!.slots.map(a=>a.entity!.hp)).toEqual(health);expect(stateHash(g)).toBe(before);view.dispose();fx.dispose();
 });
 
-it('instances all eleven hardware identities within the batch and low detail geometry budgets',()=>{
+it('instances all twelve hardware identities within the batch and low detail geometry budgets',()=>{
  for(const type of ARCHITECT_TYPES){
   const high=siegeBatchGeometry(type),low=siegeBatchGeometry(type,true);
   for(const batches of [high,low])for(const geometry of batches){geometry.computeBoundingBox();expect(Array.from(geometry.attributes.position.array).every(Number.isFinite)).toBe(true);}
@@ -88,7 +98,7 @@ it('instances all eleven hardware identities within the batch and low detail geo
  }
  const {g,owner,fx}=fixture();owner.architect!.slots.forEach((a,i)=>a.type=ARCHITECT_TYPES[i]);
  const other=place(g,'architect',0,1000,3000);other.architect!.slots.forEach(a=>a.type='swarm');other.control.aimX=other.control.aimZ=0;other.meter=1;other.activateSkill(7);
- fx.prepare(0);expect(fx.stats.machinery.batches).toBeLessThanOrEqual(46);expect(fx.stats.machinery.heads).toBe(40);fx.dispose();
+ run(g,1.5);fx.prepare(0);expect(fx.stats.machinery.batches).toBeLessThanOrEqual(46);expect(fx.stats.machinery.heads).toBe(40);fx.dispose();
 });
 
 it('keeps launched world paths after platform loss or concealment, clears hard owner generations, and is hash pure',()=>{
@@ -112,7 +122,7 @@ it('renders the exact committed shell position and no source anchor rays, then y
  const expected=sampleArchitectBatteryArc(launch!.paths[0],(g.time-launch!.launchTime)/.42);
  expect(point.x).toBeCloseTo(expected.x,3);expect(point.y).toBeCloseTo(expected.y,3);expect(point.z).toBeCloseTo(expected.z,3);
  run(g,6);fx.prepare(0);expect(owner.architect!.ultimate).toBeNull();expect(fx.stats.machinery.heads).toBe(20);expect(fx.hazard.count).toBeGreaterThan(0);
- owner.activateSkill(4);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(0);expect(fx.pools.shells.count).toBeGreaterThan(0);
+ owner.activateSkill(4);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);expect(fx.pools.shells.count).toBeGreaterThan(0);run(g,.31);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(0);
  run(g,2);fx.prepare(0);expect(fx.count).toBe(0);expect(fx.hazard.count).toBe(0);fx.dispose();
 });
 
@@ -144,7 +154,7 @@ it.each([true,false])('permanently retires a Battery after Reconfigure, includin
  const {g,owner,fx}=fixture();run(g,1.6);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);
  run(g,5.9);const paths=g.battery.pending.map(r=>JSON.stringify(r.paths));expect(paths.length).toBeGreaterThan(0);
  expect(owner.activateSkill(3)).toBe(true);
- if(!sparse){run(g,1/60);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(0);expect(fx.pools.shells.count).toBeGreaterThan(0);expect(g.battery.pending.map(r=>JSON.stringify(r.paths))).toEqual(paths);}
+ if(!sparse){run(g,1/60);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);expect(fx.pools.shells.count).toBeGreaterThan(0);expect(g.battery.pending.map(r=>JSON.stringify(r.paths))).toEqual(paths);}
  run(g,.65);expect(owner.architect!.slots.every(a=>a.state==='deployed')).toBe(true);fx.prepare(0);
  expect(fx.stats.machinery.heads).toBe(0);expect(fx.stats.committedImpacts).toBe(40);fx.dispose();
 });
@@ -207,4 +217,30 @@ it('uploads only live Battery instance data and submits no empty machinery or ef
  for(const mesh of meshes)expect(mesh.visible).toBe(false);
  const versions=meshes.map(mesh=>mesh.instanceMatrix.version);fx.prepare(-1);
  expect(meshes.map(mesh=>mesh.instanceMatrix.version)).toEqual(versions);fx.dispose();
+});
+
+it('retains volumetric neon trails briefly after impact and cleans them on hard owner reset',()=>{
+ const {g,owner,fx}=fixture();run(g,1.96);fx.prepare(0);
+ expect(fx.pools.trails.count).toBeGreaterThan(0);expect(fx.pools.trails.mesh.material).toHaveProperty('transparent',true);
+ g.battery.cancelOwner(owner);fx.prepare(0);expect(fx.pools.trails.count).toBe(0);fx.dispose();
+});
+
+it('gives five elemental impacts distinct volumetric silhouettes larger than the artillery footprint',()=>{
+ const signatures=[];
+ for(const type of ['furnace','cryo','storm','gravity','prism'] as const){
+  const {g,fx}=fixture();run(g,1.55);const launch=g.battery.pending[0];
+  g.events.emit('architectBatteryImpact',{launch:{...launch,type,element:type},resolvedAt:g.time-.3,recipients:[]});fx.prepare(0);
+  signatures.push(Object.values(fx.pools).map(p=>p.count).join(','));
+  const matrix=new Matrix4(),scale=new Vector3();let largest=0;
+  for(const name of ['lobes','fragments','skirts','arcs'] as const){const p=fx.pools[name];for(let i=0;i<p.count;i++){p.mesh.getMatrixAt(i,matrix);scale.setFromMatrixScale(matrix);largest=Math.max(largest,scale.length());}}
+  expect(largest).toBeGreaterThan(220);fx.dispose();
+ }
+ expect(new Set(signatures).size).toBe(5);
+});
+
+it('creates elemental destruction only on true platform loss and clears it on match end',()=>{
+ const {g,owner,fx}=fixture();run(g,1.6);const before=stateHash(g);
+ g.events.emit('architectCommand',{ship:owner,kind:'recall'});fx.prepare(0);expect(fx.stats.activeDeaths).toBe(0);expect(stateHash(g)).toBe(before);
+ owner.architect!.slots[0].entity!.takeDamage(1e9,null,null,false,true);fx.prepare(0);expect(fx.stats.activeDeaths).toBe(1);
+ g.finish(-1,'test');fx.prepare(0);expect(fx.stats.activeDeaths).toBe(0);fx.dispose();
 });

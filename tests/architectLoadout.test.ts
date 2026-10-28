@@ -1,8 +1,8 @@
 import { expect,it } from 'vitest';
 import { ARCHETYPES, defaultLoadout, validLoadout, loadoutPreset } from '../src/data/architectLoadout';
 import { emptyGame,place } from './helpers';
-it('offers eleven types with two skills and validates exactly ten selections',()=>{
- expect(Object.keys(ARCHETYPES)).toHaveLength(11);
+it('offers twelve types with two skills and validates exactly ten selections',()=>{
+ expect(Object.keys(ARCHETYPES)).toHaveLength(12);
  for(const t of Object.values(ARCHETYPES))expect(t.skills).toHaveLength(2);
  const a=defaultLoadout();expect(validLoadout(a)).toBe(true);expect(validLoadout(a.slice(1))).toBe(false);
  expect(validLoadout(a.map(x=>({...x,skill:2})))).toBe(false);expect(validLoadout(a.map(x=>({...x,type:'__proto__'})))).toBe(false);

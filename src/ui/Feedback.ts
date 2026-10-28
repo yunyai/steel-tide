@@ -195,6 +195,7 @@ export class Feedback {
         this.tick(false);
       }),
       ev.on('shipSunk', (s) => {
+        if (s.ship.architectPlatform || s.ship.architectDrone) return;
         if (!mine(s.killer) || s.ship.team === team) return;
         flash(this.killmark, 'on');
         this.streak = this.clock - this.lastKill < STREAK ? this.streak + 1 : 1;

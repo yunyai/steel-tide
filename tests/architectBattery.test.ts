@@ -13,10 +13,10 @@ it('Grand Battery allows ordinary guns and skills between broadsides',()=>{
  expect(skills).toBeGreaterThan(0);expect(s.architect!.slots.some(a=>a.entity!.stats.shotsFired>0)).toBe(true);
  expect(s.architect!.slots[0].reloadScale).toBe(.25);
 });
-it('finishes gathering at the exact safe endpoint rather than retaining the flight terrain clearance',()=>{
+it('finishes gathering at the planned terrain hover rather than retaining the transport arc',()=>{
  const g=emptyGame('open',53,'freeplay'),s=place(g,'architect',0,0,3000);s.control.aimX=s.control.aimZ=0;s.meter=1;s.activateSkill(7);
  for(let i=0;i<90;i++)updateArchitectUltimate(s,1/60);
- expect(s.architect!.slots.every(a=>Math.abs(a.entity!.pos.y)<.001)).toBe(true);
+ for(const member of s.architect!.ultimate!.battery!.members){const m=s.architect!.slots[member.slot].entity!;expect(m.pos.y).toBeCloseTo(member.carrier.y);expect(m.pos.y).toBeGreaterThanOrEqual(55);}
 });
 
 import type {ArchitectBatteryLaunch,ArchitectBatteryImpact} from '../src/data/architectBattery';

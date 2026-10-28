@@ -1,6 +1,6 @@
 /** Pure data shared by simulation, lobby validation and the loadout editor. */
 export type ArchitectElement='furnace'|'cryo'|'storm'|'gravity'|'prism';
-export type ArchitectType=ArchitectElement|'sentinel'|'abyss'|'restoration'|'bastion'|'resonance'|'swarm';
+export type ArchitectType=ArchitectElement|'sentinel'|'abyss'|'restoration'|'bastion'|'resonance'|'swarm'|'vector';
 export interface ArchitectSelection {type:ArchitectType;skill:0|1}
 export type ArchitectLoadout=ArchitectSelection[];
 export interface ArsenalSkill {name:string;cooldown:number;description:string}
@@ -18,6 +18,7 @@ export const ARCHETYPES:Record<ArchitectType,Archetype>={
  bastion:{name:'Bastion',short:'BA',element:'gravity',color:0xf7d466,skills:[ability('Aegis Projector',10,'120k shield for 5 s on the most injured ally within 2 km.'),ability('Bulwark Field',12,'20% damage reduction for allies within 1.2 km for 4 s.')]},
  resonance:{name:'Resonance',short:'RS',element:'storm',color:0xe88dff,skills:[ability('Accelerando',10,'25% faster skill recharge for nearby platforms for 4 s; excludes Resonance.'),ability('Reaction Amplifier',10,'40% stronger elemental reactions from nearby platforms for 4 s.')]},
  swarm:{name:'Swarm',short:'SW',element:'furnace',color:0xff6654,skills:[ability('Hive Salvo',9,'Twelve 9k homing missiles; 100 m splash.'),ability('Brood Launch',12,'Two 25k-HP gun drones for 8 s, each firing 6k elemental rounds every second.')]},
+ vector:{name:'Vector',short:'VE',element:'storm',color:0x77b8ff,skills:[ability('Hull Dash',18,'Manual G utility: dash 650 m over 0.65 s. Duplicate selections do not stack.'),ability('Mobile Battery',18,'Manual G utility: dash 400 m over 0.65 s; ordinary deployed platforms follow for 6 s at up to 1200 m/s while firing. Combines with Hull Dash.')]},
 };
 export const ARCHITECT_TYPES=Object.keys(ARCHETYPES) as ArchitectType[];
 export function validSelection(v:unknown):v is ArchitectSelection {const x=v as ArchitectSelection;return !!x&&typeof x==='object'&&typeof x.type==='string'&&Object.hasOwn(ARCHETYPES,x.type)&&(x.skill===0||x.skill===1);}
@@ -26,8 +27,9 @@ export function defaultLoadout():ArchitectLoadout{return Array.from({length:10},
 export function copyLoadout(v:unknown):ArchitectLoadout{return validLoadout(v)?v.map(({type,skill})=>({type,skill})):defaultLoadout();}
 export type ArsenalPreset='balanced'|'elemental'|'support'|'shuffle'|'unique';
 /** Shared presets stay deterministic; the editor supplies randomness for Shuffle. */
-export function loadoutPreset(p:ArsenalPreset,omitted:ArchitectType='resonance',rng:()=>number=()=>.5):ArchitectLoadout{
+export function loadoutPreset(p:ArsenalPreset,omitted:ArchitectType|ArchitectType[]='resonance',rng:()=>number=()=>.5):ArchitectLoadout{
  if(p==='elemental')return defaultLoadout();
- const types:ArchitectType[]=p==='support'?['restoration','restoration','bastion','bastion','sentinel','abyss','resonance','prism','storm','swarm']:p==='balanced'?['furnace','cryo','storm','gravity','prism','sentinel','abyss','restoration','bastion','swarm']:ARCHITECT_TYPES.filter(t=>t!==omitted);
- return Array.from({length:10},(_,i)=>({type:p==='shuffle'?ARCHITECT_TYPES[Math.min(10,Math.floor(rng()*11))]:types[i],skill:(p==='shuffle'?rng()<.5?0:1:i%2) as 0|1}));
+ const excluded=Array.isArray(omitted)?omitted:[omitted];
+ const types:ArchitectType[]=p==='support'?['restoration','restoration','bastion','bastion','sentinel','abyss','resonance','prism','storm','swarm']:p==='balanced'?['furnace','cryo','storm','gravity','prism','sentinel','abyss','restoration','bastion','swarm']:ARCHITECT_TYPES.filter(t=>!excluded.includes(t));
+ return Array.from({length:10},(_,i)=>({type:p==='shuffle'?ARCHITECT_TYPES[Math.max(0,Math.min(ARCHITECT_TYPES.length-1,Math.floor(rng()*ARCHITECT_TYPES.length)))]:types[i%types.length],skill:(p==='shuffle'?rng()<.5?0:1:i%2) as 0|1}));
 }

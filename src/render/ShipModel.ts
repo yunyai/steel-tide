@@ -1,6 +1,7 @@
 import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import { addFleetDetails, FLEET_DETAILS } from './FleetDetails';
 import { ArchitectModel, architectTurretGeometry, elementalTurretGeometry, architectGlowMaterial } from './ArchitectModel';
+import { reducedMotion } from './ArchitectPose';
 import { StepperModel } from './StepperModel';
 import { stepperHullGeometry, stepperTurretGeometry } from './StepperGeometry';
 import {
@@ -1538,7 +1539,14 @@ export class ShipView {
     if (this.pennant && this.root.visible) this.wave(time);
     if (!ship.alive) {
       const t = ship.deathTime;
-      if(ship.architectPlatform||ship.architectDrone){const f=Math.min(1,t/2.2);y=ship.renderPos.y*(1-f)-Math.min(30,t*t*12);roll+=f*1.8;pitch+=f*.65;this.root.visible=t<3;}
+      if(ship.architectPlatform){
+        // Withdrawal belongs to docking/refit. Only actual destruction folds into an energy rupture.
+        const f=Math.min(1,t/.85),motion=reducedMotion()?.2:1;
+        this.root.visible=!ship.withdrawn&&t<.85;
+        this.root.scale.set(1-f*.82,Math.max(.015,(1-f)**1.7),1-f*.82);
+        y=ship.renderPos.y+f*18;roll+=f*.35*motion;pitch-=f*.22*motion;
+      }
+      else if(ship.architectDrone){const f=Math.min(1,t/2.2);y=ship.renderPos.y*(1-f)-Math.min(30,t*t*12);roll+=f*1.8;pitch+=f*.65;this.root.visible=t<3;}
       else if (ship.withdrawn) {
         y -= t * t * 0.4;
       } else if (this.split) {
@@ -1552,6 +1560,7 @@ export class ShipView {
         pitch += this.sinkSign * Math.min(0.22, t * 0.008);
       }
     }
+    if(ship.architectPlatform&&ship.alive)this.root.scale.setScalar(1);
     this.root.position.set(px, y, pz);
     this.root.rotation.set(roll, Math.PI / 2 - h, pitch);
 
