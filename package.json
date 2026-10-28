@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && tsc -p tsconfig.node.json && vite build",
+    "build:pages": "VITE_STATIC_HOST=true npm run build -- --base=/steel-tide/",
     "preview": "vite preview",
     "lan": "vite build && vite preview --host 0.0.0.0 --port 4173",
     "lan:dev": "vite --host 0.0.0.0",

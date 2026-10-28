@@ -18,6 +18,7 @@ import { field, h, html, seg } from './dom';
 import { type GarageFlow, GroundMenu, kindSwitch } from './GroundMenu';
 import { classIcon, glyph, skillIcon, vehicleClassIcon } from './Icons';
 import { buildSettings } from './SettingsSheet';
+import { STATIC_HOST } from '../app/hosting';
 
 // Title, battle orders, the hangar (ship selection) and settings. Ground battles' orders and
 // Garage live in GroundMenu.
@@ -244,7 +245,13 @@ export class Menu {
     battle.dataset.focus = '';
     const ground = item(vehicleClassIcon('HT'), 'Ground battle', 'Tanks on land: angle the armour, find the weak plate, flatten the cover', '', () => this.showGroundOrders());
     const rush = item('nuke', 'Boss Rush', `Hold out against ${RUSH_WAVES} waves, with a titan every fifth`, 'rush', () => this.showOrders('rush'));
-    const lan = item('fleet', 'LAN battle', 'Play friends on your network: team against team, or together against the AI', '', () => this.hooks.lan());
+    const lan = item('fleet', 'LAN battle', STATIC_HOST
+      ? 'Requires a local host: run npm run lan on your computer to play friends on your network'
+      : 'Play friends on your network: team against team, or together against the AI', '', () => this.hooks.lan());
+    if (STATIC_HOST) {
+      lan.disabled = true;
+      lan.classList.add('unavailable');
+    }
     const line = SHIPS.filter((s) => s.cls !== 'TT').length;
     const titans = SHIPS.length - line;
     const eras = LIVE_ERAS.length > 1 ? ` across ${LIVE_ERAS.length} eras` : '';

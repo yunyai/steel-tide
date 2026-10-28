@@ -9,6 +9,7 @@ import { Lobby } from '../ui/Lobby';
 import type { ActiveBattle, BattleLink } from './ActiveBattle';
 import { NavalBattle } from './NavalBattle';
 import type { Shell } from './Shell';
+import { STATIC_HOST } from './hosting';
 
 // The LAN screens and battles on this peer: the lobby, the server link, and a battle's lockstep,
 // from loading (or replaying the log when rejoining) to the report.
@@ -60,6 +61,10 @@ export class LanLink {
   }
 
   open(): void {
+    if (STATIC_HOST) {
+      this.shell.menu.showTitle();
+      return;
+    }
     if (!this.net) {
       const n = (this.net = new NetClient());
       n.listen((m) => this.onNet(m));

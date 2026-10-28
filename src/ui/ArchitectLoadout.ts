@@ -72,7 +72,7 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
   applyImport.onclick=()=>{if(candidate){commit(candidate);preview();}};
   const close=h('button',{type:'button','data-menu-back':'transfer'},'Close');close.onclick=closeTransfer;
   transfer.append(transferNote,h('div',{class:'arsenal-transfer-actions'},copy,download),h('label',{class:'arsenal-json-label'},'Loadout JSON',text),h('div',{class:'arsenal-transfer-actions'},choose,applyImport,close),file,transferStatus);
-  for(const [id,label] of [['balanced','Balanced'],['elemental','Elemental'],['support','Support'],['shuffle','Shuffle'],['unique','One of each']] as [ArsenalPreset,string][]){const b=h('button',{type:'button'},label);b.onclick=()=>commit(loadoutPreset(id,omitted));presets.append(b);}
+  for(const [id,label] of [['balanced','Balanced'],['elemental','Elemental'],['support','Support'],['shuffle','Shuffle'],['unique','One of each']] as [ArsenalPreset,string][]){const b=h('button',{type:'button'},label);b.onclick=()=>commit(loadoutPreset(id,omitted,Math.random));presets.append(b);}
   const omit=h('select',{'aria-label':'Type omitted by One of each'});for(const t of ARCHITECT_TYPES)omit.append(h('option',{value:t},`Omit ${ARCHETYPES[t].name}`));omit.value=omitted;omit.onchange=()=>omitted=omit.value as ArchitectType;presets.append(omit);
   const slotButtons=Array.from({length:10},(_,i)=>{
     const b=h('button',{type:'button','data-arsenal-key':`slot-${i}`},h('b'),h('small'));

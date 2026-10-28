@@ -316,6 +316,17 @@ select {
   background: linear-gradient(90deg, rgba(255, 181, 71, 0.3), rgba(255, 181, 71, 0) 95%);
 }
 
+.title-actions .go.unavailable {
+  cursor: default;
+  background: none;
+  transform: none;
+}
+
+.title-actions .go.unavailable b,
+.title-actions .go.unavailable .ico {
+  color: var(--mute);
+}
+
 .title-actions .minor {
   display: flex;
   gap: 6px;

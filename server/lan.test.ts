@@ -37,7 +37,7 @@ class Client {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/lan`);
     await new Promise((res, rej) => (ws.once('open', res), ws.once('error', rej)));
     const c = new Client(ws);
-    c.send({ t: 'hello', protocol:2, name, token });
+    c.send({ t: 'hello', protocol:3, name, token });
     await c.next('welcome');
     return c;
   }
@@ -425,7 +425,7 @@ describe('LobbyServer without sockets', () => {
     const peer = s.connect((m) => sent.push(m));
     s.receive(peer, { t: 'create', name: 'x' });
     expect(sent).toEqual([]);
-    s.receive(peer, { t: 'hello', protocol:2, name: '' });
+    s.receive(peer, { t: 'hello', protocol:3, name: '' });
     expect(sent[0]).toMatchObject({ t: 'welcome' });
     s.close();
   });
@@ -438,4 +438,8 @@ it('rejects malformed Architect loadouts without terminating the lobby',async()=
 });
 it('rejects incompatible clients before joining a lobby',()=>{
  const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',name:'Old client'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
+});
+
+it('refuses protocol 2 peers before joining the delayed-flight simulation',()=>{
+ const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',protocol:2,name:'Old Battery'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
 });

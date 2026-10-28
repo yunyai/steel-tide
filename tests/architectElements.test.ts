@@ -25,3 +25,31 @@ it('keeps elevated piercing damage on the visible 3D beam trajectory',()=>{const
 it('limits shell splash and radial reactions to their physical 3D volume',()=>{const {g,s,t}=setup(),a=s.architect!.slots[0],b=s.architect!.slots[1],air=place(g,'iowa',1,t.pos.x,t.pos.z);air.pos.y=500;air.colossus=false;a.element='furnace';b.element='cryo';elementalShellHit(s,a.index,t,150,30000);expect(air.stats.received).toBe(0);applyElementMark(s,b,t);expect(air.stats.received).toBe(0);});
 it('colors and identifies ordinary docked rounds by firing module',()=>{const {g,s,t}=setup();s.control.aimX=t.pos.x;s.control.aimZ=t.pos.z;s.control.fire=true;run(g,.15);const rounds=g.shells.shells.filter(p=>p.owner===s);expect(rounds.length).toBeGreaterThan(0);expect(rounds.every(p=>p.element?.owner===s&&p.element.slot>=0&&p.element.slot<10)).toBe(true);});
 it('does not bank coordinated volleys when Citadel ends',()=>{const {g,s,t}=setup();t.withdraw();s.meter=1;s.activateSkill(8);run(g,14.6);expect(s.architect!.ultimate).toBeNull();expect(s.architect!.slots.every(a=>!('coordinated' in a))).toBe(true);});
+
+for(const control of ['stunned','disarmed'] as const)it(`Brood ${control} blocks only that drone's new rounds and resumes without a burst`,()=>{
+ const {g,s,t}=deployed(),a=s.architect!.slots[0];a.type='swarm';a.skill=1;a.element='furnace';a.entity!.pos.set(0,0,0);t.pos.set(0,0,-1500);
+ startElementAttack(s,a,t,'skill');const drones=s.architect!.elements.drones.map(d=>g.ships.find(m=>m.id===d.id)!);
+ const counts=new Map(drones.map(m=>[m.id,0]));g.events.on('architectElement',e=>{if(e.phase!=='cast'||e.attack!=='salvo')return;for(const m of drones)if(Math.abs(e.x-(a.entity!.pos.x+Math.sin(m.id*2+g.time)*65))<1e-6)counts.set(m.id,counts.get(m.id)!+1);});
+ for(let i=0;i<46;i++){g.time+=1/60;updateElements(s,1/60);}const before=t.stats.received;expect(s.architect!.elements.jobs.some(j=>j.projectile)).toBe(true);
+ drones[0].mods[control]=true;counts.set(drones[0].id,0);counts.set(drones[1].id,0);
+ for(let i=0;i<180;i++){g.time+=1/60;updateElements(s,1/60);}
+ expect(counts.get(drones[0].id)).toBe(0);expect(counts.get(drones[1].id)).toBeGreaterThanOrEqual(2);expect(t.stats.received).toBeGreaterThan(before);
+ drones[0].mods[control]=false;g.time+=1/60;updateElements(s,1/60);expect(counts.get(drones[0].id)).toBeLessThanOrEqual(1);
+ for(let i=0;i<60;i++){g.time+=1/60;updateElements(s,1/60);}expect(counts.get(drones[0].id)).toBe(1);
+});
+
+import {architectSkillRechargeRate} from '../src/skills/misc/ArchitectElements';
+it('shares actual recharge rates with presentation including paused transformations and control effects',()=>{
+ const {g,s}=deployed(),a=s.architect!.slots[0];expect(architectSkillRechargeRate(s,a)).toBe(1);a.boostUntil=g.time+4;expect(architectSkillRechargeRate(s,a)).toBe(1.25);
+ s.activateSkill(2);expect(architectSkillRechargeRate(s,a)).toBe(1.5);s.mods.stunned=true;a.entity!.mods.disarmed=true;expect(architectSkillRechargeRate(s,a)).toBe(1.5);
+ a.state='citadel';expect(architectSkillRechargeRate(s,a)).toBe(5);
+ for(const state of ['docked','moving','returning','launching','assembling','destroyed'] as const){a.state=state;expect(architectSkillRechargeRate(s,a)).toBe(0);}
+});
+for(const hunted of [false,true])it(`applies Hunt to ${hunted?'marked':'unmarked'} drone and reaction damage exactly once`,()=>{
+ const {g,s,t}=deployed(),a=s.architect!.slots[0],b=s.architect!.slots[1];a.entity!.pos.set(0,0,0);t.pos.set(0,0,-200);
+ s.architect!.huntTarget=hunted?t.id:-1;s.architect!.huntUntil=g.time+10;a.type='swarm';a.skill=1;a.element='furnace';b.element='cryo';
+ startElementAttack(s,a,t,'skill');const drones=s.architect!.elements.drones;drones[0].next=g.time;drones[1].next=g.time+100;
+ const before=t.stats.received;updateElements(s,.3);expect(t.stats.received-before).toBeCloseTo(hunted?8400:6000);
+ s.architect!.elements.marks=[];const reaction=t.stats.received;applyElementMark(s,a,t);applyElementMark(s,b,t);expect(t.stats.received-reaction).toBeCloseTo(hunted?42000:30000);
+ s.architect!.elements.marks=[];b.reactionUntil=g.time+4;const boosted=t.stats.received;applyElementMark(s,a,t);applyElementMark(s,b,t);expect(t.stats.received-boosted).toBeCloseTo(hunted?58800:42000);
+});

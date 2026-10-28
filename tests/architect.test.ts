@@ -168,3 +168,12 @@ it('prefers a valid owner lock even when an unlocked enemy is closer',()=>{
   near.secondaries.length=0;near.throttle=2;near.speed=0;s.control.targetId=t.id;
   run(g,1/60);expect(m.control.aimX).toBe(t.pos.x);expect(m.control.aimZ).toBe(t.pos.z);
 });
+it('emits one Reconfigure command only after a complete movement has been accepted',()=>{
+ const {g,s}=arena();g.map.heightAt=()=>-100;const commands:string[]=[],movingAtAcceptance:number[]=[];
+ g.events.on('architectCommand',e=>{commands.push(e.kind);const kind:string=e.kind;if(kind==='reconfigure')movingAtAcceptance.push(s.architect!.slots.filter(a=>a.state==='moving'&&a.path).length);});
+ expect(s.activateSkill(3)).toBe(false);expect(commands).toHaveLength(0);
+ expect(s.activateSkill(0)).toBe(true);run(g,2);g.map.heightAt=()=>100;
+ expect(s.activateSkill(3)).toBe(false);expect(commands.filter(k=>k==='reconfigure')).toHaveLength(0);expect(s.architect!.slots.filter(a=>a.state==='deployed')).toHaveLength(2);
+ g.map.heightAt=()=>-100;expect(s.activateSkill(3)).toBe(true);expect(commands.filter(k=>k==='reconfigure')).toHaveLength(1);expect(movingAtAcceptance).toEqual([2]);
+ run(g,2);expect(commands.filter(k=>k==='reconfigure')).toHaveLength(1);
+});

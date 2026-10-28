@@ -6,6 +6,7 @@ import type { ActiveBattle } from './app/ActiveBattle';
 import { GroundBattle } from './app/GroundBattle';
 import { LanLink } from './app/LanLink';
 import { NavalBattle } from './app/NavalBattle';
+import { STATIC_HOST } from './app/hosting';
 import type { Shell } from './app/Shell';
 import type { BattleConfig } from './core/BattleSetup';
 import { Game } from './core/Game';
@@ -138,6 +139,6 @@ if (import.meta.env.DEV) {
   Object.assign(window, { steel: { get battle() { return battle; }, renderer, start: startSolo, net: steelNet } });
 }
 // A reload in the middle of the LAN screens (or a LAN battle) goes straight back there.
-if (NetClient.wasActive) lan.open();
+if (!STATIC_HOST && NetClient.wasActive) lan.open();
 else menu.showTitle();
 requestAnimationFrame(frame);

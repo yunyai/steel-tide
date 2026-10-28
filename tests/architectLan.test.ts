@@ -37,3 +37,15 @@ it('shares custom loadouts and synchronized docked refits without divergence',()
  for(let k=0;k<100;k++){const t:Turn={k,e:k===0?[[0,0,valid]]:k===5?[[0,0,{sk:0}]]:undefined};for(let i=0;i<2;i++){x.applyTick(t,i);y.applyTick(JSON.parse(JSON.stringify(t)),i);}expect(x.hash()).toBe(y.hash());}
  expect(a.humans()[0].architect!.slots[0].type).toBe('resonance');
 });
+it('replays Battery flight while a new Assembly takes control without peer divergence',()=>{
+ const config:BattleConfig={mode:'lan',type:'freeplay',mapId:'open',teamSize:1,ai:[0,0],difficulty:'normal',seed:713,era:'mixed',players:[{shipId:'architect',device:'mouse',team:0},{shipId:'iowa',device:'mouse',team:1}]};
+ const a=new Game(config),b=new Game(structuredClone(config)),x=new TurnApplier(a),y=new TurnApplier(b);let flight=false,handoff=false;
+ for(const g of [a,b])for(const s of g.fleet){s.throttle=2;s.speed=0;s.meter=1;}
+ for(let k=0;k<250;k++){
+  const turn:Turn={k,p:k===0?[[0,[0,0,0,0,-1]]]:undefined,e:k===0?[[0,0,{sk:7}]]:k===225?[[0,0,{sk:6}]]:undefined};
+  for(let i=0;i<TURN_TICKS;i++){x.applyTick(turn,i);y.applyTick(structuredClone(turn),i);expect(x.hash()).toBe(y.hash());}
+  flight ||= a.battery.pending.length>0;
+  handoff ||= a.battery.pending.length>0&&a.humans()[0].architect?.ultimate?.kind==='assembly';
+ }
+ expect(flight).toBe(true);expect(handoff).toBe(true);expect(a.battery.pending).toHaveLength(0);
+});

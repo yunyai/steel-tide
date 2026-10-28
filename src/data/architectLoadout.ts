@@ -25,7 +25,8 @@ export function validLoadout(v:unknown):v is ArchitectLoadout{return Array.isArr
 export function defaultLoadout():ArchitectLoadout{return Array.from({length:10},(_,i)=>({type:ARCHITECT_TYPES[i%5],skill:i<5?0:1}));}
 export function copyLoadout(v:unknown):ArchitectLoadout{return validLoadout(v)?v.map(({type,skill})=>({type,skill})):defaultLoadout();}
 export type ArsenalPreset='balanced'|'elemental'|'support'|'shuffle'|'unique';
-export function loadoutPreset(p:ArsenalPreset,omitted:ArchitectType='resonance',rng:()=>number=Math.random):ArchitectLoadout{
+/** Shared presets stay deterministic; the editor supplies randomness for Shuffle. */
+export function loadoutPreset(p:ArsenalPreset,omitted:ArchitectType='resonance',rng:()=>number=()=>.5):ArchitectLoadout{
  if(p==='elemental')return defaultLoadout();
  const types:ArchitectType[]=p==='support'?['restoration','restoration','bastion','bastion','sentinel','abyss','resonance','prism','storm','swarm']:p==='balanced'?['furnace','cryo','storm','gravity','prism','sentinel','abyss','restoration','bastion','swarm']:ARCHITECT_TYPES.filter(t=>t!==omitted);
  return Array.from({length:10},(_,i)=>({type:p==='shuffle'?ARCHITECT_TYPES[Math.min(10,Math.floor(rng()*11))]:types[i],skill:(p==='shuffle'?rng()<.5?0:1:i%2) as 0|1}));

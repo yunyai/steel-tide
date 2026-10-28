@@ -60,3 +60,47 @@ it('Brood deaths do not grant ship kill healing cooldowns meters or ribbons',()=
  const drone=g.ships.find(m=>m.architectDrone)!;t.hp=t.maxHp*.5;t.meter=0;t.skills[0].cooldown=10;const hp=t.hp,events:string[]=[];g.events.on('ribbon',e=>events.push(e.kind));drone.sink(t);
  expect(t.hp).toBe(hp);expect(t.meter).toBe(0);expect(t.skills[0].cooldown).toBe(10);expect(events).not.toContain('Destroyed');expect(events).not.toContain('Kill bonus');expect(t.stats.kills).toBe(0);
 });
+
+it('automatically acquires both Amplifiers with eight nearby docked elemental recipients',()=>{
+ const {g,s,t}=setup();t.withdraw();s.activateSkill(0);run(g,2);
+ const casts:number[]=[];g.events.on('architectElement',e=>{if(e.phase==='cast'&&e.attack==='skill')casts.push(e.slot);});
+ for(const a of s.architect!.slots){a.opening=false;a.skillTimer=100;}
+ for(const a of s.architect!.slots.slice(0,2)){a.type='resonance';a.skill=1;a.element='storm';a.skillTimer=0;a.castGap=0;a.entity!.pos.set(s.pos.x+(a.index?100:-100),0,s.pos.z);}
+ updateElements(s,.3);
+ expect(casts).toEqual([0,1]);
+ for(const a of s.architect!.slots.slice(2))expect(a.reactionUntil).toBeCloseTo(g.time+4);
+});
+it('keeps all-Resonance Accelerando ineligible and excludes distant Amplifier recipients',()=>{
+ const {g,s,t}=setup();t.withdraw();s.activateSkill(0);run(g,2);
+ for(const a of s.architect!.slots){a.type='resonance';a.skill=0;a.element='storm';a.skillTimer=0;a.opening=false;a.castGap=0;if(a.entity)a.entity.pos.set(s.pos.x+a.index*100,0,s.pos.z);}
+ const casts:number[]=[];g.events.on('architectElement',e=>{if(e.phase==='cast')casts.push(e.slot);});updateElements(s,.3);expect(casts).toHaveLength(0);
+ for(const a of s.architect!.slots.slice(0,2)){a.skill=1;a.entity!.pos.z-=3000;}
+ updateElements(s,.3);expect(s.architect!.slots.slice(2).every(a=>a.reactionUntil===0)).toBe(true);
+});
+it('emits an execution result for accepted and rejected refits',()=>{
+ const {g,s}=setup(),results:any[]=[];g.events.on('architectRefit' as any,(e:any)=>results.push(e));
+ expect(refitArchitect(s,0,{type:'swarm',skill:1})).toBe(true);
+ s.activateSkill(0);run(g,2);expect(refitArchitect(s,0,{type:'prism',skill:0})).toBe(false);
+ expect(results.map(e=>[e.index,e.pick.type,e.accepted])).toEqual([[0,'swarm',true],[0,'prism',false]]);expect(results[1].reason).toMatch(/recall/i);
+});
+it('Fortify records its presentation expiry without changing active time or recast behavior',()=>{
+ const {g,s}=setup();g.time=12;s.activateSkill(5);expect(s.skills[5].data.activeUntil).toBe(20);expect(s.skills[5].active).toBe(false);expect(s.skills[5].spec.duration).toBe(0);expect(s.skills[5].cooldown).toBe(16);
+});
+
+it('resolves exact support output, duration and strongest nonstacking buffs',()=>{
+ const {g,s,t}=setup();t.withdraw();s.activateSkill(0);run(g,2);const [a,b]=s.architect!.slots,target=b.entity!;
+ for(const slot of s.architect!.slots){slot.skillTimer=100;slot.opening=false;slot.castGap=0;}s.architect!.elements.jobs=[];
+ a.entity!.pos.copy(target.pos);target.hp=10000;a.type='restoration';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,2);expect(target.hp).toBe(90000);
+ a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(target.hp).toBe(115000);
+ a.type='bastion';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(target.shield).toBe(120000);expect(target.shieldTime).toBe(5);
+ a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.citadelDR).toBe(.2);expect(target.effects.find(e=>e.id==='architectBulwark')!.time).toBe(4);
+ startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.citadelDR).toBe(.2);
+ a.type='resonance';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(b.boostUntil).toBe(g.time+4);
+ a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(b.reactionUntil).toBe(g.time+4);
+});
+it('Hunt strengthens repair and shield output by forty percent exactly once',()=>{
+ const {g,s,t}=setup();t.withdraw();s.activateSkill(0);run(g,2);const [a,b]=s.architect!.slots,target=b.entity!;
+ for(const slot of s.architect!.slots){slot.skillTimer=100;slot.opening=false;}s.architect!.elements.jobs=[];s.architect!.huntUntil=g.time+10;
+ a.entity!.pos.copy(target.pos);target.hp=10000;a.type='restoration';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,2);expect(target.hp).toBe(122000);
+ a.type='bastion';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(target.shield).toBe(168000);
+});
