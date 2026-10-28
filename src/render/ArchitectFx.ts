@@ -1,3 +1,4 @@
+import { contactVisible } from '../core/Targeting';
 import { ELEMENT_STYLE } from '../skills/misc/ArchitectElements';
 import { Color, DoubleSide, Euler, InstancedBufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial, PlaneGeometry, Quaternion, Vector3, type Scene } from 'three';
 import type { Game } from '../core/Game';
@@ -45,13 +46,14 @@ export class ArchitectFx {
     this.panels.name='architect-citadel-panels';this.panels.count=0;this.panels.frustumCulled=false;
     scene.add(this.ribbons.mesh,this.panels);
     this.off.push(game.events.on('architectShot',e=>{
+      if(e.kind==='killbox')return;
       if(this.shots.length>=160)this.shots.shift();this.shots.push({...e,age:0});
       // Ten simultaneous guns are one audible volley, rather than ten competing cues.
       if(e.kind==='assembly')audio.cue('architectAssembly','impact','beam',e.x,e.y,e.z,this.locals.includes(e.ship));
     }),game.events.on('architectCommand',e=>{
       const local=this.locals.includes(e.ship),kind=e.kind;
-      if(kind==='destroy'||kind==='end')return;
-      audio.cue(kind==='assembly'?'architectAssembly':kind==='citadel'?'architectCitadel':kind==='killbox'?'architectKillbox':'architectDeploy','activate',kind==='citadel'?'transform':'charge',e.ship.pos.x,20,e.ship.pos.z,local);
+      if(kind==='destroy'||kind==='end'||kind==='killbox'||kind==='reconfigure')return;
+      audio.cue(kind==='assembly'?'architectAssembly':kind==='citadel'?'architectCitadel':'architectDeploy','activate',kind==='citadel'?'transform':'charge',e.ship.pos.x,20,e.ship.pos.z,local);
     }));
   }
   update(dt:number,locals:Ship[]=[]):void {
@@ -62,10 +64,9 @@ export class ArchitectFx {
     const active=new Set<number>();
     for(const s of this.game.ships){
       const u=s.architect?.ultimate;if(!s.alive||!u)continue;active.add(s.id);
-      const beat=u.kind==='killbox'?u.waves:u.kind==='assembly'?Math.floor(u.elapsed*2):-1;
+      const beat=u.kind==='assembly'?Math.floor(u.elapsed*2):-1;
       if(beat>=0&&this.heard.get(s.id)!==beat){
         this.heard.set(s.id,beat);
-        if(u.kind==='killbox'&&beat>0)audio.cue('architectKillbox','impact','impact',u.x,15,u.z,locals.includes(s));
       }
     }
     for(const id of this.heard.keys())if(!active.has(id))this.heard.delete(id);
@@ -78,7 +79,7 @@ export class ArchitectFx {
         const a=s.architect;if(!s.alive||s.withdrawn||!a)continue;
         const color=team===-1||team===s.team?GOLD:RED;
         for(const slot of a.slots){
-          const m=slot.entity;if(!m?.alive)continue;
+          const m=slot.entity;if(!m?.alive||team!==-1&&!contactVisible(m,team))continue;
           if(slot.path){
             r.push(m.pos.x,m.pos.y+3,m.pos.z,slot.path.x,slot.path.y+3,slot.path.z,color,.25,3,1);
             const y=m.pos.y;r.push(m.pos.x-14,y-5,m.pos.z,m.pos.x,y-26,m.pos.z,BLUE,.8,4,2);
@@ -87,6 +88,7 @@ export class ArchitectFx {
         }
         if(a.linkUntil>this.game.time)for(const edge of a.links){
           const x=a.slots[edge.a],y=a.slots[edge.b];if(x.state!=='deployed'||y.state!=='deployed'||!x.entity?.alive||!y.entity?.alive)continue;
+          if(team!==-1&&(!contactVisible(x.entity,team)||!contactVisible(y.entity,team)))continue;
           const p=x.entity.pos,q=y.entity.pos;
           r.push(p.x,p.y+15,p.z,q.x,q.y+15,q.z,color,.65,5,2);
           r.push(p.x,p.y+15,p.z,q.x,q.y+15,q.z,WHITE,.5,1,1);
@@ -96,7 +98,7 @@ export class ArchitectFx {
           const modules=u.members.map(i=>a.slots[i]).filter(slot=>slot.state==='citadel'&&slot.entity?.alive).map(slot=>slot.entity!);
           for(let i=0;i<modules.length;i++){
             const p=modules[i].renderPos,q=modules[(i+1)%modules.length].renderPos;
-            r.push(s.renderPos.x,s.renderPos.y+42,s.renderPos.z,p.x,p.y+8,p.z,color,.35,4,1.5);
+            if(team===-1||contactVisible(s,team))r.push(s.renderPos.x,s.renderPos.y+42,s.renderPos.z,p.x,p.y+8,p.z,color,.35,4,1.5);
             if(modules.length<2||(modules.length===2&&i===1))continue;
             const bottom=this.surface(p.x,p.z),endBottom=this.surface(q.x,q.z),top=p.y+70,endTop=q.y+70;
             r.push(p.x,p.y+8,p.z,q.x,q.y+8,q.z,color,.8,7,2);
@@ -134,9 +136,6 @@ export class ArchitectFx {
             this.focusRing(s,ASSEMBLY_MUZZLE,42-k*12,color,.65);
             this.focusRing(s,0,62+k*10,color,.35);
           }
-        }else if(u.kind==='killbox'){
-          this.ring(u.x,u.z,1500,color,.4);
-
         }
       }
       for(const shot of this.shots){

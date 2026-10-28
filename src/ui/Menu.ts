@@ -1,4 +1,4 @@
-import { architectLoadoutEditor,savedArchitectLoadout,saveArchitectLoadout } from './ArchitectLoadout';
+import { architectLoadoutEditor,savedArchitectLoadout,saveArchitectLoadout,type ArchitectEditor } from './ArchitectLoadout';
 import { fleetEditor } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId, SHIFT_SURGE, SHIFT_TEMPOS, type ShiftTempo } from '../config';
@@ -503,7 +503,9 @@ export class Menu {
     /** The preview shows the selected ship's Titan Shift form instead of the ship. */
     let formLook = false;
 
+    let arsenalEditor:ArchitectEditor|null=null;
     const renderDossier = () => {
+      arsenalEditor?.dispose();arsenalEditor=null;
       const s = spec;
       const titan = s.cls === 'TT';
       const stat = (label: string, frac: number, val: string) => {
@@ -576,7 +578,12 @@ export class Menu {
             ]
           : [h('div', { class: 'skill-cards' }, ...cards)]),
         ...shiftPart,
-        ...(s.id==='architect'?[architectLoadoutEditor(pc.architectLoadout??savedArchitectLoadout(),v=>{pc.architectLoadout=v;saveArchitectLoadout(v);})]:[]),
+        ...(s.id==='architect'?[(arsenalEditor=architectLoadoutEditor(pc.architectLoadout??savedArchitectLoadout(),changes=>{
+          const accepted=(pc.architectLoadout??savedArchitectLoadout()).map(p=>({...p}));
+          for(const {index,pick} of changes)accepted[index]={...pick};
+          pc.architectLoadout=accepted;saveArchitectLoadout(accepted);
+          return {accepted:changes.map(c=>c.index),pending:[],skipped:[],rejected:[]};
+        })).el]:[]),
         h('ul', { class: 'loadout' }, ...loadout(s).map((l) => h('li', {}, l)), ...(best ? [h('li', {}, `Best ${survival ? 'Survival' : 'Boss Rush'}: wave ${best.wave}, ${best.score.toLocaleString()} points`)] : [])),
       );
     };

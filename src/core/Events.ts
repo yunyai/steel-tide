@@ -48,8 +48,11 @@ export interface GameEventMap {
   lightning: { points: { x: number; y: number; z: number }[]; color: number; straight?: boolean };
   strike: { strike: Strike };
   strikeHit: { strike: Strike };
+  architectRefit: {ship:Ship;index:number;pick:import('../data/architectLoadout').ArchitectSelection;accepted:boolean;reason?:string};
+  architectBatteryLaunch: import('../data/architectBattery').ArchitectBatteryLaunch;
+  architectBatteryImpact: import('../data/architectBattery').ArchitectBatteryImpact;
   architectElement: ElementEvent;
-  architectCommand: { ship: Ship; kind: 'deploy'|'recall'|'destroy'|'assembly'|'killbox'|'citadel'|'end' };
+  architectCommand: { ship: Ship; kind: 'deploy'|'recall'|'reconfigure'|'destroy'|'assembly'|'killbox'|'citadel'|'end' };
   architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox';slot?:number };
   crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
   stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };

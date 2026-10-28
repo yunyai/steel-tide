@@ -1,5 +1,5 @@
-import { architectLoadoutEditor } from './ArchitectLoadout';
-import type { ArchitectSelection } from '../data/architectLoadout';
+import { architectLoadoutEditor, type ArchitectEditor } from './ArchitectLoadout';
+import { architectRefitEligibility, type ArchitectApply } from './ArchitectEditorState';
 import { randomShip } from '../core/FleetSelection';
 import type { BattleEra, Era, ShipSpec } from '../core/types';
 import { ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
@@ -15,7 +15,7 @@ import { LIVE_ERAS, TABS, type Tab, tabOf } from './Menu';
 export interface ShipPickerOptions {
   /** The captain's ship now (a new hull after a change of ship). */
   ship(): Ship;
-  refit?(index:number,pick:ArchitectSelection):void;
+  refit?:ArchitectApply;
   era: BattleEra;
   titans: boolean;
   /** Sail `spec` from the next respawn; `now` also leaves the fight to change into it. */
@@ -25,8 +25,14 @@ export interface ShipPickerOptions {
 }
 
 /** The picker, and `sync` to run each frame: it redraws when the ship sinks, respawns or changes. */
-export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync(): void } {
+export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync(): void; dispose():void } {
   let me = o.ship();
+  let editor:ArchitectEditor|null=null,editorOwner:Ship|null=null;
+  const off=me.game.events.on('architectRefit',event=>{
+    if(event.ship!==editorOwner||!editor)return;
+    editor.resolve(event.index,event.pick,event.accepted,event.reason);
+    editor.sync(event.ship.architectLoadout,architectRefitEligibility(event.ship));
+  });
   const allowed = (s: ShipSpec) => o.titans || s.cls !== 'TT';
   const eras: Era[] = o.era === 'mixed' ? LIVE_ERAS : [o.era];
   // Ships of the battle's era only (a mixed battle offers them all), titans when allowed.
@@ -76,7 +82,10 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
     const name = h('h3', {}, s.name);
     if (s.cls === 'TT') name.classList.add('tt');
     detail.replaceChildren(name, meta, h('p', { class: 'specialty' }, s.specialty), actions);
-    if(me.architect&&o.refit)detail.append(architectLoadoutEditor(me.architectLoadout,(v,index)=>{for(let i=0;i<10;i++)if(index===undefined||index===i)o.refit!(i,v[i]);},i=>me.architect?.slots[i].state==='docked'&&!me.architect.ultimate));
+    if(current&&me.architect&&o.refit){
+      if(!editor||editorOwner!==me){editor?.dispose();editor=architectLoadoutEditor(me.architectLoadout,o.refit,architectRefitEligibility(me));editorOwner=me;}
+      editor.sync(me.architectLoadout,architectRefitEligibility(me));detail.append(editor.el);
+    }else if(editorOwner!==me){editor?.dispose();editor=null;editorOwner=null;}
   };
 
   const renderList = () => {
@@ -158,14 +167,19 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
   let seen = { ship: me, alive: me.alive, next: me.nextSpec };
   const sync = () => {
     const s = o.ship();
-    if (s === seen.ship && s.alive === seen.alive && s.nextSpec === seen.next) return;
+    if (s === seen.ship && s.alive === seen.alive && s.nextSpec === seen.next) {editor?.sync(s.architectLoadout,architectRefitEligibility(s));return;}
     me = s;
     seen = { ship: s, alive: s.alive, next: s.nextSpec };
-    const focused = sheet.contains(document.activeElement);
+    const active=document.activeElement as HTMLElement|null;
+    const focused=sheet.contains(active),editorFocus=active&&editor?.el.contains(active)?active.dataset.arsenalKey:undefined;
     renderLede();
     renderList();
     renderDetail();
-    if (focused) list.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
+    if(editorFocus&&editor){
+      const control=editor.el.querySelector<HTMLElement>(`[data-arsenal-key="${editorFocus}"]`);
+      if(control&&!control.matches(':disabled'))control.focus({preventScroll:true});
+      else editor.el.querySelector<HTMLElement>('.arsenal-slots [aria-pressed="true"]')?.focus({preventScroll:true});
+    }else if(focused)list.querySelector<HTMLElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
   };
-  return { el: overlay, sync };
+  return { el: overlay, sync, dispose(){off();editor?.dispose();editor=null;} };
 }

@@ -31,6 +31,7 @@ import { BeamSystem } from '../weapons/BeamSystem';
 import { DepthChargeSystem } from '../weapons/DepthCharges';
 import { FieldSystem } from '../weapons/FieldSystem';
 import { MissileSystem } from '../weapons/MissileSystem';
+import { ArchitectBatterySystem } from '../weapons/ArchitectBatterySystem';
 import { ShellSystem } from '../weapons/ShellSystem';
 import { StrikeSystem } from '../weapons/StrikeSystem';
 import { TorpedoSystem } from '../weapons/TorpedoSystem';
@@ -78,6 +79,7 @@ export class Game {
   readonly rng: () => number;
   readonly events = new EventBus();
   readonly map: GameMap;
+  readonly battery: ArchitectBatterySystem;
   readonly shells: ShellSystem;
   readonly torps: TorpedoSystem;
   readonly air: AircraftSystem;
@@ -121,6 +123,7 @@ export class Game {
   constructor(readonly config: BattleConfig) {
     this.rng = makeRng(config.seed);
     this.map = new GameMap(MAP_BY_ID[config.mapId] ?? MAPS[0], config.seed);
+    this.battery = new ArchitectBatterySystem(this);
     this.shells = new ShellSystem(this);
     this.torps = new TorpedoSystem(this);
     this.air = new AircraftSystem(this);
@@ -395,6 +398,7 @@ export class Game {
     syncStepCopies(this);
     this.collideShips();
 
+    this.battery.update();
     this.shells.update(dt);
     this.torps.update(dt);
     this.missiles.update(dt);
@@ -575,6 +579,7 @@ export class Game {
 
   finish(winner: Team | -1, reason: string): void {
     this.over = true;
+    this.battery.clear();
     for (const s of this.ships) if (s.architect) clearArchitect(s);
     for (const s of this.ships) if (s.spec.id === 'stepper' && !s.isSummon) clearStepper(s);
     this.winner = winner;

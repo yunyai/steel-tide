@@ -11,26 +11,26 @@ export type AudioBattleMode = 'naval' | 'ground';
 
 /** Packaged recordings only. Contributor, license and exact edits: public/audio/manifest.json. */
 export const FAMILY_ASSETS: Record<CueFamily, string> = {
-  charge: '/audio/charge.m4a', impact: '/audio/impact.m4a', beam: '/audio/beam.m4a', slash: '/audio/slash.m4a', transform: '/audio/transform.m4a',
+  charge: `${import.meta.env.BASE_URL}audio/charge.m4a`, impact: `${import.meta.env.BASE_URL}audio/impact.m4a`, beam: `${import.meta.env.BASE_URL}audio/beam.m4a`, slash: `${import.meta.env.BASE_URL}audio/slash.m4a`, transform: `${import.meta.env.BASE_URL}audio/transform.m4a`,
 };
-export const GUN_ASSETS = ['/audio/gun-light.m4a', '/audio/gun-medium.m4a', '/audio/gun-heavy.m4a'] as const;
+export const GUN_ASSETS = [`${import.meta.env.BASE_URL}audio/gun-light.m4a`, `${import.meta.env.BASE_URL}audio/gun-medium.m4a`, `${import.meta.env.BASE_URL}audio/gun-heavy.m4a`] as const;
 export const WORLD_ASSETS: Record<SoundKind, string> = {
-  gun: GUN_ASSETS[1], explosion: '/audio/sonniss-explosion.m4a', splash: '/audio/sonniss-splash.m4a', hit: '/audio/sonniss-hit.m4a',
-  torpedo: '/audio/torpedo-launch.m4a', missile: '/audio/missile-launch.m4a', flak: '/audio/flak.m4a', depth: '/audio/sonniss-depth.m4a',
-  zap: '/audio/zap.m4a', thunder: '/audio/thunder.m4a', laser: '/audio/laser.m4a', nuke: '/audio/nuke.m4a',
-  shield: '/audio/shield.m4a', charge: FAMILY_ASSETS.charge, ricochet: '/audio/ricochet.m4a', collapse: '/audio/collapse.m4a',
+  gun: GUN_ASSETS[1], explosion: `${import.meta.env.BASE_URL}audio/sonniss-explosion.m4a`, splash: `${import.meta.env.BASE_URL}audio/sonniss-splash.m4a`, hit: `${import.meta.env.BASE_URL}audio/sonniss-hit.m4a`,
+  torpedo: `${import.meta.env.BASE_URL}audio/torpedo-launch.m4a`, missile: `${import.meta.env.BASE_URL}audio/missile-launch.m4a`, flak: `${import.meta.env.BASE_URL}audio/flak.m4a`, depth: `${import.meta.env.BASE_URL}audio/sonniss-depth.m4a`,
+  zap: `${import.meta.env.BASE_URL}audio/zap.m4a`, thunder: `${import.meta.env.BASE_URL}audio/thunder.m4a`, laser: `${import.meta.env.BASE_URL}audio/laser.m4a`, nuke: `${import.meta.env.BASE_URL}audio/nuke.m4a`,
+  shield: `${import.meta.env.BASE_URL}audio/shield.m4a`, charge: FAMILY_ASSETS.charge, ricochet: `${import.meta.env.BASE_URL}audio/ricochet.m4a`, collapse: `${import.meta.env.BASE_URL}audio/collapse.m4a`,
 };
 export const UI_ASSETS: Record<UiSound, string> = {
-  click: '/audio/ui-click.m4a', ribbon: '/audio/ui-ribbon.m4a', alarm: '/audio/ui-alarm.m4a', ability: '/audio/ui-ability.m4a',
-  ult: '/audio/ui-ult.m4a', capture: '/audio/ui-capture.m4a', victory: '/audio/ui-victory.m4a', defeat: '/audio/ui-defeat.m4a',
-  citadel: '/audio/ui-citadel.m4a', warning: '/audio/ui-warning.m4a', pickup: '/audio/ui-pickup.m4a', siren: '/audio/ui-siren.m4a',
-  horn: '/audio/ui-horn.m4a', heartbeat: '/audio/ui-heartbeat.m4a', ultReady: '/audio/ui-ult-ready.m4a', streak: '/audio/ui-streak.m4a',
-  shift: FAMILY_ASSETS.transform, unshift: '/audio/ui-unshift.m4a',
+  click: `${import.meta.env.BASE_URL}audio/ui-click.m4a`, ribbon: `${import.meta.env.BASE_URL}audio/ui-ribbon.m4a`, alarm: `${import.meta.env.BASE_URL}audio/ui-alarm.m4a`, ability: `${import.meta.env.BASE_URL}audio/ui-ability.m4a`,
+  ult: `${import.meta.env.BASE_URL}audio/ui-ult.m4a`, capture: `${import.meta.env.BASE_URL}audio/ui-capture.m4a`, victory: `${import.meta.env.BASE_URL}audio/ui-victory.m4a`, defeat: `${import.meta.env.BASE_URL}audio/ui-defeat.m4a`,
+  citadel: `${import.meta.env.BASE_URL}audio/ui-citadel.m4a`, warning: `${import.meta.env.BASE_URL}audio/ui-warning.m4a`, pickup: `${import.meta.env.BASE_URL}audio/ui-pickup.m4a`, siren: `${import.meta.env.BASE_URL}audio/ui-siren.m4a`,
+  horn: `${import.meta.env.BASE_URL}audio/ui-horn.m4a`, heartbeat: `${import.meta.env.BASE_URL}audio/ui-heartbeat.m4a`, ultReady: `${import.meta.env.BASE_URL}audio/ui-ult-ready.m4a`, streak: `${import.meta.env.BASE_URL}audio/ui-streak.m4a`,
+  shift: FAMILY_ASSETS.transform, unshift: `${import.meta.env.BASE_URL}audio/ui-unshift.m4a`,
 };
 /** PCM recordings avoid encoder padding at the circular crossfade. */
 export const LOOP_ASSETS = {
-  sea: '/audio/ambience-sea.wav', wind: '/audio/ambience-wind.wav',
-  navalEngine: '/audio/engine-naval.wav', groundEngine: '/audio/engine-ground.wav',
+  sea: `${import.meta.env.BASE_URL}audio/ambience-sea.wav`, wind: `${import.meta.env.BASE_URL}audio/ambience-wind.wav`,
+  navalEngine: `${import.meta.env.BASE_URL}audio/engine-naval.wav`, groundEngine: `${import.meta.env.BASE_URL}audio/engine-ground.wav`,
 } as const;
 export type LoopKind = keyof typeof LOOP_ASSETS;
 

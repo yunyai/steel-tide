@@ -7,7 +7,7 @@ import type { Ship, TurretState } from '../../ships/Ship';
 import type { SkillSpec } from '../../core/types';
 import { canTrack } from '../../core/Targeting';
 import { MAP_HALF } from '../../config';
-import { bearingTo } from '../../core/math';
+import { bearingTo, DEG, wrapDeg } from '../../core/math';
 import { segmentHitsHull } from '../../core/hull';
 import { hurt } from '../kit';
 import { safeStep, type Landing } from './StepperRuntime';
@@ -115,7 +115,8 @@ export function reconfigureModules(s:Ship):boolean {
   if(!slots.length)return s.failSkill('Reconfigure: deploy platforms first');
   const p=archAim(s),poses=formation(s,slots,p.x,p.z,900);
   if(!poses)return s.failSkill('Reconfigure: no safe formation in aimed water');
-  slots.forEach((a,i)=>moveModule(s,a,poses[i],'moving',undefined,true));return true;
+  slots.forEach((a,i)=>moveModule(s,a,poses[i],'moving',undefined,true));
+  s.game.events.emit('architectCommand',{ship:s,kind:'reconfigure'});return true;
 }
 export function raiseShield(s:Ship,amount:number,life=6):void {
   s.shield=Math.max(s.shield,amount);s.shieldMax=Math.max(s.shieldMax,s.shield);s.shieldTime=Math.max(s.shieldTime,life);
@@ -177,6 +178,7 @@ export function destroyPlatform(m:Ship):void {
 }
 export function clearArchitect(s:Ship):void {
   const a=s.architect;if(!a)return;
+  s.game.battery.cancelOwner(s);
   const full=a.healthReady?a.fullHp:s.maxHp;
   s.maxHp=full;
   a.clearing=true;
@@ -266,8 +268,10 @@ export function preparePlatform(m:Ship):void {
   }
   if(!target)return;
   m.control.aimX=target.pos.x;m.control.aimZ=target.pos.z;m.control.aimY=target.pos.y>20?target.pos.y+4:undefined;
-  m.heading=bearingTo(m.pos.x,m.pos.z,target.pos.x,target.pos.z);m.prevHeading=m.renderHeading=m.heading;
-  m.turrets[0].yaw=0;m.turrets[0].canBear=m.turrets[0].aligned=true;m.control.fire=true;
+  const bearing=bearingTo(m.pos.x,m.pos.z,target.pos.x,target.pos.z);
+  const carrier=a.ultimate?.kind==='killbox'?a.ultimate.battery?.members.find(member=>member.slot===slot.index)?.carrier:undefined;
+  m.heading=carrier?.heading??bearing;m.prevHeading=m.renderHeading=m.heading;
+  m.turrets[0].yaw=wrapDeg((bearing-m.heading)/DEG-m.turrets[0].spec.facing);m.turrets[0].canBear=m.turrets[0].aligned=true;m.control.fire=true;
 }
 export function endArchitect(s:Ship):void {if(s.architect?.ultimate)endArchitectUltimate(s);}
 export function turretInDock(s:Ship,t:TurretState):boolean {
@@ -279,9 +283,13 @@ export function setArchitectLoadout(s:Ship,loadout:ArchitectLoadout):void{
  if(s.architect)for(const a of s.architect.slots){const pick=s.architectLoadout[a.index];a.type=pick.type;a.skill=pick.skill;a.element=ARCHETYPES[a.type].element;}
 }
 export function refitArchitect(s:Ship,index:number,pick:import('../../data/architectLoadout').ArchitectSelection):boolean{
- if(!validSelection(pick)||s.game.config.type!=='freeplay'||!s.alive||s.architect?.ultimate||!Number.isInteger(index)||index<0||index>=10)return false;
- const a=s.architect?.slots[index];if(!a||a.state!=='docked')return s.failSkill('Refit: recall this platform first');
- if(a.type===pick.type&&a.skill===pick.skill)return true;
+ const result=(accepted:boolean,reason?:string)=>{s.game.events.emit('architectRefit',{ship:s,index,pick:{...pick},accepted,...(reason?{reason}:{})});return accepted;};
+ if(!validSelection(pick)||!Number.isInteger(index)||index<0||index>=10)return result(false,'Refit: invalid platform selection');
+ if(s.game.config.type!=='freeplay')return result(false,'Refit: available in Free play only');
+ if(!s.alive)return result(false,'Refit: ship is unavailable');
+ if(s.architect?.ultimate)return result(false,'Refit: wait for the transformation to finish');
+ const a=s.architect?.slots[index];if(!a||a.state!=='docked'){const reason='Refit: recall this platform first';s.failSkill(reason);return result(false,reason);}
+ if(a.type===pick.type&&a.skill===pick.skill)return result(true);
  s.architectLoadout[index]={...pick};a.type=pick.type;a.skill=pick.skill;a.element=ARCHETYPES[a.type].element;a.skillTimer=ARCHETYPES[a.type].skills[a.skill].cooldown;a.opening=false;
- s.architect!.elements.jobs=s.architect!.elements.jobs.filter(j=>j.slot!==index||!j.channel);return true;
+ s.architect!.elements.jobs=s.architect!.elements.jobs.filter(j=>j.slot!==index||!j.channel);return result(true);
 }
