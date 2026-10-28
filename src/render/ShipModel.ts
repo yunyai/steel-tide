@@ -1559,7 +1559,7 @@ export class ShipView {
       const v = this.turrets[i];
       if (!v) return;
       if(ship.architectDrone)this.root.scale.setScalar(.45);
-      if(ship.architectPlatform)v.yaw.visible=!(ship.alive&&ship.architectPlatform.owner.architect?.ultimate?.kind==='killbox');
+      if(ship.architectPlatform)v.yaw.visible=true;
       if(ship.architect)v.yaw.visible=ship.architect.slots[i].state==='docked';
       const moduleSlot=ship.architect?.slots[i]??(ship.architectPlatform?ship.architectPlatform.owner.architect?.slots[ship.architectPlatform.index]:undefined);
       if(moduleSlot){const geo=elementalTurretGeometry(moduleSlot.type);(v.yaw.children[0] as Mesh).geometry=geo.house;(v.slide.children[0] as Mesh).geometry=geo.guns;(v.yaw.children[2] as Mesh).geometry=geo.glow;

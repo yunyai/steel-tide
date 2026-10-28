@@ -26,7 +26,9 @@ export function supportTarget(s:Ship,a:ModuleSlot):Ship|null{
  if(a.type==='sentinel')return arsenalTeam(s,true).find(t=>t.alive&&t.team!==s.team&&!t.mods.banished&&(a.skill===1?t.submerged:!t.submerged)&&Math.hypot(t.pos.x-p.x,t.pos.z-p.z)<=range)??null;
  const allies=arsenalTeam(s).filter(t=>t.alive&&!t.mods.banished&&t.team===s.team&&Math.hypot(t.pos.x-p.x,t.pos.z-p.z)<=(a.type==='resonance'?1500:range));
  if(a.type==='restoration')return allies.filter(t=>t.hp<t.maxHp).sort((a,b)=>a.hp/a.maxHp-b.hp/b.maxHp||a.id-b.id)[0]??null;
- if(a.type==='resonance')return allies.find(t=>t.architectPlatform&&t.architectPlatform.owner.architect?.slots[t.architectPlatform.index].type!=='resonance')??null;
+ if(a.type==='resonance')return allies.find(t=>a.skill===0
+  ?t.architectPlatform&&t.architectPlatform.owner.architect?.slots[t.architectPlatform.index].type!=='resonance'
+  :!!t.architectPlatform||t.architect?.slots.some(slot=>slot.state==='docked'&&slot.hp>0))??null;
  return allies.sort((a,b)=>a.hp/a.maxHp-b.hp/b.maxHp||a.id-b.id)[0]??null;
 }
 export function resolveSupport(s:Ship,a:ModuleSlot,j:ElementJob):void{

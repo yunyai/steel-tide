@@ -4,6 +4,16 @@ import type { Input } from '../input/Input';
 export class MenuNavigation {
   private nextMove = 0;
 
+  constructor() {
+    // Escape belongs to the open transfer disclosure even when focus has moved outside it.
+    document.addEventListener('keydown',event=>{
+      if(event.key!=='Escape')return;
+      const close=Array.from(document.querySelectorAll<HTMLButtonElement>('.arsenal-transfer:not([hidden]) [data-menu-back]')).find(button=>button.getClientRects().length>0);
+      if(!close)return;
+      event.preventDefault();event.stopPropagation();close.click();
+    },true);
+  }
+
   update(input: Input, now: number): void {
     const roots = Array.from(document.querySelectorAll<HTMLElement>('.title-screen, .hangar, .sheet, [role="dialog"]'));
     const root = roots.reverse().find(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
@@ -26,7 +36,7 @@ export class MenuNavigation {
         input.consumePadPress(pad, 0);
       }
       if (input.padPressed(pad, 1)) {
-        const back = Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(b => /^(Back|Resume|Cancel)/i.test(b.textContent?.trim() ?? ''));
+        const back = root.querySelector<HTMLButtonElement>('.arsenal-transfer:not([hidden]) [data-menu-back]') ?? Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(b => /^(Back|Resume|Cancel)/i.test(b.textContent?.trim() ?? ''));
         back?.click();
         input.consumePadPress(pad, 1);
       }
@@ -34,7 +44,7 @@ export class MenuNavigation {
   }
 
   private controls(root: HTMLElement): HTMLElement[] {
-    return Array.from(root.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), a[href]')).filter(e => e.getClientRects().length > 0);
+    return Array.from(root.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), a[href]')).filter(e => e.getClientRects().length > 0);
   }
 
   move(root: HTMLElement, direction: number): void {
@@ -71,6 +81,7 @@ export class MenuNavigation {
         const controls = this.controls(root);
         controls[(controls.indexOf(active) + 1) % controls.length]?.focus();
       }
-    } else active.click();
+    } else if (active instanceof HTMLTextAreaElement) active.focus();
+    else active.click();
   }
 }

@@ -34,6 +34,11 @@ export function moduleLinked(s:Ship,a:ModuleSlot):boolean {
  const ar=s.architect;if(!ar||ar.linkUntil<=s.game.time||!a.entity?.alive||!['deployed','citadel'].includes(a.state))return false;
  return ar.slots.some(b=>b.index!==a.index&&b.entity?.alive&&['deployed','citadel'].includes(b.state)&&Math.hypot(a.entity!.pos.x-b.entity.pos.x,a.entity!.pos.z-b.entity.pos.z)<=2500&&clearLine(s,a.entity!.pos.x,a.entity!.pos.z,b.entity.pos.x,b.entity.pos.z,a.entity!.pos.y+16,b.entity.pos.y+16)===1);
 }
+/** Recharge work per simulation second; control effects block casting, not recharge. */
+export function architectSkillRechargeRate(s:Ship,a:ModuleSlot):number {
+ if(!s.alive||!['deployed','citadel'].includes(a.state)||!a.entity?.alive||s.architect?.ultimate?.kind==='assembly')return 0;
+ return a.state==='citadel'?5:Math.min(1.5,1+(moduleLinked(s,a)?.25:0)+(a.boostUntil>s.game.time?.25:0));
+}
 export function emitElement(s:Ship,a:ModuleSlot,j:ElementJob,phase:'cast'|'hit',p?:Ship,pair?:ArchitectElement):void{s.game.events.emit('architectElement',{ship:s,slot:a.index,element:a.element,attack:j.attack,phase,id:j.id,x:j.x,y:j.y,z:j.z,tx:p?.pos.x??j.tx,ty:p?p.pos.y+12:j.ty,tz:p?.pos.z??j.tz,radius:j.radius||j.beam,pair,type:a.type,target:p?.id});}
 function slow(t:Ship){buff(t,'debuff:architectCryo',3,m=>{m.speedMul=Math.min(m.speedMul,.8);});}
 function pull(s:Ship,t:Ship,x:number,z:number){if(t.mods.knockImmune||t.mods.ccImmune||t.mods.invulnerable)return;const a=s.architect!.elements;const old=a.pulls.find(p=>p.target===t.id);if(old){old.x=x;old.z=z;old.until=s.game.time+.5;}else a.pulls.push({target:t.id,x,z,until:s.game.time+.5});}
@@ -129,10 +134,9 @@ export function updateElements(s:Ship,dt:number):void {
  e.pulls=e.pulls.filter(p=>p.until>now);
  for(const p of e.pulls){const t=arsenalShip(s,p.target);if(!t?.alive||t.mods.knockImmune||t.mods.ccImmune||t.mods.invulnerable)continue;const dx=p.x-t.pos.x,dz=p.z-t.pos.z,d=Math.hypot(dx,dz);if(d>1){const v=Math.min(60,d*2);const mag=Math.hypot(t.pushX,t.pushZ);if(mag<=60){t.pushX=dx/d*v;t.pushZ=dz/d*v;}}}
  for(const a of ar.slots){
-  if(!['deployed','citadel'].includes(a.state)||!a.entity?.alive||ar.ultimate?.kind==='assembly')continue;
-  const rate=a.state==='citadel'?5:Math.min(1.5,1+(moduleLinked(s,a)?.25:0)+(a.boostUntil>now?.25:0));
+  const rate=architectSkillRechargeRate(s,a);if(!rate)continue;
   a.skillTimer=Math.max(0,a.skillTimer-dt*rate);a.castGap=Math.max(0,a.castGap-dt);
-  const m=a.entity;if(a.castGap>0||s.mods.stunned||s.mods.disarmed||s.mods.silenced||m.mods.stunned||m.mods.disarmed||m.mods.silenced||a.disabled>0)continue;
+  const m=a.entity!;if(a.castGap>0||s.mods.stunned||s.mods.disarmed||s.mods.silenced||m.mods.stunned||m.mods.disarmed||m.mods.silenced||a.disabled>0)continue;
   if(a.skillTimer>0&&!a.opening)continue;
   const support=['sentinel','restoration','bastion','resonance'].includes(a.type);
   const target=support?supportTarget(s,a):elementTarget(s,a);
@@ -144,7 +148,7 @@ export function updateElements(s:Ship,dt:number):void {
   const m=arsenalShip(s,d.id),a=ar.slots[d.slot];if(!m?.alive)continue;
   if(!a.entity?.alive||!['deployed','citadel'].includes(a.state)){m.withdraw();continue;}
   const p=elementOrigin(s,a);m.pos.set(p.x+Math.sin(d.id*2+s.game.time)*65,p.y+25,p.z+Math.cos(d.id*2+s.game.time)*65);
-  if(now>=d.next){d.next=now+1;const t=elementTarget(s,a);if(t&&!s.mods.stunned&&!s.mods.disarmed&&!s.mods.silenced){const j=job(s,a,'salvo',m.pos,t.pos,6000,0);j.channel=false;j.target=t.id;j.projectile=true;j.speed=1800;j.life=5;j.support=false;e.jobs.push(j);emitElement(s,a,j,'cast');}}
+  if(now>=d.next){d.next=now+1;const t=elementTarget(s,a);if(t&&!s.mods.stunned&&!s.mods.disarmed&&!s.mods.silenced&&!m.mods.stunned&&!m.mods.disarmed){const j=job(s,a,'salvo',m.pos,t.pos,6000,0);j.channel=false;j.target=t.id;j.projectile=true;j.speed=1800;j.life=5;j.support=false;e.jobs.push(j);emitElement(s,a,j,'cast');}}
  }
  e.drones=e.drones.filter(d=>arsenalShip(s,d.id)?.alive);
  const jobs=e.jobs.slice();for(const j of jobs){

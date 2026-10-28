@@ -1,3 +1,5 @@
+import { ARCHITECT_BATTERY_FLIGHT, type ArchitectBatteryCast, type ArchitectBatteryStage } from '../../data/architectBattery';
+import { planArchitectBatteryLayout, buildArchitectBatteryPaths } from './ArchitectBatteryPose';
 import { applyElementMark, ultimateElementHit } from './ArchitectElements';
 import type { Ship } from '../../ships/Ship';
 import { MAP_HALF } from '../../config';
@@ -8,6 +10,7 @@ import { available, archAim, attachModule, clearLine, dockPoint, formation, modu
 
 export type ArchitectUltimateKind='assembly'|'killbox'|'citadel';
 export interface ArchitectUltimate {
+  battery:ArchitectBatteryCast|null;
   kind:ArchitectUltimateKind;elapsed:number;members:number[];x:number;z:number;
   aimX:number;aimY:number;aimZ:number;locked:boolean;waves:number;fired:boolean;granted:number[];
 }
@@ -18,7 +21,11 @@ export function beginArchitectUltimate(s:Ship,kind:ArchitectUltimateKind):boolea
   const p=archAim(s);
   const poses=kind==='killbox'?formation(s,slots,p.x,p.z,1500):null;
   if(kind==='killbox'&&!poses)return s.failSkill('Grand Battery: no safe water for the complete formation');
-  a.ultimate={kind,elapsed:0,members:slots.map(a=>a.index),x:p.x,z:p.z,aimX:s.control.aimX,aimY:s.control.aimY??4,aimZ:s.control.aimZ,locked:false,waves:0,fired:false,granted:[]};
+  const battery:ArchitectBatteryCast|null=kind==='killbox'?{
+    id:s.game.battery.beginCast(s),generation:s.game.battery.generation(s),startedAt:s.game.time,
+    members:slots.map((slot,n)=>{const q=poses![n],carrier={x:q.x,y:0,z:q.z,heading:q.heading};return {slot:slot.index,carrier,layout:planArchitectBatteryLayout(carrier,{x:p.x,y:4,z:p.z},(x,z)=>s.game.map.heightAt(x,z))};}),
+  }:null;
+  a.ultimate={battery,kind,elapsed:0,members:slots.map(a=>a.index),x:p.x,z:p.z,aimX:s.control.aimX,aimY:s.control.aimY??4,aimZ:s.control.aimZ,locked:false,waves:0,fired:false,granted:[]};
   slots.forEach((slot,n)=>{
     const q=kind==='assembly'?dockPoint(s,slot.index):kind==='killbox'?poses![n]:airPosition(s,n,slots.length,slot.index);
     moveModule(s,slot,q,'assembling',1.5);
@@ -88,7 +95,7 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
     }
     if(u.elapsed+1e-8>=4)endArchitectUltimate(s);
   }else if(u.kind==='killbox'){
-    if(u.elapsed>=1.5){
+    if(u.elapsed+1e-8>=1.5){
       for(const t of s.game.ships)if(t.alive&&t.team!==s.team&&!t.submerged&&!t.mods.ccImmune&&distToHull(t,u.x,u.z)<=1500)buff(t,'debuff:grandBattery',.1,m=>m.speedMul=Math.min(m.speedMul,.8));
       // Each scheduled module stage is consumed once, even when that module was destroyed.
       const count=u.members.length;
@@ -98,13 +105,14 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
         if(u.elapsed+1e-8<at)break;
         const slot=a.slots[u.members[n]],m=slot.entity;u.waves++;
         if(!m?.alive||slot.state!=='deployed')continue;
-        for(const t of s.game.ships){
-          if(!s.alive)break;
-          if(!t.alive||t.team===s.team||t.submerged||Math.abs(t.pos.y)>120||distToHull(t,u.x,u.z)>1500||clearLine(s,u.x,u.z,t.pos.x,t.pos.z,16,t.pos.y+12)<1)continue;
-          const dealt=hurt(s,t,stage===3?90000:50000,{...s.skills[7].spec,element:slot.element});
-          if(dealt>0&&t.alive)applyElementMark(s,slot,t);
-        }
-        s.game.events.emit('architectShot',{ship:s,x:m.pos.x,y:75,z:m.pos.z,tx:u.x,ty:4,tz:u.z,width:stage===3?420:260,kind:'killbox',slot:slot.index});
+        const cast=u.battery!,member=cast.members.find(v=>v.slot===slot.index)!;
+        const center={x:u.x,y:4,z:u.z},launchTime=cast.startedAt+at;
+        s.game.battery.launch({owner:s,generation:cast.generation,castId:cast.id,slot:slot.index,stage:stage as ArchitectBatteryStage,
+          launchTime,arrivalTime:launchTime+ARCHITECT_BATTERY_FLIGHT,type:slot.type,element:slot.element,skill:slot.skill,
+          center,radius:1500,baseDamage:stage===3?90000:50000,damageMultiplier:s.mods.damageMul*s.mods.ultDamageMul,
+          layout:member.layout,carrier:member.carrier,
+          paths:buildArchitectBatteryPaths({carrier:member.carrier,center,radius:1500,slot:slot.index,stage:stage as ArchitectBatteryStage,type:slot.type,layout:member.layout,groundHeight:(x,z)=>s.game.map.heightAt(x,z)}),
+        });
         m.turrets[0].recoil=1;
       }
     }

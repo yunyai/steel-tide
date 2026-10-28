@@ -19,6 +19,12 @@ export function stateHash(g: Game): number {
   h = mix(h, g.time);
   h = mix(h, g.score[0]);
   h = mix(h, g.score[1]);
+  h=mix(h,g.battery.castSerial);h=mix(h,g.battery.launchSerial);
+  for(const [id,generation] of [...g.battery.generations].sort((a,b)=>a[0]-b[0])){h=mix(h,id);h=mix(h,generation);}
+  for(const r of g.battery.pending){
+    for(const n of [r.id,r.owner.id,r.generation,r.castId,r.slot,r.stage,r.launchTime,r.arrivalTime,ARCHITECT_TYPES.indexOf(r.type),ELEMENTS.indexOf(r.element),r.skill,r.center.x,r.center.y,r.center.z,r.radius,r.baseDamage,r.damageMultiplier,['wide','compact','folded'].indexOf(r.layout),r.carrier.x,r.carrier.y,r.carrier.z,r.carrier.heading])h=mix(h,n);
+    for(const path of r.paths)for(const p of [path.muzzle,path.control,path.impact])for(const n of [p.x,p.y,p.z])h=mix(h,n);
+  }
   for (const s of g.ships) {
     h = mix(h, s.id);
     h = mix(h, s.pos.x);
@@ -49,6 +55,7 @@ export function stateHash(g: Game): number {
       for(const edge of a.links){h=mix(h,edge.a);h=mix(h,edge.b);}
       const u=a.ultimate;h=mix(h,u?1:0);
       if(u)for(const n of [['assembly','killbox','citadel'].indexOf(u.kind),u.elapsed,u.x,u.z,u.aimX,u.aimY,u.aimZ,u.locked?1:0,u.waves,u.fired?1:0,...u.members,...u.granted])h=mix(h,n);
+      if(u?.battery){const c=u.battery;for(const n of [c.id,c.generation,c.startedAt])h=mix(h,n);for(const m of c.members)for(const n of [m.slot,['wide','compact','folded'].indexOf(m.layout),m.carrier.x,m.carrier.y,m.carrier.z,m.carrier.heading])h=mix(h,n);}
       for(const st of s.skills)for(const n of [st.cooldown,st.time,st.meter,st.active?1:0])h=mix(h,n);
     }
     if (s.stepper) {

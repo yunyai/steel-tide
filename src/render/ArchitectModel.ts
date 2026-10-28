@@ -1,4 +1,3 @@
-import { ArchitectSiege } from './ArchitectSiege';
 import { ARCHETYPES, type ArchitectType } from '../data/architectLoadout';
 import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, TorusGeometry, Vector3, type BufferGeometry, type Material } from 'three';
@@ -73,7 +72,6 @@ export class ArchitectModel {
   readonly docks:Group[]=[];
   private clamps:Group[][]=[];
   private supports:Group[]=[];
-  private siege:ArchitectSiege|null=null;
   private jets=new Group();
   private gun=new Group();
   private cannon=new Group();
@@ -91,7 +89,6 @@ export class ArchitectModel {
     const add=(parts:Parts,parent:Group,material:Material=this.armor)=>{
       const geo=parts.merge();this.owned.push(geo);parent.add(make(geo,material));
     };
-    if(spec.id==='architectPlatform'){this.siege=new ArchitectSiege(make);this.root.add(this.siege.root);}
     this.root.name=spec.id==='architect'?'architect-foundry':'architect-platform-frame';
     if(spec.id==='architect'){
       const frame=new Parts(),lights=new Parts();
@@ -188,7 +185,6 @@ export class ArchitectModel {
   }
 
   pose(_time:number,ship?:Ship):void {
-    if(ship)this.siege?.pose(ship,_time);
     for(let i=0;i<this.docks.length;i++){
       const slot=ship?.architect?.slots[i],docked=!slot||slot.state==='docked';
       this.docks[i].visible=docked;

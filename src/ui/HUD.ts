@@ -1,3 +1,4 @@
+import { architectSkillPresentation,architectModuleSkillPresentation,architectIncomingBattery } from './ArchitectSkillPresentation';
 import { ARCHETYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
@@ -540,7 +541,7 @@ export class HUD {
       item.dataset.state=state;item.dataset.health=a.hp/me.architect!.moduleHp<.3?'low':a.hp/me.architect!.moduleHp<.6?'mid':'high';item.style.setProperty('--health',`${Math.max(0,a.hp/me.architect!.moduleHp)}`);
       setText(item.querySelector('span')!,state==='destroyed'?`${Math.ceil(a.rebuild)}s`:state==='docked'?'DOCK':state==='deployed'?'SET':state==='citadel'?'AIR':state==='returning'?'HOME':state==='assembling'?'BUILD':'MOVE');
       const theme=ARCHETYPES[a.type];item.querySelector('b')!.textContent=`${i+1} ${theme.short}`;item.querySelector('b')!.style.color=`#${theme.color.toString(16).padStart(6,'0')}`;
-      item.title=`${theme.name} ${i+1} · skill ${a.skillTimer.toFixed(1)}s · ${ARCHETYPES[a.type].skills[a.skill].name}: ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP${a.reload>0?`, reload ${a.reload.toFixed(1)}s`:''}`;
+      item.title=`${theme.name} ${i+1} · ${architectModuleSkillPresentation(me,i).label} · ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP`;
       item.setAttribute('aria-label',item.title);
     });
 
@@ -820,9 +821,16 @@ export class HUD {
     if (me.fireProof) st.push(['Fireproof', 'buff', glyph('wrench')]);
     if(me.architect){
       const a=me.architect,u=a.ultimate;
-      if(a.linkUntil>g.time)st.push([`Network ${Math.ceil(a.linkUntil-g.time)}s`,'buff',glyph('lightning')]);
-      if(a.huntUntil>g.time)st.push([`Hunt · ${(a.huntUntil-g.time).toFixed(1)}s`,'buff',glyph('salvo')]);
-      if(u)st.push([`${u.kind==='assembly'?'Assembly':u.kind==='killbox'?'Grand Battery':'Citadel'} · ${u.members.filter(i=>a.slots[i].state!=='destroyed').length}/10`,'buff',glyph('fleet')]);
+      for(const [index,icon] of [[1,'salvo'],[2,'lightning'],[5,'shield']] as const){
+        const timing=architectSkillPresentation(me,index);
+        if(timing.activeRemaining>0)st.push([`${timing.phase} · ${timing.activeRemaining.toFixed(1)}s`,'buff',glyph(icon)]);
+      }
+      if(u){
+        const index=u.kind==='assembly'?6:u.kind==='killbox'?7:8,timing=architectSkillPresentation(me,index);
+        st.push([`${u.kind==='assembly'?'Assembly':u.kind==='killbox'?'Grand Battery':'Citadel'} · ${timing.phase} ${timing.activeRemaining.toFixed(1)}s · ${timing.members}/10`,'buff',glyph('fleet')]);
+      }
+      const incoming=architectIncomingBattery(me);
+      if(incoming)st.push([`Battery incoming · ${incoming.remaining.toFixed(1)}s · ${incoming.count} ${incoming.count===1?'round':'rounds'}`,'buff',glyph('salvo')]);
     }
     if(me.stepper) {
       const a=me.stepper;
@@ -866,7 +874,12 @@ export class HUD {
       const ready = me.skillReady(i);
       let p: number;
       let t = '';
-      if (st.active) {
+      const timing=me.architect?architectSkillPresentation(me,i):null;
+      const active=timing?timing.activeRemaining>0:st.active;
+      if (timing&&active) {
+        p=1-timing.activeRemaining/Math.max(.01,timing.activeTotal);
+        t=String(Math.ceil(timing.activeRemaining));
+      } else if (st.active) {
         p = 1 - st.time / Math.max(0.01, st.spec.duration);
         t = String(Math.ceil(st.time));
       } else if (st.spec.ult) {
@@ -877,9 +890,10 @@ export class HUD {
         p = st.cooldown > 0 ? Math.min(1, st.cooldown / Math.max(0.01, full)) : 0;
         t = st.cooldown > 0 ? String(Math.ceil(st.cooldown)) : '';
       }
+      if(timing){se.root.dataset.phase=timing.phase;se.root.title=`${st.spec.name}: ${active?`${timing.phase} · ${timing.activeRemaining.toFixed(1)}s${timing.members!==undefined?` · ${timing.members}/10 platforms`:''}`:ready?'Ready':timing.cooldownRemaining>0?`${timing.cooldownRemaining.toFixed(1)}s recharge`:'Charging'}`;}
       se.root.style.setProperty('--p', p.toFixed(3));
       setText(se.t, t);
-      const cls = `sk${st.spec.ult ? ' ult' : ''}${st.active ? ' active' : ready ? ' ready' : ' cool'}${se.root.classList.contains('flash') ? ' flash' : ''}`;
+      const cls = `sk${st.spec.ult ? ' ult' : ''}${active ? ' active' : ready ? ' ready' : ' cool'}${se.root.classList.contains('flash') ? ' flash' : ''}`;
       setClass(se.root, cls);
       if (ready && !se.wasReady && me.alive) {
         flash(se.root, 'flash');
@@ -1001,11 +1015,13 @@ export class HUD {
       let cds=m.querySelector('.module-cooldowns') as HTMLElement|null;
       const tag=s.architectPlatform,owned=tag?.owner===this.pc.ship;
       if(owned&&tag){
-        const a=tag.owner.architect!.slots[tag.index],skill=ARCHETYPES[a.type].skills[a.skill];
-        if(!cds){cds=el('div','module-cooldowns',m);cds.innerHTML='<i aria-label="Gun reload">▰</i><i aria-label="Skill cooldown">◆</i>';}
-        cds.style.display='';const indicators=cds.children;
-        const reload=s.spec.main!.reload*s.mods.reloadMul;
-        for(let k=0;k<2;k++){const e=indicators[k] as HTMLElement,remaining=k?a.skillTimer:a.reload,total=k?skill.cooldown:reload;e.style.setProperty('--ready',String(Math.max(0,Math.min(1,1-remaining/Math.max(.01,total)))));e.style.setProperty('--cool-color',k?`#${ARCHETYPES[a.type].color.toString(16).padStart(6,'0')}`:'#a8d8e5');e.title=`${k?skill.name:'Guns'}: ${a.disabled>0?'Disabled':remaining<=0?'Ready':remaining.toFixed(1)+'s'}`;e.textContent=a.disabled>0?'×':remaining>0?String(Math.ceil(remaining)):k?'◆':'▰';}
+        const timing=architectModuleSkillPresentation(tag.owner,tag.index);
+        if(!cds){cds=el('div','module-cooldowns',m);const ring=el('i','module-skill-cooldown',cds);ring.setAttribute('role','img');}
+        cds.style.display='';
+        const ring=cds.firstElementChild as HTMLElement;
+        ring.style.setProperty('--ready',String(timing.progress));ring.style.setProperty('--cool-color',timing.color);
+        ring.dataset.phase=timing.phase;ring.title=timing.label;ring.setAttribute('aria-label',timing.label);
+        setText(ring,timing.phase==='disabled'?'×':timing.phase==='paused'?'Ⅱ':timing.eta!==null&&timing.eta>0?String(Math.ceil(timing.eta)):'◆');
       }else if(cds)cds.style.display='none';
       const sh = m.querySelector('.sh') as HTMLElement;
       sh.style.visibility = s.shield > 0 ? '' : 'hidden';

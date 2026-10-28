@@ -109,7 +109,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
       h('a', { href: 'https://creativecommons.org/licenses/by/4.0/', target: '_blank', rel: 'noopener noreferrer' }, 'CC BY 4.0'), ' · ',
       h('a', { href: 'https://kenney.nl/assets/sci-fi-sounds', target: '_blank', rel: 'noopener noreferrer' }, 'Kenney'), ' · ',
       h('a', { href: 'https://sonniss.com/gameaudiogdc/', target: '_blank', rel: 'noopener noreferrer' }, 'Sonniss contributors'), ' · ',
-      h('a', { href: '/audio/CREDITS.md', target: '_blank', rel: 'noopener noreferrer' }, 'Full credits and modifications'),
+      h('a', { href: import.meta.env.BASE_URL + 'audio/CREDITS.md', target: '_blank', rel: 'noopener noreferrer' }, 'Full credits and modifications'),
     ),
   ];
 

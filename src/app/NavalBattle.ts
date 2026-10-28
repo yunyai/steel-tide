@@ -1,3 +1,5 @@
+import { ArchitectBatteryAudio } from '../fx/ArchitectBatteryAudio';
+import { applyArchitectRefits } from '../ui/ArchitectEditorState';
 import { refitArchitect } from '../skills/misc/ArchitectRuntime';
 import { Vector3 } from 'three';
 import { type BattleConfig, defaultAssist } from '../core/BattleSetup';
@@ -69,6 +71,8 @@ export class NavalBattle implements ActiveBattle {
   private overlay: HTMLElement | null = null;
   /** Keeps the open ship picker in step with the captain's ship. */
   private pickerSync: (() => void) | null = null;
+  private pickerDispose: (() => void) | null = null;
+  private batteryAudio:ArchitectBatteryAudio;
   /** The performance readout, while it is switched on. */
   private perf: PerfPanel | null = null;
   private off: (() => void)[] = [];
@@ -87,6 +91,7 @@ export class NavalBattle implements ActiveBattle {
   ) {
     const { menu, menuLayer, renderer, hudLayer, input, canvas } = shell;
     audio.beginBattle();
+    this.batteryAudio=new ArchitectBatteryAudio(game);
     menu.hide();
     menuLayer.style.pointerEvents = 'none';
     this.scene = new NavalScene(renderer, game);
@@ -100,6 +105,7 @@ export class NavalBattle implements ActiveBattle {
       if (link) pc.draft = emptyControl();
       return pc;
     });
+    this.batteryAudio.update(this.pcs.map(pc=>pc.ship));
     this.viewports = this.pcs.map(captainView);
     for (const pc of this.pcs) this.scene.aiming.set(pc.camera, pc);
     this.huds = this.pcs.map((pc) => {
@@ -121,6 +127,7 @@ export class NavalBattle implements ActiveBattle {
     this.off.push(
       game.events.on('gameOver', (g) => {
         audio.stopBattle();
+        this.pickerDispose?.();this.pickerDispose=null;
         this.shell.input.capture = false;
         this.ended = true;
         this.reportIn = 3.5;
@@ -205,7 +212,9 @@ export class NavalBattle implements ActiveBattle {
   }
 
   dispose(): void {
+    this.batteryAudio.dispose();
     audio.stopBattle();
+    this.pickerDispose?.();this.pickerDispose=null;
     const { hudLayer, overlayLayer, renderer, input, menuLayer } = this.shell;
     for (const f of this.off) f();
     for (const h of this.huds) h.dispose();
@@ -241,6 +250,7 @@ export class NavalBattle implements ActiveBattle {
 
   private setOverlay(el: HTMLElement | null): void {
     this.pickerSync = null;
+    this.pickerDispose?.();this.pickerDispose=null;
     this.overlay?.remove();
     this.overlay = el;
     this.shell.overlayLayer.style.pointerEvents = el ? '' : 'none';
@@ -318,7 +328,10 @@ export class NavalBattle implements ActiveBattle {
     if (!pc) return;
     const picker = buildShipPicker({
       ship: () => this.pcs[0].ship,
-      refit:(index,pick)=>{if(this.link)this.link.lockstep.sendEdge({ar:{index,pick}});else refitArchitect(this.pcs[0].ship,index,pick);},
+      refit:changes=>applyArchitectRefits(this.pcs[0].ship,changes,(index,pick)=>{
+        if(this.link){this.link.lockstep.sendEdge({ar:{index,pick}});return 'pending';}
+        return refitArchitect(this.pcs[0].ship,index,pick);
+      }),
       era: this.config.era ?? 'historic',
       titans: this.config.titans !== false,
       click: () => audio.ui('click'),
@@ -330,6 +343,7 @@ export class NavalBattle implements ActiveBattle {
     });
     this.setOverlay(picker.el);
     this.pickerSync = picker.sync;
+    this.pickerDispose = picker.dispose;
   }
 
   /** Free play: sail `spec` from the next respawn, and with `now` leave the fight at once to change into it. */
@@ -438,6 +452,7 @@ export class NavalBattle implements ActiveBattle {
     const { input, renderer, canvas, overlayLayer } = this.shell;
     const g = this.game;
     const link = this.link;
+    this.batteryAudio.update(this.pcs.map(pc=>pc.ship));
     if (input.pressed('F3')) setDisplay({ perf: !display().perf });
     const padPause = this.pcs.some((p) => p.padIndex >= 0 && input.padPressed(p.padIndex, PAD_START));
     if (!this.ended && (input.pressed('Escape') || padPause)) {

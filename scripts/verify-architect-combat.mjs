@@ -6,7 +6,7 @@ const {module:{Game}}=await runnerImport(`${process.cwd()}/src/core/Game.ts`);
 const {module:{AIController}}=await runnerImport(`${process.cwd()}/src/ai/AIController.ts`);
 const {module:{SHIP_BY_ID}}=await runnerImport(`${process.cwd()}/src/data/ships.ts`);
 const results=[];
-for(const foe of ['stepper','leviathan','hadal'])for(let seed=0;seed<10;seed++)for(const side of [0,1]){
+for(const foe of ['stepper','leviathan','hadal'])for(let seed=0;seed<Number(process.env.ARCH_SEEDS??10);seed++)for(const side of [0,1]){
   const g=new Game({mode:'solo',type:'annihilation',mapId:'open',teamSize:1,ai:[0,0],difficulty:'hard',era:'mixed',seed:900+seed,players:[{shipId:'architect',device:'mouse'}]});
   g.ships=[];g.ai.clear();g.fleet.length=0;
   const add=(id,team)=>{const sign=team?1:-1,s=g.addShip(SHIP_BY_ID[id],team,id,sign*1900,seed%2?400:-400,team?-Math.PI/2:Math.PI/2);s.throttle=4;s.speed=s.maxSpeed*.5;s.humanIndex=-1;g.fleet.push(s);g.ai.set(s,new AIController(s,g));return s;};
