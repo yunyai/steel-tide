@@ -178,8 +178,11 @@ export class ArchitectBatteryFx {
   // Shared finale pressure gets priority over secondary decorative skirts/fragments.
   const pressureDone=new Set<string>();for(const impact of this.impacts){const launch=impact.launch,key=`${launch.owner.id}:${launch.castId}`;if(launch.stage===3&&!pressureDone.has(key)){pressureDone.add(key);this.pressure(launch,this.game.time-impact.resolvedAt);}}
   for(const impact of this.impacts)for(const [head,path] of impact.launch.paths.entries())this.burst(impact.launch,path.impact,this.game.time-impact.resolvedAt,head);
-  for(const p of Object.values(this.pools)){p.mesh.count=p.count;p.peak=Math.max(p.peak,p.count);p.mesh.instanceMatrix.needsUpdate=true;if(p.mesh.instanceColor)p.mesh.instanceColor.needsUpdate=true;(p.mesh.geometry.getAttribute('instanceFade') as InstancedBufferAttribute).needsUpdate=true;}
-  this.hazard.end();
+  for(const p of Object.values(this.pools)){
+   p.mesh.count=p.count;p.mesh.visible=p.count>0;p.peak=Math.max(p.peak,p.count);if(!p.count)continue;
+   for(const attribute of [p.mesh.instanceMatrix,p.mesh.instanceColor,p.mesh.geometry.getAttribute('instanceFade') as InstancedBufferAttribute])if(attribute){attribute.clearUpdateRanges();attribute.addUpdateRange(0,p.count*attribute.itemSize);attribute.needsUpdate=true;}
+  }
+  this.hazard.end();this.hazard.mesh.visible=this.hazard.count>0;
  }
  private clear(){this.flights=[];this.impacts=[];this.contacts=[];this.dangers.clear();}
  dispose(){for(const off of this.off)off();this.clear();this.machinery.dispose();for(const p of Object.values(this.pools)){this.scene.remove(p.mesh);p.mesh.dispose();p.mesh.geometry.dispose();(p.mesh.material as MeshStandardMaterial).dispose();}this.scene.remove(this.hazard.mesh);this.hazard.dispose();}

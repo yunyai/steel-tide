@@ -262,9 +262,11 @@ export function preparePlatform(m:Ship):void {
     if(!canTrack(m,t)||t.submerged)continue;
     const d=Math.hypot(t.pos.x-m.pos.x,t.pos.z-m.pos.z);if(d>m.mainRange)continue;
     if(a.ultimate?.kind==='killbox'&&Math.hypot(t.pos.x-a.ultimate.x,t.pos.z-a.ultimate.z)>1500)continue;
-    if(clearLine(s,m.pos.x,m.pos.z,t.pos.x,t.pos.z,m.pos.y+30,t.pos.y+12)<1)continue;
     const priority=t.id===(a.huntUntil>s.game.time?a.huntTarget:s.control.targetId)?-1:d;
-    if(priority<dist){target=t;dist=priority;}
+    // A visible winner cannot be displaced by a farther or tied candidate; preserve the first tie.
+    if(!(priority<dist))continue;
+    if(clearLine(s,m.pos.x,m.pos.z,t.pos.x,t.pos.z,m.pos.y+30,t.pos.y+12)<1)continue;
+    target=t;dist=priority;
   }
   if(!target)return;
   m.control.aimX=target.pos.x;m.control.aimZ=target.pos.z;m.control.aimY=target.pos.y>20?target.pos.y+4:undefined;

@@ -181,7 +181,12 @@ export class ArchitectSiege {
     }
    }
   }
-  for(const mesh of [...this.carriers,...Array.from(this.batches.values()).flat()]){mesh.instanceMatrix.needsUpdate=true;const folded=mesh.geometry.getAttribute('instanceFolded') as InstancedBufferAttribute|undefined;if(folded)folded.needsUpdate=true;const open=mesh.geometry.getAttribute('instanceOpen');if(open)(open as InstancedBufferAttribute).needsUpdate=true;if(mesh.count){this.stats.batches++;this.stats.triangles+=mesh.count*(mesh.geometry.index?.count??mesh.geometry.attributes.position.count)/3;}}
+  for(const mesh of [...this.carriers,...Array.from(this.batches.values()).flat()]){
+   mesh.visible=mesh.count>0;if(!mesh.count)continue;
+   // Capacity reserves several simultaneous owners; upload only the live prefix.
+   for(const attribute of [mesh.instanceMatrix,mesh.geometry.getAttribute('instanceFolded') as InstancedBufferAttribute|undefined,mesh.geometry.getAttribute('instanceOpen') as InstancedBufferAttribute|undefined])if(attribute){attribute.clearUpdateRanges();attribute.addUpdateRange(0,mesh.count*attribute.itemSize);attribute.needsUpdate=true;}
+   this.stats.batches++;this.stats.triangles+=mesh.count*(mesh.geometry.index?.count??mesh.geometry.attributes.position.count)/3;
+  }
   this.stats.peakHeads=Math.max(this.stats.peakHeads,this.stats.heads);
  }
  dispose(){for(const off of this.off)off();for(const mesh of [...this.carriers,...Array.from(this.batches.values()).flat()]){this.scene.remove(mesh);mesh.dispose();mesh.geometry.dispose();}this.armor.dispose();this.batchMaterial.dispose();this.receiverMaterial.dispose();this.depthMaterial.dispose();this.rigs.clear();this.launches.clear();}

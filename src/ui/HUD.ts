@@ -112,6 +112,9 @@ export class HUD {
   private markerLayer: HTMLElement;
   /** Edge chevrons for enemies outside the view. */
   private offMarks: HTMLElement[] = [];
+  /** One layout snapshot per frame, shared by every world-to-HUD projection. */
+  private viewportWidth = 0;
+  private viewportHeight = 0;
   private minimap: Minimap;
   // Elements updated every frame.
   private e: Record<string, HTMLElement> = {};
@@ -509,6 +512,9 @@ export class HUD {
   }
 
   update(dt: number): void {
+    // Read before HUD writes: projections later in this update must not force layout again.
+    this.viewportWidth = this.root.clientWidth;
+    this.viewportHeight = this.root.clientHeight;
     const g = this.game;
     const pc = this.pc;
     const me = pc.ship;
@@ -628,7 +634,7 @@ export class HUD {
     e.notice.style.display = notice ? '' : 'none';
 
     this.intermission?.update();
-    this.fb.update(dt);
+    this.fb.update(dt,this.viewportWidth,this.viewportHeight);
     this.minimap.update(dt);
   }
 
@@ -950,14 +956,14 @@ export class HUD {
   private project(x: number, y: number, z: number): { x: number; y: number } | null {
     v3.set(x, y, z).project(this.pc.camera);
     if (v3.z > 1 || v3.z < -1) return null;
-    return { x: (v3.x * 0.5 + 0.5) * this.root.clientWidth, y: (-v3.y * 0.5 + 0.5) * this.root.clientHeight };
+    return { x: (v3.x * 0.5 + 0.5) * this.viewportWidth, y: (-v3.y * 0.5 + 0.5) * this.viewportHeight };
   }
 
   private updateMarkers(): void {
     const g = this.game;
     const me = this.pc.ship;
-    const W = this.root.clientWidth;
-    const H = this.root.clientHeight;
+    const W = this.viewportWidth;
+    const H = this.viewportHeight;
     const items: { s: Ship; x: number; y: number; d: number; label: string }[] = [];
     const off: { s: Ship; d: number }[] = [];
     for (const s of g.ships) {

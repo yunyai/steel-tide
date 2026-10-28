@@ -50,7 +50,7 @@ it('uses authored deployment and receiver-only recoil, with reduced motion retai
   expect(reduced.recoil).toBeCloseTo(5.6);
 });
 
-import { InstancedMesh, Matrix4, Scene, Vector3 } from 'three';
+import { BufferAttribute, InstancedMesh, Matrix4, Scene, Vector3 } from 'three';
 import { ArchitectBatteryFx, BATTERY_FX_CAPS } from '../src/render/ArchitectBatteryFx';
 import { siegeBatchGeometry } from '../src/render/ArchitectSiege';
 import { ShipView } from '../src/render/ShipModel';
@@ -184,4 +184,27 @@ it('renders the authored folded mortars inside the legal footprint with exact wo
   }
  }
  expect(fx.stats.machinery.heads).toBe(20);expect(fx.stats.machinery.batches).toBeLessThanOrEqual(46);fx.dispose();
+});
+
+
+it('uploads only live Battery instance data and submits no empty machinery or effects',()=>{
+ const {g,fx,scene}=fixture();run(g,1.6);g.interpolate();const before=stateHash(g);fx.prepare(0);
+ // Two prepares may occur before a renderer upload; stale ranges must not accumulate.
+ fx.prepare(0);
+ const meshes=scene.children.filter(x=>x instanceof InstancedMesh) as InstancedMesh[];
+ for(const mesh of meshes){
+  expect(mesh.visible).toBe(mesh.count>0);
+  if(!mesh.count)continue;
+  const attributes=[mesh.instanceMatrix,mesh.instanceColor,...['instanceFolded','instanceOpen','instanceFade'].map(k=>mesh.geometry.getAttribute(k))].filter(Boolean);
+  for(const attribute of attributes){
+   expect(attribute).toBeInstanceOf(BufferAttribute);if(!(attribute instanceof BufferAttribute))continue;
+   const uploaded=attribute.updateRanges.reduce((n,r)=>n+r.count,0);
+   expect(uploaded).toBe(mesh.count*attribute!.itemSize);
+  }
+ }
+ expect(stateHash(g)).toBe(before);
+ g.finish(-1,'test');fx.prepare(-1);
+ for(const mesh of meshes)expect(mesh.visible).toBe(false);
+ const versions=meshes.map(mesh=>mesh.instanceMatrix.version);fx.prepare(-1);
+ expect(meshes.map(mesh=>mesh.instanceMatrix.version)).toEqual(versions);fx.dispose();
 });

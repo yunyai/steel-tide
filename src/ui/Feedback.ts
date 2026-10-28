@@ -8,6 +8,7 @@ import { accentCss } from '../data/accents';
 import { audio } from '../fx/Audio';
 import { captainName } from './names';
 import { palette } from './palette';
+import { feedbackDamageText,layoutFeedbackPopups,type FeedbackRect } from './FeedbackLayout';
 
 // Combat feedback for one HUD: damage numbers over the ships you hit (skill hits get the big
 // accent-coloured ones), hit and kill marks on the reticle, kill-streak callouts, a red edge and
@@ -131,16 +132,18 @@ export class Feedback {
   private impact: HTMLElement;
   private off: (() => void)[] = [];
   private rowH = 38;
+  private protectedUi: HTMLElement[];
 
   constructor(
     private game: Game,
     private pc: PlayerController,
-    root: HTMLElement,
+    private root: HTMLElement,
     private project: (x: number, y: number, z: number) => { x: number; y: number } | null,
     banner: (title: string, sub: string, color?: string) => void,
     callout: (title: string, sub: string, color: string) => void,
   ) {
     const team: Team = pc.ship.team;
+    this.protectedUi=Array.from(root.querySelectorAll<HTMLElement>('.top, .callout, .alert, .banner, .siren'));
     // Under everything else in the HUD.
     this.scope = el('div', 'scope', root);
     this.vignette = el('div', 'hurt', root);
@@ -238,7 +241,6 @@ export class Feedback {
     p.last = now;
     const n = p.counts[p.kind] ?? 1;
     p.label.textContent = p.kind === 'skill' ? p.title : n > 1 ? `${LABEL[p.kind]} ×${n}` : LABEL[p.kind];
-    p.num.textContent = p.damage > 0 ? Math.round(p.damage).toLocaleString() : '';
     p.dirty = true;
     const cls = `pop k-${p.kind}${key === 'sec' ? ' sec' : ''}${key.startsWith('reaction:')?' elemental-reaction':key.startsWith('element:')?' elemental-hit':''}${p.el.classList.contains('fresh') ? ' fresh' : ''}`;
     if (p.el.className !== cls) p.el.className = cls;
@@ -273,23 +275,13 @@ export class Feedback {
     arc.time = this.clock;
   }
 
-  update(dt: number): void {
+  update(dt: number,width:number,height:number): void {
     this.clock += dt;
     const now = this.clock;
     const pc = this.pc;
     const me = pc.ship;
 
-    // Damage numbers stack over the target's marker and drift upward. Sizes are read before any
-    // popup moves, so the layout is forced at most once a frame.
-    for (const p of this.pops) {
-      if (p.live && p.dirty) {
-        p.w = p.el.offsetWidth;
-        p.h = p.el.offsetHeight;
-        p.dirty = false;
-      }
-    }
-    // Older popups keep their place; a newer one over a ship nearby on screen moves up clear of them.
-    const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    const visible:{p:Pop;x:number;y:number;age:number}[]=[];
     for (const p of this.pops.filter((q) => q.live).sort((a, b) => a.born - b.born)) {
       const t = now - p.last;
       const s = p.target;
@@ -305,18 +297,35 @@ export class Feedback {
         continue;
       }
       p.el.style.visibility = '';
-      const rise = this.rowH * (0.8 + p.row) + Math.min(50, (now - p.born) * 30);
-      let y = sp.y - rise;
-      const half = p.w / 2;
-      for (let tries = 0; tries < 6; tries++) {
-        const hit = placed.find((b) => sp.x - half < b.x1 && sp.x + half > b.x0 && y - p.h < b.y1 && y > b.y0);
-        if (!hit) break;
-        y = hit.y0 - 2;
-      }
-      placed.push({ x0: sp.x - half, x1: sp.x + half, y0: y - p.h, y1: y });
-      p.el.style.transform = `translate(${sp.x.toFixed(0)}px, ${y.toFixed(0)}px) translate(-50%, -100%)`;
-      p.el.style.opacity = Math.min(1, (POP_LIFE - t) / 0.45).toFixed(2);
+      visible.push({p,x:sp.x,y:sp.y,age:t});
     }
+    const dense=visible.length>=4;
+    // Apply density/text together, then measure all popups and protected HUD regions before moving any.
+    for(const {p} of visible){
+      if(p.el.classList.contains('dense')!==dense){p.el.classList.toggle('dense',dense);p.dirty=true;}
+      if(!p.dirty)continue;
+      const damage=feedbackDamageText(p.damage,dense),text=p.damage>0?damage.text:'';
+      if(p.num.textContent!==text){p.num.textContent=text;p.dirty=true;}
+      const description=`${p.label.textContent}${p.damage>0?`: ${damage.full} damage`:''}`;
+      p.el.title=description;p.el.setAttribute('role','img');p.el.setAttribute('aria-label',description);
+    }
+    for(const {p} of visible)if(p.dirty){p.w=p.el.offsetWidth;p.h=p.el.offsetHeight;p.dirty=false;}
+    const guards:FeedbackRect[]=[];
+    if(visible.length){
+      const origin=this.root.getBoundingClientRect();
+      for(const node of this.protectedUi){
+        if(node.style.display==='none'||node.style.visibility==='hidden'||node.parentElement?.style.visibility==='hidden'||!node.textContent)continue;
+        if((node.classList.contains('callout')||node.classList.contains('siren'))&&!node.getAnimations().some(a=>a.playState==='running'))continue;
+        const box=node.getBoundingClientRect();
+        if(box.width&&box.height)guards.push({left:box.left-origin.left-8,top:box.top-origin.top-8,right:box.right-origin.left+8,bottom:box.bottom-origin.top+8});
+      }
+    }
+    const positions=layoutFeedbackPopups(visible.map(({p,x,y})=>({x,y:y-(dense?28+Math.min(18,(now-p.born)*15):this.rowH*(.8+p.row)+Math.min(50,(now-p.born)*30)),width:p.w*1.35,height:p.h*1.35})),width,height,guards);
+    visible.forEach(({p,age},i)=>{
+      const {x,y}=positions[i];
+      p.el.style.transform=`translate(${x.toFixed(0)}px, ${y.toFixed(0)}px) translate(-50%, -100%)`;
+      p.el.style.opacity=Math.min(1,(POP_LIFE-age)/.45).toFixed(2);
+    });
 
     // Red edge: recent damage, plus a slow pulse while the ship is in its last quarter.
     this.hurt *= Math.exp(-dt * 1.6);

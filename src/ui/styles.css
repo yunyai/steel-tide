@@ -2607,6 +2607,21 @@ select {
     0 2px 2px #000;
 }
 
+/* Crowded salvos keep their labels and accents without filling the battle view. */
+.pop.dense {
+  font-size: 0.9rem;
+}
+
+.pop.dense small {
+  font-size: 0.75em;
+  letter-spacing: 0.03em;
+}
+
+.pop.dense b {
+  font-size: 1.5em;
+  font-style: normal;
+}
+
 .hitmark,
 .killmark,
 .threats {

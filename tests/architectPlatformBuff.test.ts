@@ -49,3 +49,41 @@ it('triples HE as well as AP and keeps owner gun modifiers multiplicative',()=>{
   g.shells.shells=[];expect(m.fireTurret(0,'HE')).toBe(true);
   expect(g.shells.shells[0].spec.damage*g.shells.shells[0].dmgMul).toBeCloseTo(s.spec.main!.he!.damage*3*1.4);
 });
+
+function targetingSetup(){
+  const g=emptyGame('open',713,'freeplay');g.map.heightAt=()=>-100;
+  const s=place(g,'architect',0,0,0),slot=s.architect!.slots[0],m=materialize(s,slot);
+  slot.state='deployed';m.pos.set(0,0,0);m.refreshModifiers();
+  return {g,s,m};
+}
+it('does not trace cover for farther or tied candidates after finding the nearest visible target',()=>{
+  const {g,m}=targetingSetup();
+  place(g,'iowa',1,1000,0);place(g,'iowa',1,2000,0);place(g,'iowa',1,-1000,0);
+  let terrainSamples=0;g.map.heightAt=()=>{terrainSamples++;return -100;};
+  preparePlatform(m);
+  expect(m.control.fire).toBe(true);expect([m.control.aimX,m.control.aimZ]).toEqual([1000,0]);
+  expect(terrainSamples).toBe(50);
+});
+it('preserves explicit target and active Hunt priority over nearer candidates',()=>{
+  const {g,s,m}=targetingSetup();
+  place(g,'iowa',1,1000,0);const selected=place(g,'iowa',1,2000,400),hunted=place(g,'iowa',1,-2500,0);
+  s.control.targetId=selected.id;preparePlatform(m);
+  expect([m.control.aimX,m.control.aimZ]).toEqual([2000,400]);
+  s.architect!.huntTarget=hunted.id;s.architect!.huntUntil=g.time+10;preparePlatform(m);
+  expect([m.control.aimX,m.control.aimZ]).toEqual([-2500,0]);
+  s.architect!.huntUntil=g.time;preparePlatform(m);
+  expect([m.control.aimX,m.control.aimZ]).toEqual([2000,400]);
+});
+it('reevaluates fallback targeting immediately when cover, walls or positions change within a tick',()=>{
+  const {g,s,m}=targetingSetup();
+  const near=place(g,'iowa',1,1000,0),selected=place(g,'iowa',1,2000,400);
+  place(g,'iowa',1,-1500,0);s.control.targetId=selected.id;
+  g.addWall(selected,500,50,500,150,10,0xffffff);preparePlatform(m);
+  expect([m.control.aimX,m.control.aimZ]).toEqual([1000,0]);
+  g.walls.length=0;preparePlatform(m);
+  expect([m.control.aimX,m.control.aimZ]).toEqual([2000,400]);
+  g.map.heightAt=(x,z)=>x>=480&&x<=520&&z>50?100:-100;preparePlatform(m);
+  expect([m.control.aimX,m.control.aimZ]).toEqual([1000,0]);
+  near.pos.x=3000;preparePlatform(m);
+  expect([m.control.aimX,m.control.aimZ]).toEqual([-1500,0]);
+});
