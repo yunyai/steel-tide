@@ -91,7 +91,7 @@ export class NavalBattle implements ActiveBattle {
   ) {
     const { menu, menuLayer, renderer, hudLayer, input, canvas } = shell;
     audio.beginBattle();
-    this.batteryAudio=new ArchitectBatteryAudio(game);
+    this.batteryAudio=new ArchitectBatteryAudio(game,audio,impulse=>this.scene.effects.onShake?.(impulse));
     menu.hide();
     menuLayer.style.pointerEvents = 'none';
     this.scene = new NavalScene(renderer, game);
@@ -123,6 +123,10 @@ export class NavalBattle implements ActiveBattle {
         const k = Math.max(0, 1 - d / 1600);
         if (k > 0) pc.shake(s.amount * k * k);
       }
+    };
+    // Hull Dash kicks only its own captain's camera.
+    this.scene.dashFx.onShake = (ship, amount) => {
+      for (const pc of this.pcs) if (pc.ship === ship) pc.shake(amount);
     };
     this.off.push(
       game.events.on('gameOver', (g) => {
@@ -160,6 +164,7 @@ export class NavalBattle implements ActiveBattle {
         if (w.boss) this.slow = SLOW_HOLD + SLOW_EASE + 0.4;
       }),
       game.events.on('shipSunk', (s) => {
+        if (s.ship.architectPlatform || s.ship.architectDrone) return;
         const k = s.killer;
         const me = this.mine;
         if (me && k && s.ship.team !== me.team && (k === me || k.summonOwner === me)) this.slow = SLOW_HOLD + SLOW_EASE;

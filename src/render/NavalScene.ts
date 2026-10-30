@@ -1,4 +1,5 @@
 import { ArchitectBatteryFx } from './ArchitectBatteryFx';
+import { ArchitectDashFx } from './ArchitectDashFx';
 import { ArchitectElementFx } from './ArchitectElementFx';
 import { FleetFx } from './FleetFx';
 import { ArchitectFx } from './ArchitectFx';
@@ -19,7 +20,7 @@ import { Ocean } from './Ocean';
 import { Projectiles } from './Projectiles';
 import { quality } from './Quality';
 import type { BattleScene, Renderer, Viewport } from './Renderer';
-import { ShipView, warmGeometry } from './ShipModel';
+import { ShipView, warmGeometry, platformSunkAfter } from './ShipModel';
 import { SkillFx } from './SkillFx';
 import { shipViewMode } from './Visibility';
 
@@ -33,6 +34,7 @@ export class NavalScene implements BattleScene {
   readonly elementFx:ArchitectElementFx;
   readonly architectFx: ArchitectFx;
   readonly batteryFx: ArchitectBatteryFx;
+  readonly dashFx: ArchitectDashFx;
   readonly crossFx: CrossStepFx;
   readonly stepperFx: StepperFx;
   readonly aiming = new Map<PerspectiveCamera, TorpedoAimSource>();
@@ -65,6 +67,7 @@ export class NavalScene implements BattleScene {
     this.elementFx = new ArchitectElementFx(this.scene,game);
     this.architectFx = new ArchitectFx(this.scene, game);
     this.batteryFx = new ArchitectBatteryFx(this.scene, game);
+    this.dashFx = new ArchitectDashFx(this.scene, game);
     const q = quality();
     const gl = renderer.gl;
     gl.shadowMap.enabled = q.shadowMap > 0;
@@ -124,6 +127,9 @@ export class NavalScene implements BattleScene {
     this.ocean.material.uniforms.uFogDensity.value = density;
     this.projectiles.setFog(color, density);
     this.skillFx.setFog(color, density);
+    this.batteryFx.setFog(color, density);
+    this.dashFx.setFog(color, density);
+    this.elementFx.setFog(color, density);
   }
 
   dispose(): void {
@@ -132,6 +138,7 @@ export class NavalScene implements BattleScene {
     this.warm = [];
     this.architectFx.dispose();
     this.batteryFx.dispose();
+    this.dashFx.dispose();
     this.elementFx.dispose();
     this.crossFx.dispose();
     this.fleetFx.dispose();
@@ -160,7 +167,7 @@ export class NavalScene implements BattleScene {
     let built = false;
     for (const s of g.ships) {
       const had = this.views.get(s);
-      if(!s.alive&&(s.architectPlatform||s.architectDrone)&&s.deathTime>=3){
+      if(!s.alive&&(s.architectPlatform||s.architectDrone)&&s.deathTime>=(s.architectPlatform?platformSunkAfter(s):3)){
         if(had){this.scene.remove(had.root);if(had.dome)this.scene.remove(had.dome);had.dispose();this.views.delete(s);}continue;
       }
       // A Titan Shift (or its revert) swaps the hull's spec: build the new body in place of the old.
@@ -197,7 +204,7 @@ export class NavalScene implements BattleScene {
     const built = this.syncShips();
     this.warmUp(dt, built);
     const t = g.renderTime;
-    for (const [s, v] of this.views) {v.stepFold=this.stepperFx.foldPhase(s);v.update(s,t);}
+    for (const [s, v] of this.views) {v.stepFold=this.stepperFx.foldPhase(s);v.stepYaw=this.stepperFx.turnOffset(s);v.update(s,t);}
     for (const w of this.wrecks) {
       w.t += dt;
       w.obj.position.y -= (4 + w.t * 7) * dt;
@@ -221,6 +228,7 @@ export class NavalScene implements BattleScene {
     this.stepperFx.update(dt, this.skillFx.locals);
     this.architectFx.update(dt, this.skillFx.locals);
     this.batteryFx.update(dt);
+    this.dashFx.update(dt, this.skillFx.locals);
     this.elementFx.update(dt,this.skillFx.locals);
     this.projectiles.update(g);
   }
@@ -245,13 +253,14 @@ export class NavalScene implements BattleScene {
     }
   }
 
-  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions]; }
+  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions,...this.batteryFx.distortions,...this.elementFx.distortions]; }
 
   prepare(vp: Viewport, heightPx: number): void {
     this.fleetFx.prepare(vp.team);
     this.architectFx.prepare(vp.team, heightPx);
     this.batteryFx.prepare(vp.team, heightPx);
-    this.elementFx.prepare(vp.team);
+    this.dashFx.prepare(vp.team, heightPx);
+    this.elementFx.prepare(vp.team, heightPx);
     this.crossFx.prepare(vp.team, heightPx);
     this.stepperFx.prepare(vp.team, heightPx);
     this.torpedoAim.update(this.aiming.get(vp.camera), heightPx);

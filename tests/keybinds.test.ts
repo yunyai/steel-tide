@@ -41,12 +41,11 @@ describe('keybinds', () => {
     expect(clean(bindings)).toBe(true);
   });
 
-  it('leaves the other action unbound when the swap would clash in another layout', () => {
-    // The lock (X, warships only) takes the throttle (W, every layout); W's old owner would get X,
-    // but titan skill 4 sits on X in the titan layout, so the throttle is left unbound.
+  it('swaps shared lock and throttle keys across both layouts', () => {
+    // Space is free in both layouts after lock takes the throttle key.
     const { bindings, moved } = rebind(DEFAULT_BINDINGS, 'lock', 'KeyW');
     expect(bindings.lock).toBe('KeyW');
-    expect(bindings.throttleUp).toBe('');
+    expect(bindings.throttleUp).toBe('Space');
     expect(moved).toEqual(['throttleUp']);
     expect(clean(bindings)).toBe(true);
   });
@@ -82,6 +81,33 @@ describe('keybinds', () => {
     expect(layoutFor(TITAN, b).skills[0]).toBe('KeyJ');
     expect(layoutFor(TITAN, b).slots[2]).toBe('KeyK');
     expect(layoutFor(TITAN, b).assist).toBe('KeyL');
-    expect(layoutFor(TITAN, b).lock).toBe('');
+    expect(layoutFor(TITAN, b).lock).toBe('Space');
   });
+});
+
+
+describe('shared lock defaults and legacy migration', () => {
+  it('locks both layouts on Space and follows shots on U', () => {
+    for (const spec of [SHIP, TITAN]) expect(layoutFor(spec)).toMatchObject({lock:'Space',follow:'KeyU'});
+    expect(ACTIONS.find(a=>a.id==='lock')?.scope).toBe('both');
+  });
+  it('migrates only the exact stored legacy lock/follow pair, preserving all other overrides', () => {
+    const b=parseBindings({lock:'KeyX',follow:'Space',skill1:'KeyJ',tskill4:'KeyX'});
+    expect(b).toMatchObject({lock:'Space',follow:'KeyU',skill1:'KeyJ',tskill4:'KeyX'});
+    expect(clean(b)).toBe(true);
+  });
+  it('preserves customized pairs and legacy titan skill keys with middle-mouse fallback', () => {
+    for(const pair of [{lock:'KeyH',follow:'Space'},{lock:'KeyX',follow:'KeyJ'},{lock:'',follow:'Space'}]) {
+      const b=parseBindings({...DEFAULT_BINDINGS,...pair});
+      expect(b).toMatchObject(pair);
+      expect(b.tskill4).toBe('KeyX');
+      expect(layoutFor(TITAN,b).lock).toBe(pair.lock==='KeyX'?'':pair.lock);
+      expect(clean(b)).toBe(true);
+    }
+  });
+});
+
+it('preserves a customized U action instead of taking it during legacy pair migration',()=>{
+ const b=parseBindings({...DEFAULT_BINDINGS,skill1:'KeyU',lock:'KeyX',follow:'Space'});
+ expect(b).toMatchObject({skill1:'KeyU',lock:'KeyX',follow:'Space',tskill4:'KeyX'});expect(clean(b)).toBe(true);
 });

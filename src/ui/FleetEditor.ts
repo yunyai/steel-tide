@@ -3,6 +3,7 @@ import type { BattleEra } from '../core/types';
 import { ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
 import { CLASS_LABEL } from '../data/ships';
 import { field, h, seg } from './dom';
+import { menuFeedback } from './MenuFeedback';
 
 /** Shared solo/LAN editor; assignments apply once to each requested AI slot. */
 export function fleetEditor(label: string, era: BattleEra, titans: boolean, value: AISelection | undefined, count: number, put: (v: AISelection) => void, reinforcements = 0): HTMLElement {
@@ -11,6 +12,7 @@ export function fleetEditor(label: string, era: BattleEra, titans: boolean, valu
   const allowed = new Set(ships.map(s => s.id));
   const key = `fleet-${label}`;
   const root = h('section', { class: 'fleet-editor', 'aria-label': label });
+  menuFeedback(root);
   const body = h('div', { class: 'fleet-detail' });
   const commit = () => put(structuredClone(current));
   const defaultPool = () => ships.filter(s => s.cls !== 'TT').map(s => s.id);

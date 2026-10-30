@@ -122,7 +122,7 @@ try {
       audio.stopBattle();r.audioClean=audio.budget.size===0&&audio.pending.length===0;
       return r;
     });
-    check(combat.damage===2040000&&combat.ended&&combat.pure&&!combat.overflow&&combat.cleaned&&combat.audioClean,JSON.stringify(combat));
+    check(combat.damage===2200000&&combat.ended&&combat.pure&&!combat.overflow&&combat.cleaned&&combat.audioClean,JSON.stringify(combat));
     check(voices<=42&&!errors.length,JSON.stringify({voices,errors}));
     times.sort((a,b)=>a-b);
     results.push({q,width,height,fixtures,repair,...combat,voices,drawCalls,segments,p50:times[Math.floor(times.length*.5)],p95:times[Math.floor(times.length*.95)],frames,errors});

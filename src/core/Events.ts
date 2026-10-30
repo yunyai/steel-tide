@@ -53,6 +53,8 @@ export interface GameEventMap {
   architectBatteryImpact: import('../data/architectBattery').ArchitectBatteryImpact;
   architectElement: ElementEvent;
   architectCommand: { ship: Ship; kind: 'deploy'|'recall'|'reconfigure'|'destroy'|'assembly'|'killbox'|'citadel'|'end' };
+  /** Hull Dash lift-off and landing shockwave (radius in metres, 0 at launch). */
+  architectDash: { ship: Ship; phase: 'launch'|'land'; x: number; z: number; radius: number; vectors: number };
   architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox';slot?:number };
   crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
   stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };

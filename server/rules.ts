@@ -102,6 +102,8 @@ export const navalRules: BattleRules = {
     if (smallInt(o.sl, 8)) e.sl = o.sl;
     if (smallInt(o.sk, 16)) e.sk = o.sk;
     if (smallInt(o.co, 8)) e.co = o.co;
+    if(o.hd===1)e.hd=1;
+    if(o.mb===1)e.mb=1;
     if (o.du === 1) e.du = 1;
     if (o.dd === 1) e.dd = 1;
     return Object.keys(e).length ? e : null;

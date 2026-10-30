@@ -2,7 +2,7 @@ import { type KeyLayout, LAYOUT_MOUSE, LAYOUT_TITAN } from '../config';
 
 // Keyboard bindings for the keyboard + mouse captain, remembered in this browser. Warships and
 // titans each have a layout; the helm, weapons, consumables and camera keys are shared by both,
-// so a key may be used once per layout, and a titan skill key can double as a warship's lock.
+// so a key may be used once per layout. Legacy customized titan skills retain their keys.
 
 export type ActionId =
   | 'throttleUp'
@@ -16,6 +16,8 @@ export type ActionId =
   | 'slot5'
   | 'repair'
   | 'utility'
+  | 'architectHullDash'
+  | 'architectMobileBattery'
   | 'zoom'
   | 'follow'
   | 'skill1'
@@ -38,8 +40,8 @@ export type ActionId =
   | 'tdiveUp'
   | 'tdiveDown';
 
-/** Which layouts an action is in: both, warships only, or titans only. */
-export type Scope = 'both' | 'ship' | 'titan';
+/** Architect adds mobility to the titan layout, without submarine dive controls. */
+export type Scope = 'both' | 'ship' | 'titan' | 'architect';
 
 export interface ActionInfo {
   id: ActionId;
@@ -61,12 +63,14 @@ export const ACTIONS: ActionInfo[] = [
   { id: 'slot5', label: 'Weapon 5', scope: 'both', pad: 'LB / RB' },
   { id: 'repair', label: 'Repair kit: puts out fires and flooding, mends tracks, heals', scope: 'both', pad: 'D-pad up' },
   { id: 'utility', label: 'Class utility (smoke, search, boost, plates)', scope: 'both', pad: 'D-pad right' },
+  { id: 'architectHullDash', label: 'Vector: Hull Dash', scope: 'architect', pad: 'LB + D-pad right' },
+  { id: 'architectMobileBattery', label: 'Vector: Mobile Battery', scope: 'architect', pad: 'RB + D-pad right' },
   { id: 'zoom', label: 'Gunsight scope or artillery view (also: wheel past the closest view)', scope: 'both', pad: 'LT (hold) or d-pad left' },
   { id: 'follow', label: 'Follow shot: ride your newest shell in (ships)', scope: 'both', pad: 'RS click' },
   { id: 'skill1', label: 'Skill 1', scope: 'ship', pad: 'X' },
   { id: 'skill2', label: 'Skill 2', scope: 'ship', pad: 'B' },
   { id: 'ult', label: 'Ultimate', scope: 'ship', pad: 'Y' },
-  { id: 'lock', label: 'Lock target (also: middle mouse)', scope: 'ship', pad: 'A' },
+  { id: 'lock', label: 'Lock target (also: middle mouse)', scope: 'both', pad: 'A' },
   { id: 'assist', label: 'Fire-control assist on / off', scope: 'ship', pad: 'D-pad down' },
   { id: 'diveUp', label: 'Submarine: surface', scope: 'ship', pad: 'RS click' },
   { id: 'diveDown', label: 'Submarine: dive', scope: 'ship', pad: 'LS click' },
@@ -79,7 +83,7 @@ export const ACTIONS: ActionInfo[] = [
   { id: 'tult1', label: 'Titan ultimate 1', scope: 'titan', pad: 'Y' },
   { id: 'tult2', label: 'Titan ultimate 2', scope: 'titan', pad: 'LB Y' },
   { id: 'tult3', label: 'Titan ultimate 3', scope: 'titan', pad: 'RB Y' },
-  { id: 'tassist', label: 'Titan fire-control assist on / off (lock: middle mouse)', scope: 'titan', pad: 'D-pad down' },
+  { id: 'tassist', label: 'Titan fire-control assist on / off', scope: 'titan', pad: 'D-pad down' },
   { id: 'tdiveUp', label: 'Titan submarine: surface', scope: 'titan', pad: 'RS click' },
   { id: 'tdiveDown', label: 'Titan submarine: dive', scope: 'titan', pad: 'LS click' },
 ];
@@ -107,6 +111,8 @@ export const DEFAULT_BINDINGS: Bindings = (() => {
     slot5: M.slots[4],
     repair: M.consumables[0],
     utility: M.consumables[1],
+    architectHullDash: 'KeyH',
+    architectMobileBattery: 'KeyJ',
     zoom: M.zoom,
     follow: M.follow,
     skill1: M.skills[0],
@@ -132,16 +138,22 @@ export const DEFAULT_BINDINGS: Bindings = (() => {
 })();
 
 /** Two actions can clash only if some layout holds both. */
-function shareLayout(a: ActionId, b: ActionId): boolean {
+function shareLayout(a: ActionId, b: ActionId, stored = false): boolean {
+  // Older customized bindings may share a warship lock with a titan skill. Keep the
+  // recorded keys; that titan uses middle mouse until the captain changes the binding.
+  if (stored && (a === 'lock' && SCOPE[b] === 'titan' || b === 'lock' && SCOPE[a] === 'titan')) return false;
   const sa = SCOPE[a];
   const sb = SCOPE[b];
+  // Architect uses titan skills, but has no submarine dive controls. Default H is contextual.
+  if (sa === 'architect' && (b === 'tdiveUp' || b === 'tdiveDown') || sb === 'architect' && (a === 'tdiveUp' || a === 'tdiveDown')) return false;
+  if (sa === 'architect' || sb === 'architect') return sa !== 'ship' && sb !== 'ship';
   return sa === 'both' || sb === 'both' || sa === sb;
 }
 
-function clashes(b: Bindings, action: ActionId): boolean {
+function clashes(b: Bindings, action: ActionId, stored = false): boolean {
   const code = b[action];
   if (!code) return false;
-  return ACTIONS.some((o) => o.id !== action && b[o.id] === code && shareLayout(o.id, action));
+  return ACTIONS.some((o) => o.id !== action && b[o.id] === code && shareLayout(o.id, action, stored));
 }
 
 /** True when `code` may be bound at all. */
@@ -155,28 +167,39 @@ export function bindable(code: string): boolean {
  * actions that gave up the key.
  */
 export function rebind(b: Bindings, action: ActionId, code: string): { bindings: Bindings; moved: ActionId[] } {
+  return applyBinding(b, action, code);
+}
+
+function applyBinding(b: Bindings, action: ActionId, code: string, stored = false): { bindings: Bindings; moved: ActionId[] } {
   if (!bindable(code) || b[action] === code) return { bindings: b, moved: [] };
   const old = b[action];
   const next: Bindings = { ...b, [action]: code };
   const moved: ActionId[] = [];
   for (const o of ACTIONS) {
-    if (o.id === action || next[o.id] !== code || !shareLayout(o.id, action)) continue;
+    if (o.id === action || next[o.id] !== code || !shareLayout(o.id, action, stored)) continue;
     next[o.id] = old;
-    if (clashes(next, o.id)) next[o.id] = '';
+    if (clashes(next, o.id, stored)) next[o.id] = '';
     moved.push(o.id);
   }
   return { bindings: next, moved };
 }
 
-/** Bindings from storage: every valid entry applied over the defaults in turn, so they never clash. */
+/** Validate stored keys over defaults, retaining customized titan keys if a legacy lock overlaps. */
 export function parseBindings(raw: unknown): Bindings {
   let b = { ...DEFAULT_BINDINGS };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return b;
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+  const saved = raw as Record<string, unknown>;
+  // New actions must not claim a legacy custom key or acquire its former key via a swap.
+  for (const action of ['architectHullDash', 'architectMobileBattery'] as const) {
+    if (!Object.hasOwn(saved, action) && Object.entries(saved).some(([id, code]) => id !== action && Object.hasOwn(SCOPE, id) && shareLayout(id as ActionId, action, true) && code === DEFAULT_BINDINGS[action])) b[action] = '';
+  }
+  const followKeyOccupied=Object.entries(saved).some(([id,code])=>id!=='follow'&&Object.hasOwn(SCOPE,id)&&code==='KeyU');
+  const entries = saved.lock === 'KeyX' && saved.follow === 'Space' && !followKeyOccupied ? { ...saved, lock: 'Space', follow: 'KeyU' } : saved;
+  for (const [k, v] of Object.entries(entries)) {
     if (!Object.hasOwn(SCOPE, k) || typeof v !== 'string') continue;
     const id = k as ActionId;
     if (v === '') b = { ...b, [id]: '' };
-    else b = rebind(b, id, v).bindings;
+    else b = applyBinding(b, id, v, true).bindings;
   }
   return b;
 }
@@ -231,8 +254,8 @@ export function layoutFor(spec: { cls: string; sub?: unknown }, b: Bindings = bi
       ...base,
       label: LAYOUT_TITAN.label,
       skills: [b.tskill1, b.tskill2, b.tskill3, b.tskill4, b.tskill5, b.tskill6, b.tult1, b.tult2, b.tult3],
-      // Titans lock with the middle mouse button; only a titan submarine dives.
-      lock: '',
+      // Preserve old customized keys that shared a ship lock with a titan action.
+      lock: [b.tskill1,b.tskill2,b.tskill3,b.tskill4,b.tskill5,b.tskill6,b.tult1,b.tult2,b.tult3,b.tassist,...(spec.sub?[b.tdiveUp,b.tdiveDown]:[])].includes(b.lock) ? '' : b.lock,
       assist: b.tassist,
       diveUp: spec.sub ? b.tdiveUp : '',
       diveDown: spec.sub ? b.tdiveDown : '',

@@ -1,6 +1,6 @@
 import { audio } from '../fx/Audio';
 import { ACTIONS, type ActionId, type ActionInfo, DEFAULT_BINDINGS, bindable, bindings, keyName, rebind, setBindings } from '../input/Keybinds';
-import { type ShakeLevel, controls, display, setControls, setDisplay, setSound, sound } from '../input/Settings';
+import { DAMAGE_SCALES, type ShakeLevel, controls, display, setControls, setDisplay, setSound, sound } from '../input/Settings';
 import { QUALITIES, type QualityId, quality, setQuality } from '../render/Quality';
 import { field, h, seg } from './dom';
 import { applyPalette } from './palette';
@@ -42,6 +42,7 @@ const SECTIONS: { title: string; scope: ActionInfo['scope'] }[] = [
   { title: 'Helm, weapons and camera', scope: 'both' },
   { title: 'Warships', scope: 'ship' },
   { title: 'Titans', scope: 'titan' },
+  { title: 'Architect · living Vector required', scope: 'architect' },
 ];
 
 const LABEL = Object.fromEntries(ACTIONS.map((a) => [a.id, a.label])) as Record<ActionId, string>;
@@ -78,6 +79,27 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
         (v) => setDisplay({ perf: v === 1 }),
       ),
       'Frame time, draw calls and what is afloat, in a corner of the battle. F3 shows or hides it too.',
+    ),
+    field(
+      'Damage numbers',
+      pick(
+        DAMAGE_SCALES.map((v) => ({ value: v, label: `${Math.round(v * 100)}%` })),
+        () => display().damageScale,
+        (v) => setDisplay({ damageScale: v }),
+      ),
+      'Size of the numbers that float over ships you hit. Crowded salvos still spread out so they never stack.',
+    ),
+    field(
+      'Damage format',
+      pick(
+        [
+          { value: 0, label: 'Full 12,500' },
+          { value: 1, label: 'Short 12.5K' },
+        ],
+        () => (display().shortDamage ? 1 : 0),
+        (v) => setDisplay({ shortDamage: v === 1 }),
+      ),
+      'Short shows every hit in thousands or millions. Hover a number for the exact total.',
     ),
   ];
 
@@ -181,6 +203,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
         b.classList.add('listening');
         b.textContent = 'Press a key (Esc cancels)';
       } else b.append(code ? h('kbd', {}, keyName(code)) : 'Unbound');
+      if (!code && (id === 'architectHullDash' || id === 'architectMobileBattery')) b.title = 'Keyboard unbound. Choose a key; the controller chord is available.';
       b.onclick = (e) => {
         e.stopPropagation();
         hooks.click();
@@ -261,7 +284,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
     };
     actions.prepend(reset);
     return [
-      h('p', { class: 'lede' }, 'Click a key, then press the one you want. Warships, tanks and titans share the helm, weapon and camera keys; a key taken by another action moves to your old key, or is left unbound when that would clash.'),
+      h('p', { class: 'lede' }, 'Click a key, then press the one you want. Space locks; U follows your shot. Middle mouse always locks. Architect: G keeps Search; H is Hull Dash and J is Mobile Battery with any living Vector. Existing custom H/J bindings are kept and a conflicting new action starts Unbound. Architect has no submarine dive controls, so its H can share the titan submarine dive key. Customized titan skills keep a shared lock key; use middle mouse or rebind lock. A key taken by another action moves to your old key, or becomes unbound when that would clash.'),
       status,
       table,
     ];

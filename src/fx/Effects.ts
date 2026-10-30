@@ -73,7 +73,7 @@ export class Effects {
         const ult = !!e.ship.skills[e.index].spec.ult;
         const skill = e.ship.skills[e.index].spec;
         const beamOwnsSound=this.game.beams.beams.some(b=>b.alive&&b.owner===e.ship&&b.skill.id===skill.id);
-        if(!beamOwnsSound&&!audio.shipCue(e.ship.spec,skill,e.ship.pos.x,e.ship.pos.y+10,e.ship.pos.z,this.locals.includes(e.ship))) audio.cue(skill.id, 'activate', skill.icon === 'beam' || skill.icon === 'laser' ? 'beam' : skill.icon === 'blade' ? 'slash' : ult ? 'impact' : 'charge', e.ship.pos.x, e.ship.pos.y + 10, e.ship.pos.z, this.locals.includes(e.ship));
+        if(skill.id!=='architectKillbox'&&!beamOwnsSound&&!audio.shipCue(e.ship.spec,skill,e.ship.pos.x,e.ship.pos.y+10,e.ship.pos.z,this.locals.includes(e.ship))) audio.cue(skill.id, 'activate', skill.icon === 'beam' || skill.icon === 'laser' ? 'beam' : skill.icon === 'blade' ? 'slash' : ult ? 'impact' : 'charge', e.ship.pos.x, e.ship.pos.y + 10, e.ship.pos.z, this.locals.includes(e.ship));
         this.skillBurst(e.ship, e.ship.skills[e.index].spec, ult);
       }),
       ev.on('shift', e => { if (!e.quiet) audio.cue('titanShift', e.on ? 'activate' : 'end', 'transform', e.ship.pos.x, e.ship.pos.y, e.ship.pos.z, this.locals.includes(e.ship)); }),
@@ -125,7 +125,7 @@ export class Effects {
         this.add.spawn({ x, y: 12 + i * 14, z, vy: 40, life: 0.7, size: L * 0.25, size1: L * 0.04, color: tint, kind: PK.Glow, fadeIn: 0.1 });
       }
     }
-    this.shake(x, z, ult ? 1.1 : 0.4);
+    if(skill.id!=='architectKillbox')this.shake(x, z, ult ? 1.1 : 0.4);
     // Sonar and radar sweeps run out across the sea.
     if (id === 'fireControl') this.flat.spawn({ x, y: 1.2, z, life: 1.6, size: 60, size1: 5000, color: tint, alpha: 0.7, kind: PK.Ring, fadeOut: 0.5 });
     if (id === 'neptunePing') this.flat.spawn({ x, y: 1.2, z, life: 3.4, size: 80, size1: MAP_SIZE * 2.2, color: tint, alpha: 0.7, kind: PK.Ring, fadeOut: 0.5 });

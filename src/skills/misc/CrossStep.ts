@@ -4,7 +4,7 @@ import { buff, hurt } from '../kit';
 import { bearingTo, forwardX, forwardZ } from '../../core/math';
 import { safeStep, snapStep, stepState, type Landing } from './StepperRuntime';
 
-export const CROSS = { range: 3500, radius: 1000, duration: 3, cuts: 60, damage: 6000, finisher: 150000 } as const;
+export const CROSS = { range: 3500, radius: 1000, duration: 3, cuts: 100, damage: 4000, finisher: 150000 } as const;
 export interface CrossState {
   x: number;
   z: number;

@@ -20,7 +20,7 @@ function arena() {
 }
 
 describe('Cross-step', () => {
-  it('replaces Explosion-step with sixty 6k area cuts and a 150k finisher', () => {
+  it('replaces Explosion-step with a hundred 4k area cuts and a 150k finisher', () => {
     const { g, s, t } = arena();
     const hits: number[] = [];
     g.events.on('skillHit', e => { if (e.skill.id === 'crossStep') hits.push(e.damage); });
@@ -28,12 +28,12 @@ describe('Cross-step', () => {
     expect(s.activateSkill(7)).toBe(true);
     expect(t.stats.received).toBe(0);
     run(g, 1.5);
-    expect(hits).toHaveLength(30);
-    expect(t.stats.received).toBe(180000);
+    expect(hits).toHaveLength(50);
+    expect(t.stats.received).toBe(200000);
     run(g, 1.5);
-    expect(hits.slice(0, 60)).toEqual(Array(60).fill(6000));
-    expect(hits[60]).toBe(150000);
-    expect(t.stats.received).toBe(510000);
+    expect(hits.slice(0, 100)).toEqual(Array(100).fill(4000));
+    expect(hits[100]).toBe(150000);
+    expect(t.stats.received).toBe(550000);
     expect(s.stepper?.cross).toBeNull();
     expect(s.skills[7].active).toBe(false);
   });
@@ -46,13 +46,14 @@ describe('Cross-step', () => {
     s.activateSkill(7);
     s.control.aimX = 3000;
     run(g, 0.5);
-    expect(t.stats.received).toBe(60000);
+    expect(t.stats.received).toBe(16 * 4000);
     t.pos.x = 1100;
     run(g, 0.5);
-    expect(t.stats.received).toBe(60000);
+    expect(t.stats.received).toBe(16 * 4000);
     t.pos.x = 0;
     run(g, 2);
-    expect(t.stats.received).toBe(450000);
+    // Cuts 17-33 fell while the target was outside the zone.
+    expect(t.stats.received).toBe((100 - 17) * 4000 + 150000);
     expect(ally.stats.received).toBe(0);
     expect(sub.stats.received).toBe(0);
   });
@@ -90,7 +91,7 @@ describe('Cross-step', () => {
     const p = s.pos.clone();
     g.map.heightAt = () => 10;
     run(g, 3);
-    expect(t.stats.received).toBe(510000);
+    expect(t.stats.received).toBe(550000);
     expect(s.pos.x).toBeCloseTo(p.x);
     expect(s.pos.z).toBeCloseTo(p.z);
     expect(s.stepper?.cross).toBeNull();
@@ -103,7 +104,7 @@ describe('Cross-step', () => {
     expect(copies).toHaveLength(4);
     expect(copies.every(c => c.stepper?.cross?.x === 0 && c.stepper.cross.z === 0)).toBe(true);
     run(g, 3);
-    expect(t.stats.received).toBeCloseTo(510000 * 4);
+    expect(t.stats.received).toBeCloseTo(550000 * 4);
     expect(copies.every(c => !c.stepper?.cross)).toBe(true);
   });
   it('mirrors the owner resolved zone when only the owner has a reach buff', () => {

@@ -6,6 +6,7 @@ import type { Team } from '../core/types';
 import { audio } from '../fx/Audio';
 import { waveHeight } from '../world/Waves';
 import { FLICKER_RADIUS } from '../skills/misc/StepperRuntime';
+import { CROSS } from '../skills/misc/CrossStep';
 import { reducedMotion, smooth } from './ArchitectPose';
 import { stepperSlashLayout } from './StepperSlashLayout';
 import { StepperSpatial } from './StepperSpatial';
@@ -14,6 +15,7 @@ import { Ribbons } from './Projectiles';
 
 const DARK = new Color(0x100b22), WHITE = new Color(0xf9f2ff).multiplyScalar(3);
 const VIOLET = new Color(0xad74ff).multiplyScalar(2), ENEMY = new Color(0xff476e).multiplyScalar(2);
+const CUT_LIFE = .23;
 interface Sweep { ship:Ship; ax:number;az:number;bx:number;bz:number;cx:number;cz:number;age:number;seed:number }
 interface Finish { ship: Ship; x:number; z:number; radius:number; age:number; paths:Sweep[] }
 
@@ -85,11 +87,12 @@ export class CrossStepFx {
         if (!f) continue;
         // Damage cuts fill the complete zone independently of the random ship landing positions.
         if(!echo){
-          const last=Math.min(59,Math.floor(f.elapsed*20)-1);
-          for(let i=Math.max(0,last-4);i<=last;i++){
-            const age=(f.elapsed-(i+1)*.05)/.23;if(age<0||age>=1)continue;
+          // More, lighter strokes as the cut rate rises, so the storm reads denser without turning into a solid sheet.
+          const rate=CROSS.cuts/CROSS.duration,last=Math.min(CROSS.cuts-1,Math.floor(f.elapsed*rate)-1),weight=.85*Math.min(1,Math.sqrt(20/rate));
+          for(let i=Math.max(0,last-Math.ceil(CUT_LIFE*rate));i<=last;i++){
+            const age=(f.elapsed-(i+1)/rate)/CUT_LIFE;if(age<0||age>=1)continue;
             const p=stepperSlashLayout(i),lift=45+(i%3)*75;
-            this.spatial.arc(f.x+p.ax,25,f.z+p.az,f.x+p.cx,lift+100,f.z+p.cz,f.x+p.bx,35,f.z+p.bz,210+(i%3)*35,this.reduce?.3:age,color,1000+i,.85*(this.reduce?1-smooth((age-.4)/.6):1),i%2?.75:-.8);
+            this.spatial.arc(f.x+p.ax,25,f.z+p.az,f.x+p.cx,lift+100,f.z+p.cz,f.x+p.bx,35,f.z+p.bz,210+(i%3)*35,this.reduce?.3:age,color,1000+i,weight*(this.reduce?1-smooth((age-.4)/.6):1),i%2?.75:-.8);
           }
         }
         // All players see the exact zone. Copies share a zone and don't stack five boundaries.

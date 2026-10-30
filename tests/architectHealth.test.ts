@@ -46,9 +46,9 @@ it('rebuilding redistributes hull-equivalent health without adding current HP',(
   expect(slot.hp).toBeGreaterThan(0);expect(slot.hp).toBeLessThanOrEqual(200000);
 });
 it('hull damage scales resident combat HP and cannot create negative health on deployment',()=>{
-  const {g,s}=setup();s.colossus=false;s.takeDamage(2000000,null);
-  expect(s.hp).toBe(500000);s.activateSkill(0);expect(s.hp).toBe(460000);
-  expect(s.architect!.slots[0].entity!.hp).toBeCloseTo(40000);
+  const {g,s}=setup();s.colossus=false;s.takeDamage(2500000,null);
+  expect(s.hp).toBe(375000);s.activateSkill(0);expect(s.hp).toBe(345000);
+  expect(s.architect!.slots[0].entity!.hp).toBeCloseTo(30000);
   expect(s.maxHp).toBe(2300000);run(g,.1);expect(s.hp).toBeGreaterThan(0);
 });
 it('reconciles rewind and direct restoration with docked component combat HP',()=>{

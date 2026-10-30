@@ -433,6 +433,7 @@ export class Game {
     }
   }
 
+  /** Airborne, travelling and Grand Battery-anchored platforms are not hulls in the water: they never shove or ram. */
   private collideShips(): void {
     const ships = this.ships;
     for (let i = 0; i < ships.length; i++) {
@@ -440,7 +441,8 @@ export class Game {
       if (!a.alive || a.deep || a.mods.banished) continue;
       for (let j = i + 1; j < ships.length; j++) {
         const b = ships[j];
-        if (!b.alive || b.deep || b.mods.banished || a.architectPlatform && (a.pos.y > 20 || a.architectPlatform.owner.architect?.slots[a.architectPlatform.index].path) || b.architectPlatform && (b.pos.y > 20 || b.architectPlatform.owner.architect?.slots[b.architectPlatform.index].path) || a.stepper?.rush || b.stepper?.rush) continue;
+        if(a.architectDrone&&a.architectDrone.owner===(b.architectPlatform?.owner??(b.architectDrone?.owner??b))||b.architectDrone&&b.architectDrone.owner===(a.architectPlatform?.owner??(a.architectDrone?.owner??a)))continue;
+        if (!b.alive || b.deep || b.mods.banished || a.architectPlatform && (a.pos.y > 20 || a.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || a.architectPlatform.owner.architect?.slots[a.architectPlatform.index].path) || b.architectPlatform && (b.pos.y > 20 || b.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || b.architectPlatform.owner.architect?.slots[b.architectPlatform.index].path) || a.stepper?.rush || b.stepper?.rush || a.architect?.drive || b.architect?.drive) continue;
         const reach = (a.spec.length + b.spec.length) / 2;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
@@ -506,7 +508,7 @@ export class Game {
   }
 
   onShipSunk(ship: Ship, killer: Ship | null): void {
-    if (ship.architectPlatform) { destroyPlatform(ship); return; }
+    if (ship.architectPlatform) { destroyPlatform(ship); this.events.emit('shipSunk',{ship,killer}); return; }
     if(ship.architectDrone){this.events.emit('explosion',{x:ship.pos.x,y:ship.pos.y,z:ship.pos.z,size:1});return;}
     clearArchitect(ship);
     const stepCopy = ship.stepper?.copy;

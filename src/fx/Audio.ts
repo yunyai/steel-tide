@@ -174,11 +174,11 @@ export class AudioEngine {
     return undefined;
   }
 
-  private request(url: string, category: AudioCategory, priority: number, key: string, run: (buffer: AudioBuffer) => void): void {
+  private request(url: string, category: AudioCategory, priority: number, key: string, run: (buffer: AudioBuffer) => void, queue = true): void {
     const urls = recordedFallbacks(category, url);
     const buffer = this.buffers.get(url) ?? (this.loaded || this.failed.has(url) ? this.bufferFor(urls) : undefined);
     if (buffer) { run(buffer); return; }
-    if (this.loaded || category === 'weapon' && priority < 2) return;
+    if (!queue || this.loaded || category === 'weapon' && priority < 2) return;
     const now = performance.now();
     this.pending = this.pending.filter(p => p.expires > now && p.generation === this.generation);
     if (this.pending.some(p => p.key === key)) return;
@@ -266,7 +266,7 @@ export class AudioEngine {
   }
 
   /** One decoded recording per voice, with physical attenuation and a short bounded delay. */
-  play(kind: SoundKind, x: number, y: number, z: number, size = 100, gain = 1, options: { category?: AudioCategory; priority?: number; asset?: string; rate?: number } = {}): void {
+  play(kind: SoundKind, x: number, y: number, z: number, size = 100, gain = 1, options: { category?: AudioCategory; priority?: number; asset?: string; rate?: number; key?: string; transient?: boolean; duration?: number } = {}): void {
     if (!this.ctx || !this.battleActive || this.muted || this.ctx.state !== 'running') return;
     const { d, pan } = this.nearest(x, y, z);
     const c = size / 1000;
@@ -275,7 +275,7 @@ export class AudioEngine {
     if (vol < 0.015) return;
     const category = options.category ?? worldCategory(kind);
     const priority = options.priority ?? (d < 700 ? 2 : vol > 0.25 ? 1 : 0);
-    const key = `${kind}:${Math.floor(x / 500)}:${Math.floor(z / 500)}`;
+    const key = options.key ?? `${kind}:${Math.floor(x / 500)}:${Math.floor(z / 500)}`;
     const generation = this.generation;
     this.request(options.asset ?? worldAsset(kind, size), category, priority, key, buffer => {
       if (!this.battleActive || generation !== this.generation || this.muted) return;
@@ -284,9 +284,9 @@ export class AudioEngine {
         pan: Math.max(-1, Math.min(1, pan * 0.8)), cutoff: Math.max(260, 14000 / (1 + d / 900)),
         delay: priority >= 2 ? Math.min(0.08, d / SOUND_SPEED) : Math.min(0.35, d / SOUND_SPEED),
         rate: options.rate ?? (kind === 'explosion' ? size < 0.7 ? 1.15 : size > 2 ? 0.85 : 1 : 1),
-        duration: (kind === 'laser' || kind === 'charge') && size < 20 ? Math.max(0.2, Math.min(12, size)) : undefined,
+        duration: options.duration ?? ((kind === 'laser' || kind === 'charge') && size < 20 ? Math.max(0.2, Math.min(12, size)) : undefined),
       });
-    });
+    }, !options.transient);
   }
 
   shipCue(ship:ShipSpec,skill:SkillSpec,x:number,y:number,z:number,local=false):boolean {

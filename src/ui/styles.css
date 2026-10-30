@@ -1869,6 +1869,11 @@ select {
   background: rgba(4, 10, 18, 0.7);
   border: 1px solid var(--edge);
 }
+.cockpit > .click-hint {
+  top: auto;
+  bottom: calc(100% + 8px);
+  white-space: nowrap;
+}
 
 /* ------------------------------------------------------- bottom: helm */
 .helm {
@@ -2502,6 +2507,11 @@ select {
   pointer-events: none;
 }
 
+/* Settings > Graphics > Damage numbers. */
+.pops {
+  font-size: calc(1em * var(--damage-scale, 1));
+}
+
 .scope {
   opacity: 0;
   background: radial-gradient(ellipse 64% 74% at 50% 50%, transparent 72%, rgba(2, 8, 14, 0.6) 88%, rgba(2, 8, 14, 0.94) 100%);
@@ -2605,21 +2615,6 @@ select {
     0 0 14px var(--accent),
     0 0 4px var(--accent),
     0 2px 2px #000;
-}
-
-/* Crowded salvos keep their labels and accents without filling the battle view. */
-.pop.dense {
-  font-size: 0.9rem;
-}
-
-.pop.dense small {
-  font-size: 0.75em;
-  letter-spacing: 0.03em;
-}
-
-.pop.dense b {
-  font-size: 1.5em;
-  font-style: normal;
 }
 
 .hitmark,
@@ -3898,55 +3893,129 @@ select {
   .title-actions .go { padding-top: 10px; padding-bottom: 10px; }
 }
 
-/* Architect's ten-slot arsenal is a compact status instrument, not a second action bar. */
-.architect-battery { display:flex; justify-content:center; gap:4px; margin:4px 0 7px; }
-.architect-slot { --health:1; position:relative; display:flex; align-items:center; gap:5px; min-width:45px; padding:4px 6px 7px; background:#102330e8; color:#d9e8ec; border:1px solid #67818d75; font-size:10px; line-height:1; }
-.architect-slot b { font-size:12px; font-variant-numeric:tabular-nums; }
-.architect-slot span { font-size:8px; letter-spacing:.03em; }
-.architect-slot i { position:absolute; height:3px; bottom:2px; left:3px; right:3px; transform:scaleX(var(--health)); transform-origin:left; background:currentColor; }
-.architect-slot[data-state="deployed"],.architect-slot[data-state="citadel"] { color:#86e9ff; border-color:#59c6e6; }
-.architect-slot[data-state="launching"],.architect-slot[data-state="moving"],.architect-slot[data-state="returning"],.architect-slot[data-state="assembling"] { color:#ffd18a; border-color:#e0ab5b; }
-.architect-slot[data-state="destroyed"] { color:#ff8d9d; border-color:#d15c77; background:#3e1d2be8; }
+/* Architect's ten turret sockets: a strip of chamfered glass chips above the hull block. Each chip
+   glows in its platform type's colour; the state word and the 2px health line carry deploy state. */
+.architect-battery { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:3px; margin:0 0 1px; }
+.architect-slot { --type:var(--cyan); --state:var(--mute); --health:1; position:relative; display:flex; align-items:baseline; gap:4px; min-width:0; height:24px; padding:6px 5px 0 6px; overflow:hidden;
+  font-family:var(--display); line-height:1; color:var(--ice);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--type) 24%,transparent),var(--glass) 80%);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--type) 38%,transparent), inset 0 1px color-mix(in srgb,var(--type) 70%,transparent);
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px); }
+.architect-slot b { color:var(--mute); font-size:9px; font-weight:600; font-variant-numeric:tabular-nums; }
+.architect-slot em { font-style:normal; font-weight:700; font-size:12px; letter-spacing:.02em; color:var(--type); text-shadow:0 0 7px color-mix(in srgb,var(--type) 70%,transparent); }
+.architect-slot span { margin-left:auto; font-size:8.5px; font-weight:600; letter-spacing:.05em; color:var(--state); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.architect-slot i { position:absolute; left:0; right:0; bottom:0; height:2px; transform:scaleX(var(--health)); transform-origin:left; background:var(--state); box-shadow:0 0 6px var(--state); }
+/* A charged capacitor: a lit pip in the chamfered corner. */
+.architect-slot::after { content:''; position:absolute; top:3px; right:3px; width:5px; height:5px; transform:rotate(45deg); background:transparent; box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--type) 35%,transparent); }
+.architect-slot[data-capacitor="half"]::after { box-shadow:inset 0 0 0 1px var(--type); }
+.architect-slot[data-capacitor="charged"]::after { background:var(--ice); box-shadow:0 0 6px var(--type), 0 0 2px var(--ice); }
+.architect-slot[data-state="docked"] { --state:#a9c4d8; }
+.architect-slot[data-state="deployed"],.architect-slot[data-state="citadel"] { --state:var(--cyan); }
+.architect-slot[data-state="launching"],.architect-slot[data-state="moving"],.architect-slot[data-state="returning"],.architect-slot[data-state="assembling"] { --state:var(--amber); }
+.architect-slot[data-state="destroyed"] { --state:var(--red); background:linear-gradient(180deg,rgba(255,59,78,.22),var(--glass) 80%); box-shadow:inset 0 0 0 1px var(--red-dim); }
+.architect-slot[data-state="destroyed"] em { color:var(--mute); text-shadow:none; }
+.architect-slot[data-health="mid"] { --state:var(--amber); }
+.architect-slot[data-health="low"]:not([data-state="destroyed"]) i { background:var(--red); box-shadow:0 0 6px var(--red); }
+@media(max-width:1350px) { .architect-slot { gap:2px; padding:6px 3px 0 4px; } .architect-slot b { display:none; } .architect-slot span { font-size:7.5px; letter-spacing:.02em; } }
 .marker.module-contact.compact { font-size:11px; opacity:.85; }
 .marker.module-contact.compact .ci,.marker.module-contact.compact .sh { display:none; }
 .marker.module-contact.compact { min-width:60px; }
 .marker.module-contact.compact .nm { justify-content:center; }
 .marker.module-contact.compact .hp { width:60px; height:5px; background:#061018e8; box-shadow:0 0 0 1px #91a4ae80; }
-.marker.module-contact[data-health="mid"] .hp i,.architect-slot[data-health="mid"] i { background:var(--amber); }
-.marker.module-contact[data-health="low"] .hp i,.architect-slot[data-health="low"] i { background:var(--red); }
-@media(max-width:1350px) { .architect-battery {gap:3px;margin:3px 0 5px;} .architect-slot {min-width:35px;padding:3px 4px 6px;gap:3px;} .architect-slot span {font-size:7px;} }
+.marker.module-contact[data-health="mid"] .hp i { background:var(--amber); }
+.marker.module-contact[data-health="low"] .hp i { background:var(--red); }
 
 .turret-dots i.remote { background:#77deee; opacity:.55; }
 
-/* Architect arsenal: ten compact selectors, one readable detail panel. */
+/* Architect arsenal: a top-down hull plan of the ten sockets, then the selected socket's type and skill. */
 .arsenal-editor { margin:16px 0; padding:14px; background:#0c1721e8; border:1px solid #60778166; border-radius:6px; min-width:0; }
-.arsenal-editor h3 { margin:0 0 5px; color:#ffcf86; }
+.arsenal-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 12px; }
+.arsenal-editor h3 { margin:0; color:#ffcf86; font-family:var(--display); font-size:18px; font-weight:700; letter-spacing:.02em; }
 .arsenal-note { font-size:12px; color:#a7bdc8; margin:5px 0 12px; line-height:1.45; }
-.arsenal-presets { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px; }
+/* Quick fill: one chamfered strip of five presets; the omission picks below belong to One of each. */
+.arsenal-fill-label { margin:0 0 5px; font-size:11px; color:var(--mute); }
+.arsenal-presets { display:flex; flex-wrap:wrap; gap:1px; background:var(--edge); clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,9px 100%,0 calc(100% - 9px)); }
 .arsenal-editor button,.arsenal-editor select { color:#dfecf3; background:#172734; border:1px solid #607989; border-radius:3px; padding:7px; cursor:pointer; font:inherit; font-size:12px; }
 .arsenal-editor button:hover,.arsenal-editor button:focus-visible { border-color:#b9f3ff; background:#234353; }
 .arsenal-editor button[aria-pressed="true"] { background:#35434c; border-color:#ffd38e; box-shadow:inset 0 -2px #ffd38e; }
-.arsenal-slots { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
-.arsenal-slots button { text-align:left; min-width:0; border-top:2px solid var(--type-color); }
-.arsenal-slots b { color:var(--type-color); display:block; }
-.arsenal-slots small { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:10px; }
-.arsenal-detail { margin-top:12px; }
-.arsenal-detail label { display:flex; align-items:center; gap:12px; font-size:13px; }
-.arsenal-detail select { flex:1; min-width:0; }
-.arsenal-choices { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
-.arsenal-skill { display:flex; flex-direction:column; text-align:left; gap:7px; line-height:1.4; }
-.arsenal-skill b { color:#ffe3b0; }
-.arsenal-skill small { color:#9cbdcb; margin-top:auto; }
+.arsenal-plan { position:relative; height:150px; margin:4px 0 0; }
+.arsenal-hull { position:absolute; inset:0; width:100%; height:100%; }
+.arsenal-hull path,.arsenal-hull rect { vector-effect:non-scaling-stroke; fill:none; stroke-width:1; }
+.arsenal-hull .hull { fill:rgba(77,232,255,.06); stroke:var(--edge-hi); }
+.arsenal-hull .deck,.arsenal-hull .block { stroke:var(--edge); }
+.arsenal-hull .block { fill:rgba(110,210,255,.08); }
+.arsenal-hull .rail { stroke:rgba(255,181,71,.3); stroke-dasharray:6 5; }
+.arsenal-hull .keel { stroke:var(--edge); stroke-dasharray:2 6; }
+/* Columns centre on the real turret stations at 15%, 33%, 50%, 68% and 85% of the hull. */
+.arsenal-slots { position:absolute; inset:0 5.9% 0 6.6%; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); grid-template-rows:1fr 1fr; column-gap:2px; }
+.arsenal-editor .arsenal-socket { --ring:color-mix(in srgb,var(--type-color) 55%,transparent); display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:3px; min-width:0; padding:6px 0 0; background:none; border:0; border-radius:0; box-shadow:none; }
+/* Port sockets hang their caption above the hex so both rails hug the hull. */
+.arsenal-editor .arsenal-socket[data-side="port"] { flex-direction:column-reverse; padding:0 0 6px; }
+.arsenal-socket b { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; flex:none; width:46px; height:40px; background:var(--ring); clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%); font-family:var(--display); line-height:1; }
+.arsenal-socket b::before { content:''; position:absolute; inset:1.5px; clip-path:inherit; background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--type-color) 30%,var(--abyss-2)),var(--abyss) 80%); }
+.arsenal-socket b i,.arsenal-socket b span { position:relative; font-style:normal; }
+.arsenal-socket b i { font-size:9px; font-weight:600; color:var(--mute); font-variant-numeric:tabular-nums; }
+.arsenal-socket b span { font-size:14px; font-weight:700; letter-spacing:.03em; color:var(--type-color); text-shadow:0 0 8px color-mix(in srgb,var(--type-color) 70%,transparent); }
+.arsenal-socket small { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:10px; line-height:12px; color:#a7bdc8; text-shadow:0 1px 2px #000; }
+.arsenal-editor .arsenal-socket:hover,.arsenal-editor .arsenal-socket:focus-visible { --ring:var(--type-color); background:none; }
+.arsenal-editor .arsenal-socket[aria-pressed="true"] { --ring:var(--amber); background:none; box-shadow:none; filter:drop-shadow(0 0 6px rgba(255,181,71,.55)); }
+.arsenal-socket[aria-pressed="true"] small { color:#ffe3b0; }
+.arsenal-detail { margin-top:10px; }
+.arsenal-detail-head { display:flex; align-items:baseline; gap:10px; margin-bottom:8px; font-family:var(--display); }
+.arsenal-detail-head b { color:var(--ice); font-size:14px; }
+.arsenal-detail-head span { color:var(--type-color); font-size:12px; font-weight:600; }
+.arsenal-types { display:grid; grid-template-columns:repeat(auto-fill,minmax(86px,1fr)); gap:4px; }
+.arsenal-editor .arsenal-type { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; padding:6px 6px 5px 10px; text-align:left; border:0; border-radius:0;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--type-color) 16%,transparent),var(--glass) 70%);
+  box-shadow:inset 3px 0 var(--type-color), inset 0 0 0 1px color-mix(in srgb,var(--type-color) 26%,transparent);
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,0 100%); }
+.arsenal-type b { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--display); font-size:12px; font-weight:700; color:var(--ice); }
+.arsenal-type small { font-size:10px; color:var(--element-color); }
+.arsenal-editor .arsenal-type:hover { background:linear-gradient(90deg,color-mix(in srgb,var(--type-color) 30%,transparent),var(--glass-hi) 70%); }
+.arsenal-editor .arsenal-type[aria-pressed="true"] { background:linear-gradient(90deg,color-mix(in srgb,var(--type-color) 34%,transparent),#35434c 80%); box-shadow:inset 3px 0 var(--type-color), inset 0 0 0 1px var(--amber); }
+/* The chamfer clips anything outside the tile, so its focus ring sits inside. */
+.arsenal-editor .arsenal-type:focus-visible { outline-offset:-3px; }
+.arsenal-passive { margin:8px 0 0; padding:7px 10px; font-size:12px; line-height:1.45; color:#c6d8e2; border-left:2px solid var(--type-color); background:linear-gradient(90deg,color-mix(in srgb,var(--type-color) 14%,transparent),transparent 85%); }
+.arsenal-passive[hidden] { display:none; }
+.arsenal-passive b { margin-right:7px; font-family:var(--display); font-weight:700; color:var(--type-color); }
+/* Skill cards share the type tiles' chamfer and edge colour; the chosen one carries the amber ring and a lit pip. */
+.arsenal-choices { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px; }
+.arsenal-editor .arsenal-skill { display:flex; flex-direction:column; gap:6px; min-width:0; padding:10px 12px 10px 14px; text-align:left; line-height:1.45; border:0; border-radius:0;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--type-color) 10%,transparent),var(--glass) 55%);
+  box-shadow:inset 3px 0 color-mix(in srgb,var(--type-color) 45%,transparent), inset 0 0 0 1px var(--edge);
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,0 100%); }
+.arsenal-editor .arsenal-skill:hover { background:linear-gradient(160deg,color-mix(in srgb,var(--type-color) 18%,transparent),var(--glass-hi) 60%); box-shadow:inset 3px 0 var(--type-color), inset 0 0 0 1px var(--edge-hi); }
+.arsenal-editor .arsenal-skill[aria-pressed="true"] { background:linear-gradient(160deg,color-mix(in srgb,var(--type-color) 24%,transparent),#24323c 70%); box-shadow:inset 3px 0 var(--type-color), inset 0 0 0 1px var(--amber); }
+.arsenal-editor .arsenal-skill:focus-visible { outline-offset:-3px; }
+.arsenal-skill-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.arsenal-skill-head b { font-family:var(--display); font-size:14px; font-weight:700; color:var(--ice); }
+.arsenal-skill[aria-pressed="true"] .arsenal-skill-head b { color:#ffe3b0; }
+.arsenal-skill-head i { flex:none; width:12px; height:14px; background:var(--edge-hi); clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%); }
+.arsenal-skill[aria-pressed="true"] .arsenal-skill-head i { background:var(--amber); filter:drop-shadow(0 0 4px var(--amber)); }
+.arsenal-skill-text { font-size:12px; color:#b5cad6; }
+.arsenal-skill-meta { display:flex; flex-wrap:wrap; gap:4px; margin-top:auto; padding-top:2px; }
+.arsenal-skill-meta > span { padding:2px 6px; font-size:10.5px; line-height:15px; white-space:nowrap; color:#9cbdcb; background:rgba(110,210,255,.07); border:1px solid var(--edge); }
+.arsenal-skill-meta kbd { padding:0 4px; font:700 10px/14px var(--display); color:var(--abyss); background:var(--ice); }
+.arsenal-skill-meta kbd.unbound { background:var(--amber); }
 .arsenal-editor button:disabled,.arsenal-editor select:disabled { opacity:.55; cursor:default; }
 .module-cooldowns { display:flex; position:absolute; left:50%; transform:translateX(-50%); bottom:100%; gap:4px; margin-bottom:4px; }
 .module-cooldowns i { width:21px; height:21px; display:grid; place-items:center; border-radius:50%; background:conic-gradient(var(--cool-color,#a4e8ff) calc(var(--ready)*1turn),#14232eaa 0); border:1px solid #111d28; color:#fff; font:10px sans-serif; text-shadow:0 1px 2px #000; box-shadow:0 0 0 2px #11202bc9; }
-@media(max-width:700px){.arsenal-slots{grid-template-columns:repeat(5,minmax(0,1fr));}.arsenal-choices{grid-template-columns:1fr;}.arsenal-slots small{display:none;}}
+@media(max-width:700px){.arsenal-choices{grid-template-columns:1fr;}}
 .pop.elemental-hit b,.pop.elemental-hit span { color:var(--accent); }
-.pop.elemental-reaction { border-left:3px solid var(--accent); padding:4px 9px; background:linear-gradient(90deg,#07151ee0,transparent); }
-.pop.elemental-reaction b { color:var(--accent); font-size:1.15em; text-shadow:0 0 12px var(--accent),0 2px 3px #000; }
+.pop.elemental-reaction { border-left:3px solid var(--accent); border-right:3px solid var(--accent2,var(--accent)); padding:5px 11px; background:linear-gradient(90deg,#07151ee8,#07151e99 65%,#07151e40); clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px); }
+.pop.elemental-reaction small { color:var(--accent2,var(--accent)); letter-spacing:.04em; }
+.pop.elemental-reaction b { color:var(--accent); font-size:1.4em; text-shadow:0 0 12px var(--accent),0 0 22px var(--accent2,var(--accent)),0 2px 3px #000; }
+/* A reaction lands harder than a hit: it overshoots, then settles. */
+.pop.elemental-reaction.fresh b { animation:reaction-pop .42s cubic-bezier(.2,1.6,.4,1); }
+@keyframes reaction-pop { from { transform:scale(1.35); opacity:0; filter:brightness(2.2); } 45% { opacity:1; } }
+@media (prefers-reduced-motion: reduce) { .pop.elemental-reaction.fresh b { animation:none; } }
 
-.arsenal-disclosure { margin:0 0 12px; }
-.arsenal-transfer { margin:0 0 14px; padding:12px 0; border-top:1px solid #60778166; border-bottom:1px solid #60778166; }
+.arsenal-editor .arsenal-disclosure { padding:5px 10px; font-size:11px; color:#c1d8e3; background:transparent; border-color:var(--edge-hi); border-radius:0; }
+.arsenal-editor .arsenal-presets button { flex:1 1 auto; padding:9px 10px; border:0; border-radius:0; white-space:nowrap; background:var(--glass-hi); font-family:var(--display); font-size:12px; font-weight:600; }
+.arsenal-editor .arsenal-presets button:hover { background:color-mix(in srgb,var(--cyan) 16%,var(--glass-hi)); }
+.arsenal-editor .arsenal-presets button:focus-visible { outline-offset:-3px; }
+@media(max-width:520px){.arsenal-omissions>span:first-child{flex-basis:100%;}.arsenal-editor .arsenal-omissions select{flex:1;}}
+.arsenal-transfer { margin:10px 0 12px; padding:12px 0; border-top:1px solid #60778166; border-bottom:1px solid #60778166; }
 .arsenal-transfer[hidden] { display:none; }
 .arsenal-transfer-actions { display:flex; flex-wrap:wrap; gap:6px; }
 .arsenal-json-label { display:block; margin:12px 0; font-size:12px; color:#c1d8e3; }
@@ -3955,11 +4024,48 @@ select {
 .arsenal-editor textarea::selection { color:#fff; background:#38596c; }
 .arsenal-editor textarea:focus-visible { outline:2px solid #b9f3ff; outline-offset:2px; }
 .arsenal-transfer-status,.arsenal-result { margin:9px 0 0; color:#b9d5e2; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.arsenal-result { margin-top:10px; padding-top:8px; border-top:1px solid var(--edge); font-size:11px; color:var(--mute); }
 .arsenal-transfer-status.error { color:#ffb7a8; }
 .arsenal-result:empty { display:none; }
-.arsenal-slots [data-refit="pending"] small { color:#ffd38e; }
-.arsenal-slots [data-refit="locked"] { border-top-style:dashed; }
+.arsenal-socket[data-refit="pending"] small { color:var(--amber); }
+.arsenal-socket[data-refit="pending"] b { background:repeating-conic-gradient(from 15deg,var(--amber) 0 30deg,transparent 0 60deg); }
+.arsenal-socket[data-refit="locked"] b { filter:saturate(.3) brightness(.75); }
+.arsenal-socket[data-refit="locked"] small { color:var(--mute); }
 .arsenal-editor button:focus-visible,.arsenal-editor select:focus-visible { outline:2px solid #b9f3ff; outline-offset:2px; }
-@media(max-width:520px){.arsenal-editor{padding:10px;}.arsenal-presets select{max-width:100%;}.arsenal-detail label{flex-wrap:wrap;gap:6px;}.arsenal-detail select{flex-basis:100%;}.arsenal-transfer-actions button{flex:1 1 auto;}}
+@media(max-width:520px){.arsenal-editor{padding:10px;}.arsenal-presets select{max-width:100%;}.arsenal-transfer-actions button{flex:1 1 auto;}}
 .module-skill-cooldown[data-phase="paused"] { --cool-color:#8aa5b3; color:#c4d9e3; }
 .module-skill-cooldown[data-phase="disabled"] { --cool-color:#b5968d; color:#ffd5c6; }
+
+.arsenal-omissions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:7px 0 12px; font-size:12px; color:#a7bdc8; }
+.arsenal-editor .arsenal-omissions select { min-width:0; max-width:100%; padding:4px 24px 4px 8px; appearance:none; border-color:var(--edge-hi); border-radius:0; background-color:var(--glass);
+  background-image:linear-gradient(45deg,transparent 50%,var(--cyan) 50%),linear-gradient(135deg,var(--cyan) 50%,transparent 50%);
+  background-position:calc(100% - 13px) 55%,calc(100% - 9px) 55%; background-size:4px 4px; background-repeat:no-repeat; font-family:var(--display); font-weight:600; }
+.arsenal-editor .arsenal-omissions select:hover { border-color:#b9f3ff; background-color:var(--glass-hi); }
+.arsenal-omissions option { color:#dfecf3; background:#0a1724; }
+/* Vector: Hull Dash and Mobile Battery as two consumable-sized hexes after the consumables. */
+.sk.vector { --accent:#77b8ff; }
+.sk[hidden],.skillbar .gap[hidden] { display:none; }
+.sk.vector .ch { background:#77b8ff; }
+.sk.vector.active .hx::before { background:#cfe6ff; }
+.sk.vector.off { --accent:#5d6f7f; }
+.sk.vector.off .hx { filter:grayscale(1) brightness(.7); }
+.sk.vector.off .nm { color:#5d6f7f; text-decoration:line-through; text-decoration-color:var(--red-dim); }
+.sk.vector[data-state="blocked"] .nm { color:var(--amber); }
+.sk.vector kbd.unbound { background:var(--amber); color:var(--abyss); }
+/* An Architect with Vectors carries thirteen buttons: tighten the titan bar so it stays one row. */
+.skillbar.titan:has(.vector:not([hidden])) { gap:4px; }
+.skillbar.titan:has(.vector:not([hidden])) .sk { width:56px; }
+.skillbar.titan:has(.vector:not([hidden])) .sk.ult { width:86px; }
+.skillbar.titan:has(.vector:not([hidden])) .sk.cons { width:44px; }
+.skillbar.titan:has(.vector:not([hidden])) .gap { width:6px; }
+@media (max-width:1300px) {
+  .skillbar.titan:has(.vector:not([hidden])) { gap:3px; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk { width:50px; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk .hx { width:46px; height:52px; font-size:1.3rem; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.ult { width:66px; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.ult .hx { width:62px; height:70px; font-size:1.8rem; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.cons { width:42px; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.cons .hx { width:40px; height:45px; font-size:1.1rem; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.cons .ch { top:29px; }
+}
+

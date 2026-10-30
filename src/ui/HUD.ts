@@ -1,4 +1,7 @@
 import { architectSkillPresentation,architectModuleSkillPresentation,architectIncomingBattery } from './ArchitectSkillPresentation';
+import { architectDockingStatus } from '../skills/misc/ArchitectRuntime';
+import { CROSS } from '../skills/misc/CrossStep';
+import { vectorMobilityPresentation } from './VectorMobilityPresentation';
 import { ARCHETYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
@@ -11,7 +14,7 @@ import type { ConsumableType, Era, Team } from '../core/types';
 import { accentCss } from '../data/accents';
 import { audio } from '../fx/Audio';
 import type { Input } from '../input/Input';
-import { keyName, onBindings } from '../input/Keybinds';
+import { bindings, keyName, onBindings } from '../input/Keybinds';
 import { RUSH_WAVES } from '../modes/BossRush';
 import { ARRIVE_GOAL, SINK_GOAL } from '../modes/Convoy';
 import { LAN_BATTLE_LIMIT_S } from '../net/protocol';
@@ -124,6 +127,7 @@ export class HUD {
   private slotEls: { root: HTMLElement; bar: HTMLElement; info: HTMLElement }[] = [];
   private skillEls: SkillEl[] = [];
   private consEls: SkillEl[] = [];
+  private vectorEls: {root:HTMLElement;t:HTMLElement;count:HTMLElement;lastActive?:number;wasReady:boolean}[] = [];
   /** LAN Free play: the last "minutes left" warning given before the server's time limit. */
   private limitWarned = Infinity;
   /** Key labels on the buttons, redrawn when the bindings change. */
@@ -265,6 +269,15 @@ export class HUD {
     // Cockpit, bottom centre: name, hull, status, skills, weapons.
     const titan = me.skills.length > 3;
     const ck = el('div', `cockpit${titan ? ' titan' : ''}`, r);
+    // Skill failures sit just above the cockpit so a tall titan cockpit never hides them.
+    ck.append(e.notice);
+    // Architect: one chip per turret socket sits above the hull block.
+    if (me.architect) {
+      const battery=e.battery=el('div','architect-battery',ck);battery.setAttribute('aria-label','Modular arsenal');
+      for(let i=0;i<10;i++){
+        const item=el('div','architect-slot',battery);item.innerHTML=`<b>${i+1}</b><em></em><span>DOCK</span><i></i>`;this.moduleEls.push(item);
+      }
+    }
     const nb = el('div', 'namebar', ck);
     el('span', 'cls', nb).innerHTML = classIcon(me.spec.cls);
     el('span', 'nm', nb).textContent = me.spec.name;
@@ -279,12 +292,6 @@ export class HUD {
     e.hpReserved = el('i', 'reserved', hp);
     el('i', 'ticks', hp);
     e.status = el('div', 'status-row', ck);
-    if (me.architect) {
-      const battery=el('div','architect-battery',ck);battery.setAttribute('aria-label','Modular arsenal');
-      for(let i=0;i<10;i++){
-        const item=el('div','architect-slot',battery);item.innerHTML=`<b>${i+1}</b><span>DOCK</span><i></i>`;this.moduleEls.push(item);
-      }
-    }
     // Titan Shift: the form's name, the time it has left, and where each ultimate comes ready.
     const f = me.form;
     if (f) {
@@ -335,6 +342,20 @@ export class HUD {
       el('div', 'nm', root).textContent = c.spec.type === 'search' ? SEARCH_SHORT[eraOf(me.spec)] : CONS_SHORT[c.spec.type];
       this.consEls.push({ root, t, wasReady: true });
     });
+    // Vector: two hex tiles, shown only while the arsenal carries a Vector.
+    if (me.architect) {
+      const equipped=me.architect.slots.some(a=>a.type==='vector');
+      e.vectorGap=el('div','gap vector-gap',sb);e.vectorGap.hidden=!equipped;
+      for(const [id,label,short,icon,pad] of [['architectHullDash','Hull Dash','HULL DASH','ram','LB + →'],['architectMobileBattery','Mobile Battery','MOBILE','fleet','RB + →']] as const){
+        const root=el('div','sk cons vector',sb);root.dataset.action=id;root.hidden=!equipped;root.title=label;
+        const hx=el('div','hx',root);hx.insertAdjacentHTML('beforeend',skillIcon(icon));el('div','sweep',hx);
+        const t=el('div','t',hx);
+        this.keyLabel(root,()=>bindings()[id]||undefined,pad);
+        const count=el('span','ch',root);
+        el('div','nm',root).textContent=short;
+        this.vectorEls.push({root,t,count,wasReady:true});
+      }
+    }
 
     const weapons = el('div', 'weapons', ck);
     me.slots.forEach((s, i) => {
@@ -380,6 +401,7 @@ export class HUD {
         if (mine(rb.ship)) this.ribbon(rb.kind);
       }),
       ev.on('shipSunk', (s) => {
+        if (s.ship.architectPlatform || s.ship.architectDrone) return;
         const k = s.killer;
         const line = el('div', '', e.killfeed);
         if (k) {
@@ -410,7 +432,7 @@ export class HUD {
         if (a.ship === pc.ship) {
           flash(this.skillEls[a.index].root, 'flash');
           if (sp.ult) {
-            const brief:Record<string,string>={flickerStep:'20 strikes · Fold, strike, repeat',crossStep:'60 cuts · Final convergence',afterimageStep:'Four echoes · Your attacks, multiplied',architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Ten siege cannons · Continuous elemental bombardment',architectCitadel:'Airborne battery · Protect allies within 900 m'};
+            const brief:Record<string,string>={flickerStep:'20 strikes · Fold, strike, repeat',crossStep:`${CROSS.cuts} cuts · Final convergence`,afterimageStep:'Four echoes · Your attacks, multiplied',architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Ten siege cannons · Continuous elemental bombardment',architectCitadel:'Airborne battery · Protect allies within 900 m'};
             this.callout(sp.name, brief[sp.id]??sp.description, c);
             this.flashScreen(c);
           }
@@ -542,12 +564,18 @@ export class HUD {
 
     this.updateHull(dt);
     this.updateSkills();
+    if(me.architect){
+      // The docking summary rides on the turret strip instead of a bar of its own.
+      const docking=architectDockingStatus(me),summary=`Modular arsenal · Dock ${docking.count}/10 · DR ${Math.round(docking.damageReduction*100)}% · Hull +${Math.round(!me.alive||me.mods.healBlock?0:docking.hullRegenPerSecond*me.mods.regenMul).toLocaleString()}/s · CAP ${docking.capacitors} ready / ${docking.chargingCycles} half`;
+      if(e.battery.dataset.summary!==summary){e.battery.dataset.summary=summary;e.battery.setAttribute('aria-label',summary);e.battery.title=`${summary}\nEach docked platform: 1.5% hull protection, up to 15%. After 2s: hull repair 0.03%/s, and a platform below the hull's health repairs 20%/s until it catches up. Capacitors store one 18k elemental bolt per two ordinary docked firing cycles.`;}
+    }
     if(me.architect)this.moduleEls.forEach((item,i)=>{
       const a=me.architect!.slots[i],state=a.state;
       item.dataset.state=state;item.dataset.health=a.hp/me.architect!.moduleHp<.3?'low':a.hp/me.architect!.moduleHp<.6?'mid':'high';item.style.setProperty('--health',`${Math.max(0,a.hp/me.architect!.moduleHp)}`);
-      setText(item.querySelector('span')!,state==='destroyed'?`${Math.ceil(a.rebuild)}s`:state==='docked'?'DOCK':state==='deployed'?'SET':state==='citadel'?'AIR':state==='returning'?'HOME':state==='assembling'?'BUILD':'MOVE');
-      const theme=ARCHETYPES[a.type];item.querySelector('b')!.textContent=`${i+1} ${theme.short}`;item.querySelector('b')!.style.color=`#${theme.color.toString(16).padStart(6,'0')}`;
-      item.title=`${theme.name} ${i+1} · ${architectModuleSkillPresentation(me,i).label} · ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP`;
+      setText(item.querySelector('span')!,state==='destroyed'?`${Math.ceil(a.rebuild)}s`:state==='docked'?'DOCK':state==='deployed'&&!a.follow?'SET':state==='citadel'||state==='deployed'?'AIR':state==='returning'?'HOME':state==='assembling'?'BUILD':'MOVE');
+      const theme=ARCHETYPES[a.type];setText(item.querySelector('em')!,theme.short);item.style.setProperty('--type',`#${theme.color.toString(16).padStart(6,'0')}`);
+      item.dataset.capacitor=a.capacitorCharged?'charged':a.capacitorCycles?'half':'empty';
+      item.title=`${theme.name} ${i+1} · ${architectModuleSkillPresentation(me,i).label} · ${state}, ${Math.ceil(a.hp).toLocaleString()} / ${Math.round(me.architect!.moduleHp).toLocaleString()} HP · capacitor ${a.capacitorCharged?'18k ready':`${a.capacitorCycles}/2 firing cycles`}`;
       item.setAttribute('aria-label',item.title);
     });
 
@@ -912,10 +940,12 @@ export class HUD {
     });
     me.consumables.forEach((c, i) => {
       const ce = this.consEls[i];
+      if(c.spec.type==='search'){ce.root.dataset.utility='search';ce.root.title=consumableLabel(c.spec.type,me.spec);ce.root.setAttribute('aria-label',ce.root.title);}
       const p = c.active > 0 ? 0 : c.cooldown > 0 ? Math.min(1, c.cooldown / c.spec.cooldown) : c.charges <= 0 ? 1 : 0;
       ce.root.style.setProperty('--p', p.toFixed(3));
       setText(ce.t, c.active > 0 ? String(Math.ceil(c.active)) : c.cooldown > 0 ? String(Math.ceil(c.cooldown)) : '');
       const ch = ce.root.querySelector('.ch') as HTMLElement;
+      ch.hidden=false;
       setText(ch, c.charges > 50 ? '' : String(c.charges));
       ch.style.display = c.charges > 50 ? 'none' : '';
       const ready = c.charges > 0 && c.cooldown <= 0;
@@ -924,6 +954,27 @@ export class HUD {
       ce.root.classList.toggle('cool', !ready && c.active <= 0);
       ce.root.classList.toggle('empty', c.charges <= 0);
     });
+    const mobility=me.getVectorMobilityStatus();
+    if(mobility){
+      const view=vectorMobilityPresentation(mobility);
+      if(this.e.vectorGap)this.e.vectorGap.hidden=!mobility.equipped;
+      [view.dash,view.mobile].forEach((state,i)=>{
+        const item=this.vectorEls[i];if(!item)return;
+        item.root.hidden=!mobility.equipped;if(!mobility.equipped)return;
+        const active=i===0?mobility.hullDash.activeRemaining:mobility.mobileBattery.activeRemaining;
+        if(item.lastActive!==undefined&&active>item.lastActive+.05&&me.alive)audio.ui('ability');
+        item.lastActive=active;
+        setText(item.count,state.count);item.count.hidden=!state.count;setText(item.t,state.timer);
+        item.root.dataset.state=state.tone;item.root.style.setProperty('--p',state.sweep.toFixed(3));
+        setClass(item.root,`sk cons vector ${state.tone==='active'?'active':state.tone==='ready'||state.tone==='blocked'&&state.ready?'ready':'cool'}${state.tone==='off'?' off':''}${item.root.classList.contains('flash')?' flash':''}`);
+        if(state.ready&&!item.wasReady&&me.alive)flash(item.root,'flash');
+        item.wasReady=state.ready;
+        const key=item.root.querySelector('kbd')!,code=bindings()[i===0?'architectHullDash':'architectMobileBattery'],unbound=this.pc.layout&&!code;
+        key.classList.toggle('unbound',!!unbound);if(this.pc.layout)setText(key,keyName(code)||'Unbound');
+        item.root.title=`${state.title}${unbound?' · Keyboard unbound: assign a key in Settings':''}`;
+        item.root.setAttribute('aria-label',`${key.textContent}: ${item.root.title}`);
+      });
+    }
   }
 
   private torpedoThreat(me: Ship): boolean {

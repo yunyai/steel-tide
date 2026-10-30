@@ -1,14 +1,22 @@
 import {chromium} from 'playwright';
 import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
-const out=process.env.ARCH_UI_OUT??'docs/verification/architect-polish-ui';mkdirSync(out,{recursive:true});
+const out=process.env.ARCH_UI_OUT??'docs/verification/architect-visual-control-polish';mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true}),rows=[];
 try{
- for(const [width,height] of (process.env.ARCH_UI_NARROW?[[900,800],[700,800],[520,800],[390,844]]:[[1280,720],[1920,1080],[2560,1080],[900,800],[700,800],[520,800],[390,844]])){
+ for(const [width,height] of (process.env.ARCH_UI_NARROW?[[900,800],[700,800],[520,800],[390,844]]:[[1280,720],[1920,1080],[2560,1080],[390,844]])){
   const page=await browser.newPage({viewport:{width,height}}),errors=[];page.on('pageerror',e=>errors.push(String(e)));
   await page.goto(process.env.STEEL_URL??'http://127.0.0.1:5192');await page.waitForFunction(()=>window.steel);
   await page.getByRole('button',{name:/Hangar/}).first().click();await page.getByRole('button',{name:'Misc',exact:true}).click();await page.getByRole('button',{name:'Titan',exact:true}).click();await page.getByRole('button',{name:/Architect/}).first().click();
   const editor=page.locator('.arsenal-editor');await editor.scrollIntoViewIfNeeded();
-  const navigation=await page.evaluate(async()=>{const {MenuNavigation}=await import('/src/ui/MenuNavigation.ts'),nav=new MenuNavigation(),root=document.querySelector('.arsenal-editor'),slot=root.querySelector('[data-arsenal-key="slot-8"]');slot.focus();nav.activate(root);const preserved=document.activeElement===slot,select=root.querySelector('.arsenal-detail select');select.focus();nav.move(root,1);const selectPreserved=document.activeElement===select;root.querySelectorAll('.arsenal-skill')[1].click();return{preserved,selectPreserved,selected:root.querySelectorAll('.arsenal-skill[aria-pressed=true]').length};});
+  const types=await editor.locator('.arsenal-types button').count();if(types!==12)throw Error(`Expected12types,got${types}`);
+  const omissions=editor.locator('.arsenal-omissions select');if(await omissions.count()!==2)throw Error('Unique preset needs two omissions');
+  await omissions.nth(0).selectOption('furnace');await omissions.nth(1).selectOption('cryo');
+  await editor.getByRole('button',{name:'One of each',exact:true}).click();
+  const unique=await page.evaluate(()=>JSON.parse(localStorage.getItem('steel-tide.architect-loadout.v1')));
+  if(unique.length!==10||new Set(unique.map(s=>s.type)).size!==10||unique.some(s=>['furnace','cryo'].includes(s.type))||!unique.some(s=>s.type==='vector'))throw Error('Two-omission unique preset is incorrect');
+  await editor.locator('[data-arsenal-key="slot-9"]').click();
+  const vectorCopy=await editor.locator('.arsenal-choices').textContent();if(!vectorCopy.includes('Hull Dash')||!vectorCopy.includes('Manual')||vectorCopy.includes('automatic when deployed'))throw Error('Vector must describe manual utility');
+  const navigation=await page.evaluate(async()=>{const {audio}=await import('/src/fx/Audio.ts'),{MenuNavigation}=await import('/src/ui/MenuNavigation.ts'),nav=new MenuNavigation(),root=document.querySelector('.arsenal-editor'),slot=root.querySelector('[data-arsenal-key="slot-8"]');slot.focus();await new Promise(resolve=>setTimeout(resolve,70));const ui=audio.ui;let feedback=0;audio.ui=()=>feedback++;nav.activate(root);audio.ui=ui;const preserved=document.activeElement===slot,tile=root.querySelector('.arsenal-types [aria-pressed=true]');tile.focus();nav.move(root,1);const typeStep=document.activeElement!==tile&&root.contains(document.activeElement);root.querySelectorAll('.arsenal-skill')[1].click();return{preserved,typeStep,feedback,selected:root.querySelectorAll('.arsenal-skill[aria-pressed=true]').length};});
   await page.screenshot({path:`${out}/hangar-${width}.jpg`,quality:88});
   await editor.getByRole('button',{name:'Import / export',exact:true}).click();
   const text=editor.getByRole('textbox',{name:'Loadout JSON'}),apply=editor.getByRole('button',{name:'Apply import',exact:true});
@@ -32,7 +40,7 @@ try{
   const pad=await page.evaluate(async()=>{const {MenuNavigation}=await import('/src/ui/MenuNavigation.ts'),{Input}=await import('/src/input/Input.ts'),root=document.querySelector('.arsenal-editor'),nav=new MenuNavigation(),input=new Input(document.createElement('canvas')),original=navigator.getGamepads;Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>[{axes:[0,0],buttons:Array.from({length:16},(_,i)=>({pressed:i===1,value:i===1?1:0}))}]});input.pollPads();const textReachable=nav.controls(root).includes(root.querySelector('textarea'));nav.update(input,performance.now());Object.defineProperty(navigator,'getGamepads',{configurable:true,value:original});return{textReachable,closed:root.querySelector('.arsenal-transfer').hidden,focused:document.activeElement?.classList.contains('arsenal-disclosure')};});
   if(!pad.textReachable||!pad.closed||!pad.focused)throw Error(JSON.stringify(pad));
   const result=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,focused:document.activeElement?.classList.contains('arsenal-disclosure'),selected:document.querySelectorAll('.arsenal-skill[aria-pressed=true]').length,saved:JSON.parse(localStorage.getItem('steel-tide.architect-loadout.v1')).length}));
-  rows.push({width,...navigation,...result,pad,errors});if(errors.length||result.overflow||!result.focused||!navigation.preserved||!navigation.selectPreserved||result.selected!==1||result.saved!==10)throw Error(JSON.stringify(rows.at(-1)));
+  rows.push({width,types,unique:unique.map(s=>s.type),vectorCopy,...navigation,...result,pad,errors});if(errors.length||result.overflow||!result.focused||!navigation.preserved||!navigation.typeStep||navigation.feedback!==1||result.selected!==1||result.saved!==10)throw Error(JSON.stringify(rows.at(-1)));
   await page.close();console.log(`UI ${width}: passed transfer, navigation and layout`);
  }
  writeFileSync(`${out}/results.json`,JSON.stringify(rows,null,2));

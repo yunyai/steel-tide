@@ -28,6 +28,7 @@ import {
   type Side,
 } from 'three';
 import { DEG, clamp, wrapAngle } from '../core/math';
+import { DASH_TIME } from '../skills/misc/ArchitectRuntime';
 import type { PlaneLook, ShipSpec, SkillSpec } from '../core/types';
 import { deckHeight, hullHalfWidth } from '../ships/HullShape';
 import type { Ship } from '../ships/Ship';
@@ -41,6 +42,12 @@ import { type ColorFn, Parts, loft } from './Geometry';
 export const shipMaterial = new MeshStandardMaterial({ vertexColors: true, color: 0xb4b4b4, roughness: 0.7, metalness: 0.3, envMapIntensity: 0.8 });
 /** Hulls take this share of the haze the sea and islands get, so a ship at gun range still reads. */
 const SHIP_FOG = 0.5;
+/** A destroyed platform falls at this acceleration (m/s²) and is gone this long after it reaches the water. */
+const PLATFORM_FALL = 150, PLATFORM_SINK = 3;
+/** Seconds after death before a platform's sinking hull can be dropped from the scene. */
+export function platformSunkAfter(ship: { renderPos: { y: number } }): number {
+  return PLATFORM_SINK + Math.sqrt(Math.max(0, ship.renderPos.y) / PLATFORM_FALL);
+}
 const FOG_FRAGMENT = `#ifdef USE_FOG
   #ifdef FOG_EXP2
     float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
@@ -1051,6 +1058,8 @@ export class ShipView {
   private wasAlive = true;
   private architectModel: ArchitectModel | null = null;
   stepFold=0;
+  /** Presentation-only yaw added to the hull, used by Stepper's turn-to-face on Flicker strikes. */
+  stepYaw=0;
   private stepModel: StepperModel | null = null;
 
   constructor(readonly spec: ShipSpec, shadows = true) {
@@ -1448,7 +1457,7 @@ export class ShipView {
     }
     const spec = this.spec;
     const L = spec.length;
-    const h = ship.renderHeading;
+    const h = ship.renderHeading + this.stepYaw;
     const fx = Math.sin(h);
     const fz = -Math.cos(h);
     const px = ship.renderPos.x;
@@ -1525,6 +1534,13 @@ export class ShipView {
       for (const e of this.emitters) e.mesh.material.color.copy(e.color).multiplyScalar(k);
     }
     pitch += clamp(ship.speed * 0.0006, -0.01, 0.02);
+    // Hull Dash: bow up on the lift, bow down into the landing, banked while it swings onto the dash line.
+    const drive = ship.architect?.drive;
+    if (drive && ship.alive) {
+      const f = clamp(drive.elapsed / DASH_TIME, 0, 1);
+      pitch += 0.09 * Math.sin(f * Math.PI * 2);
+      roll -= clamp(wrapAngle(Math.atan2(drive.dx, -drive.dz) - drive.from), -1, 1) * 0.22 * Math.sin(Math.min(1, f * 2) * Math.PI);
+    }
     if (this.radar && ship.alive && this.mastFall <= 0) this.radar.rotation.y += dt * 1.6;
     if (this.orrery && ship.alive) this.orrery.rotation.y += dt * (active ? 1.2 : 0.3);
     if (this.radar && this.mastFall > 0) {
@@ -1538,7 +1554,14 @@ export class ShipView {
     if (this.pennant && this.root.visible) this.wave(time);
     if (!ship.alive) {
       const t = ship.deathTime;
-      if(ship.architectPlatform||ship.architectDrone){const f=Math.min(1,t/2.2);y=ship.renderPos.y*(1-f)-Math.min(30,t*t*12);roll+=f*1.8;pitch+=f*.65;this.root.visible=t<3;}
+      if(ship.architectPlatform){
+        // A destroyed platform tumbles into the sea and goes under; a hovering one drops out of the air first.
+        // Withdrawal belongs to docking/refit and simply vanishes.
+        const h=Math.max(0,ship.renderPos.y),land=platformSunkAfter(ship)-PLATFORM_SINK,f=Math.min(1,t/2.2),under=Math.max(0,t-land);
+        y=h-Math.min(h,PLATFORM_FALL*t*t)-Math.min(30,under*under*12);roll+=f*1.8;pitch+=f*.65;
+        this.root.visible=!ship.withdrawn&&t<platformSunkAfter(ship);
+      }
+      else if(ship.architectDrone){const f=Math.min(1,t/2.2);y=ship.renderPos.y*(1-f)-Math.min(30,t*t*12);roll+=f*1.8;pitch+=f*.65;this.root.visible=t<3;}
       else if (ship.withdrawn) {
         y -= t * t * 0.4;
       } else if (this.split) {
@@ -1552,6 +1575,7 @@ export class ShipView {
         pitch += this.sinkSign * Math.min(0.22, t * 0.008);
       }
     }
+    if(ship.architectPlatform&&ship.alive)this.root.scale.setScalar(1);
     this.root.position.set(px, y, pz);
     this.root.rotation.set(roll, Math.PI / 2 - h, pitch);
 

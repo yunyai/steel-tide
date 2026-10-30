@@ -24,7 +24,8 @@ export interface StepperState {
   cross: CrossState | null;
   repair: { remaining: number } | null;
   repairInterruptedUntil: number;
-  flicker: { x: number; z: number; elapsed: number; count: number } | null;
+  /** `last` is the world bearing, from its target, of the previous strike's landing. */
+  flicker: { x: number; z: number; elapsed: number; count: number; last: number } | null;
   rush: { x0: number; z0: number; x1: number; z1: number; elapsed: number; hit: number[] } | null;
 }
 export function newStepperState(): StepperState {
@@ -56,7 +57,7 @@ export interface Landing {
   heading: number;
 }
 
-/** Footprint samples include the beam and both ends, not just the hull centre. */
+/** Footprint samples include the beam and both ends, not just the hull centre. `ignoreTerrain` keeps only the map edge (airborne hulls). */
 export function safeStep(
   s: Ship,
   x: number,
@@ -64,6 +65,8 @@ export function safeStep(
   heading = s.heading,
   ignoreEnemies = false,
   reservations: Landing[] = [],
+  ignoreShip: (other: Ship) => boolean = () => false,
+  ignoreTerrain = false,
 ): boolean {
   if (!Number.isFinite(x + z + heading)) return false;
   const fx = forwardX(heading),
@@ -79,7 +82,7 @@ export function safeStep(
       if (
         Math.abs(px) > MAP_HALF - 150 ||
         Math.abs(pz) > MAP_HALF - 150 ||
-        s.game.map.heightAt(px, pz) > -Math.max(6, s.spec.draft)
+        (!ignoreTerrain && s.game.map.heightAt(px, pz) > -Math.max(6, s.spec.draft))
       )
         return false;
     }
@@ -114,6 +117,7 @@ export function safeStep(
       o.alive &&
       !o.deep &&
       !o.mods.banished &&
+      !ignoreShip(o) &&
       !(
         ignoreEnemies &&
         (o.team !== s.team || (s.stepper?.copy && (o === s.summonOwner || o.summonOwner === s.summonOwner)))
@@ -199,7 +203,7 @@ export function aroundTarget(s: Ship, t: Ship, r: number, broad = false): Landin
   }
   return null;
 }
-export const SIDESTEP = { distance: 100, phase: 0.08, retrigger: 0.12, lookAhead: 0.16 } as const;
+export const SIDESTEP = { distance: 100, phase: 0.06, retrigger: 0.09, lookAhead: 0.16 } as const;
 
 /** React to an imminent collision as well as the damage fallback used by beams/area hits. */
 export function evadeIncoming(s: Ship): void {
@@ -214,9 +218,7 @@ export function evadeIncoming(s: Ship): void {
     st.rush ||
     st.flicker ||
     st.cross ||
-    s.mods.invulnerable ||
-    s.mods.stunned ||
-    s.mods.silenced
+    s.mods.invulnerable
   )
     return;
   const horizon = SIDESTEP.lookAhead;
@@ -267,9 +269,12 @@ export function incomingStep(
     now = s.game.time;
   if (!st || !attacker || attacker.team === s.team || pierce || periodic || reflected) return false;
   if (st.phaseUntil > now) return true;
-  if (st.sideUntil <= now || st.dodgeReady > now || st.rush || st.flicker || st.cross || s.mods.stunned || s.mods.silenced)
-    return false;
-  const away = (incomingHeading ?? bearingTo(attacker.pos.x, attacker.pos.z, s.pos.x, s.pos.z)) + Math.PI / 2;
+  // Crowd control never stops a dodge; only banishment, which already keeps every hit away, does.
+  if (st.sideUntil <= now || st.dodgeReady > now || st.rush || st.flicker || st.cross || s.mods.banished) return false;
+  // A random side and a random angle within 45 degrees of square to the shot, so dodges never settle into one direction.
+  const side = s.game.rng() < 0.5 ? Math.PI : 0,
+    spread = (s.game.rng() - 0.5) * (Math.PI / 2);
+  const away = (incomingHeading ?? bearingTo(attacker.pos.x, attacker.pos.z, s.pos.x, s.pos.z)) + Math.PI / 2 + side + spread;
   // Prefer a full lateral jump, trying the opposite side before shorter/diagonal escapes.
   for (const distance of [SIDESTEP.distance, (SIDESTEP.distance * 2) / 3, SIDESTEP.distance / 3])
     for (const offset of [

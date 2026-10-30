@@ -6,6 +6,7 @@ import type { PlayerController } from '../player/PlayerController';
 import type { Ship } from '../ships/Ship';
 import { accentCss } from '../data/accents';
 import { audio } from '../fx/Audio';
+import { display } from '../input/Settings';
 import { captainName } from './names';
 import { palette } from './palette';
 import { feedbackDamageText,layoutFeedbackPopups,type FeedbackRect } from './FeedbackLayout';
@@ -132,6 +133,10 @@ export class Feedback {
   private impact: HTMLElement;
   private off: (() => void)[] = [];
   private rowH = 38;
+  /** Damage-number size from Settings, applied to the popup layer as `--damage-scale`. */
+  private scale = 0;
+  private shortDamage = false;
+  private layer: HTMLElement;
   private protectedUi: HTMLElement[];
 
   constructor(
@@ -149,7 +154,7 @@ export class Feedback {
     this.vignette = el('div', 'hurt', root);
     root.prepend(this.scope, this.vignette);
 
-    const layer = el('div', 'pops', root);
+    const layer = (this.layer = el('div', 'pops', root));
     for (let i = 0; i < POOL; i++) {
       const p = el('div', 'pop', layer);
       p.style.display = 'none';
@@ -191,10 +196,12 @@ export class Feedback {
         if (h.ship === pc.ship) this.hit(h.damage, h.attacker, h.attacker.pos.x, h.attacker.pos.z);
         if (!mine(h.attacker) || h.ship.team === team || h.damage <= 0) return;
         const reaction=h.skill.reaction,element=h.skill.element;
-        this.add(h.ship,reaction?`reaction:${[...reaction].sort().join('+')}`:`skill:${h.skill.id}`,'skill',h.damage,reaction?`${ELEMENT_STYLE[reaction[0]].short} + ${ELEMENT_STYLE[reaction[1]].short} · ${h.skill.short}`:h.skill.short,element?`#${ELEMENT_STYLE[element].color.toString(16).padStart(6,'0')}`:accentCss(h.skill.accent));
+        const hex=(e:keyof typeof ELEMENT_STYLE)=>`#${ELEMENT_STYLE[e].color.toString(16).padStart(6,'0')}`;
+        this.add(h.ship,reaction?`reaction:${[...reaction].sort().join('+')}`:`skill:${h.skill.id}`,'skill',h.damage,reaction?`${ELEMENT_STYLE[reaction[0]].short} + ${ELEMENT_STYLE[reaction[1]].short} · ${h.skill.short}`:h.skill.short,element?hex(element):accentCss(h.skill.accent),reaction?hex(reaction[0]):'');
         this.tick(false);
       }),
       ev.on('shipSunk', (s) => {
+        if (s.ship.architectPlatform || s.ship.architectDrone) return;
         if (!mine(s.killer) || s.ship.team === team) return;
         flash(this.killmark, 'on');
         this.streak = this.clock - this.lastKill < STREAK ? this.streak + 1 : 1;
@@ -212,7 +219,7 @@ export class Feedback {
     this.off = [];
   }
 
-  private add(target: Ship, key: string, kind: PopKind, damage: number, title = '', accent = ''): void {
+  private add(target: Ship, key: string, kind: PopKind, damage: number, title = '', accent = '', accent2 = ''): void {
     const now = this.clock;
     const merge = kind === 'skill' ? SKILL_MERGE : MERGE;
     let p = this.pops.find((q) => q.live && q.target === target && q.key === key && now - q.last < merge);
@@ -226,6 +233,8 @@ export class Feedback {
       p.damage = 0;
       p.title = title;
       p.el.style.setProperty('--accent', accent || 'var(--cyan)');
+      if (accent2) p.el.style.setProperty('--accent2', accent2);
+      else p.el.style.removeProperty('--accent2');
       p.born = now;
       p.live = true;
       // Stack above any popup already over this target.
@@ -299,12 +308,14 @@ export class Feedback {
       p.el.style.visibility = '';
       visible.push({p,x:sp.x,y:sp.y,age:t});
     }
+    const {damageScale:scale,shortDamage}=display();
+    if(scale!==this.scale||shortDamage!==this.shortDamage){this.scale=scale;this.shortDamage=shortDamage;this.layer.style.setProperty('--damage-scale',String(scale));for(const p of this.pops)p.dirty=true;}
     const dense=visible.length>=4;
     // Apply density/text together, then measure all popups and protected HUD regions before moving any.
     for(const {p} of visible){
       if(p.el.classList.contains('dense')!==dense){p.el.classList.toggle('dense',dense);p.dirty=true;}
       if(!p.dirty)continue;
-      const damage=feedbackDamageText(p.damage,dense),text=p.damage>0?damage.text:'';
+      const damage=feedbackDamageText(p.damage,shortDamage),text=p.damage>0?damage.text:'';
       if(p.num.textContent!==text){p.num.textContent=text;p.dirty=true;}
       const description=`${p.label.textContent}${p.damage>0?`: ${damage.full} damage`:''}`;
       p.el.title=description;p.el.setAttribute('role','img');p.el.setAttribute('aria-label',description);
@@ -320,7 +331,7 @@ export class Feedback {
         if(box.width&&box.height)guards.push({left:box.left-origin.left-8,top:box.top-origin.top-8,right:box.right-origin.left+8,bottom:box.bottom-origin.top+8});
       }
     }
-    const positions=layoutFeedbackPopups(visible.map(({p,x,y})=>({x,y:y-(dense?28+Math.min(18,(now-p.born)*15):this.rowH*(.8+p.row)+Math.min(50,(now-p.born)*30)),width:p.w*1.35,height:p.h*1.35})),width,height,guards);
+    const positions=layoutFeedbackPopups(visible.map(({p,x,y})=>({x,y:y-(dense?28*scale+Math.min(18,(now-p.born)*15):this.rowH*scale*(.8+p.row)+Math.min(50,(now-p.born)*30)),width:p.w*1.35,height:p.h*1.35})),width,height,guards);
     visible.forEach(({p,age},i)=>{
       const {x,y}=positions[i];
       p.el.style.transform=`translate(${x.toFixed(0)}px, ${y.toFixed(0)}px) translate(-50%, -100%)`;

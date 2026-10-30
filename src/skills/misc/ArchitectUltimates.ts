@@ -1,12 +1,12 @@
 import { ARCHITECT_BATTERY_FLIGHT, type ArchitectBatteryCast, type ArchitectBatteryStage } from '../../data/architectBattery';
-import { planArchitectBatteryLayout, buildArchitectBatteryPaths } from './ArchitectBatteryPose';
+import { planArchitectBatteryLayout, buildArchitectBatteryPaths, planArchitectBatteryFormation, BATTERY_TRANSPORT_TIME, BATTERY_FOLD_TIME } from './ArchitectBatteryPose';
 import { applyElementMark, ultimateElementHit } from './ArchitectElements';
 import type { Ship } from '../../ships/Ship';
 import { MAP_HALF } from '../../config';
 import { bearingTo } from '../../core/math';
 import { distToHull, segmentHitsHull } from '../../core/hull';
 import { hurt, buff } from '../kit';
-import { available, archAim, attachModule, clearLine, dockPoint, formation, moduleLanding, moveModule, raiseShield, updateModulePath } from './ArchitectRuntime';
+import { available, archAim, attachModule, clearLine, dockPoint, moduleLanding, moveModule, raiseShield, updateModulePath } from './ArchitectRuntime';
 
 export type ArchitectUltimateKind='assembly'|'killbox'|'citadel';
 export interface ArchitectUltimate {
@@ -19,16 +19,15 @@ export function beginArchitectUltimate(s:Ship,kind:ArchitectUltimateKind):boolea
   const a=s.architect!,slots=available(s);
   if(slots.length<2)return s.failSkill('Assembly requires at least two surviving modules');
   const p=archAim(s);
-  const poses=kind==='killbox'?formation(s,slots,p.x,p.z,1500):null;
-  if(kind==='killbox'&&!poses)return s.failSkill('Grand Battery: no safe water for the complete formation');
+  const poses=kind==='killbox'?planArchitectBatteryFormation(p,slots.length,(x,z)=>s.game.map.heightAt(x,z)):null;
   const battery:ArchitectBatteryCast|null=kind==='killbox'?{
     id:s.game.battery.beginCast(s),generation:s.game.battery.generation(s),startedAt:s.game.time,
-    members:slots.map((slot,n)=>{const q=poses![n],carrier={x:q.x,y:0,z:q.z,heading:q.heading};return {slot:slot.index,carrier,layout:planArchitectBatteryLayout(carrier,{x:p.x,y:4,z:p.z},(x,z)=>s.game.map.heightAt(x,z))};}),
+    members:slots.map((slot,n)=>{const q=poses![n],carrier={x:q.x,y:q.y,z:q.z,heading:q.heading};return {slot:slot.index,carrier,layout:planArchitectBatteryLayout(carrier,{x:p.x,y:4,z:p.z},(x,z)=>s.game.map.heightAt(x,z))};}),
   }:null;
   a.ultimate={battery,kind,elapsed:0,members:slots.map(a=>a.index),x:p.x,z:p.z,aimX:s.control.aimX,aimY:s.control.aimY??4,aimZ:s.control.aimZ,locked:false,waves:0,fired:false,granted:[]};
   slots.forEach((slot,n)=>{
     const q=kind==='assembly'?dockPoint(s,slot.index):kind==='killbox'?poses![n]:airPosition(s,n,slots.length,slot.index);
-    moveModule(s,slot,q,'assembling',1.5);
+    moveModule(s,slot,q,'assembling',kind==='killbox'?BATTERY_TRANSPORT_TIME:1.5);
   });
   s.game.events.emit('architectCommand',{ship:s,kind});return true;
 }
@@ -67,6 +66,8 @@ function rail(s:Ship,x:number,y:number,z:number,tx:number,ty:number,tz:number,wi
 export function updateArchitectUltimate(s:Ship,dt:number):void {
   const a=s.architect,u=a?.ultimate;if(!a||!u)return;
   u.elapsed+=dt;
+  // Nothing left to command: stand down early and keep the unused charge.
+  if(u.members.every(i=>a.slots[i].state==='destroyed')){endArchitectUltimate(s);return;}
   if(u.elapsed<=1.5+1e-8)for(const i of u.members){const slot=a.slots[i];if(slot.entity?.alive)updateModulePath(s,slot,dt);}
   if(u.elapsed+1e-8>=1.5){
     for(const i of u.members){
@@ -91,7 +92,6 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
           for(const t of victims)ultimateElementHit(s,slot,t,'assembly');
         }
       }
-      else s.failSkill('Final Assembly: every participating module was destroyed');
     }
     if(u.elapsed+1e-8>=4)endArchitectUltimate(s);
   }else if(u.kind==='killbox'){
@@ -138,12 +138,13 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
     if(u.elapsed+1e-8>=13.5)endArchitectUltimate(s);
   }
 }
-export function endArchitectUltimate(s:Ship):void {
+export function endArchitectUltimate(s:Ship,recalling=false):void {
   const a=s.architect,u=a?.ultimate;if(!a||!u)return;
   a.ultimate=null;
   const reservations:ReturnType<typeof moduleLanding>[]=[];
   for(const i of u.members){
     const slot=a.slots[i];if(slot.state==='destroyed')continue;
+    if(recalling)continue;
     if(u.kind==='assembly'){
       if(slot.entity?.alive)attachModule(s,slot);
       slot.state='docked';slot.path=null;s.turrets[i].disabled=slot.disabled;s.turrets[i].reload=slot.reload;
@@ -151,8 +152,16 @@ export function endArchitectUltimate(s:Ship):void {
       const m=slot.entity,p=moduleLanding(s,slot,m.pos.x,m.pos.z,m.heading,reservations.filter((p):p is NonNullable<typeof p>=>!!p),1000);
       if(p){reservations.push(p);moveModule(s,slot,p,'moving',1);}
       else moveModule(s,slot,dockPoint(s,i),'returning');
-    }else if(slot.entity?.alive){if(slot.path)slot.entity.pos.set(slot.path.tx,slot.path.ty,slot.path.tz);slot.state='deployed';slot.path=null;}
+    }else if(slot.entity?.alive){
+      const m=slot.entity,p=moduleLanding(s,slot,m.pos.x,m.pos.z,m.heading,reservations.filter((p):p is NonNullable<typeof p>=>!!p),1000);
+      if(p){reservations.push(p);const still=Math.hypot(p.x-m.pos.x,p.z-m.pos.z)<1&&m.pos.y<=1;moveModule(s,slot,p,'moving',BATTERY_FOLD_TIME+(still?0:1));}
+      else {const dock=dockPoint(s,i);moveModule(s,slot,dock,'returning',BATTERY_FOLD_TIME+Math.max(1,Math.hypot(dock.x-m.pos.x,dock.z-m.pos.z)/1200));}
+      if(slot.path)slot.path.settling=true;
+    }
   }
-  const st=s.skills[indexOf(u.kind)];if(st)st.time=0;
+  const st=s.skills[indexOf(u.kind)];
+  // Ending early (Recall, or every platform lost) refunds the meter for the time left; a sunk Architect keeps nothing.
+  if(st&&s.alive&&st.spec.duration>0)st.meter=Math.max(st.meter,Math.max(0,Math.min(1,st.time/st.spec.duration)));
+  if(st){st.time=0;if(st.active){st.active=false;s.game.events.emit('skillEnd',{ship:s,index:st.index});}}
   s.game.events.emit('architectCommand',{ship:s,kind:'end'});
 }

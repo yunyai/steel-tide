@@ -138,20 +138,20 @@ export const LAYOUT_MOUSE: KeyLayout = {
   slots: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'],
   skills: ['KeyQ', 'KeyE', 'KeyR'],
   consumables: ['KeyF', 'KeyG'],
-  lock: 'KeyX',
+  lock: 'Space',
   assist: 'KeyV',
   zoom: 'ShiftLeft',
-  follow: 'Space',
+  follow: 'KeyU',
   diveUp: 'KeyZ',
   diveDown: 'KeyC',
 };
 
-/** Titans: six skills on Q E Z X C V and three ultimates on R T B; lock moves to middle mouse, assist to N, a titan sub's dive keys to Y and H. Defaults: see input/Keybinds. */
+/** Titans: six skills on Q E Z X C V and three ultimates on R T B; Space and middle mouse lock, assist to N, a titan sub's dive keys to Y and H. Defaults: see input/Keybinds. */
 export const LAYOUT_TITAN: KeyLayout = {
   ...LAYOUT_MOUSE,
   label: 'Keyboard + Mouse (titan)',
   skills: ['KeyQ', 'KeyE', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyR', 'KeyT', 'KeyB'],
-  lock: '',
+  lock: 'Space',
   assist: 'KeyN',
   // Z and C are titan skills, so a titan submarine surfaces and dives on Y and H.
   diveUp: 'KeyY',

@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Game } from '../core/Game';
 import type { Team } from '../core/types';
 import type { ArchitectBatteryLayout, ArchitectBatteryArc, ArchitectBatteryCast, ArchitectBatteryLaunch, ArchitectBatteryMember, ArchitectBatteryPoint, ArchitectBatteryStage } from '../data/architectBattery';
-import { buildArchitectBatteryPaths, getArchitectBatteryHeadPose } from '../skills/misc/ArchitectBatteryPose';
+import { BATTERY_FOLD_START, BATTERY_FOLD_TIME, BATTERY_TRANSPORT_TIME, buildArchitectBatteryPaths, getArchitectBatteryHeadPose } from '../skills/misc/ArchitectBatteryPose';
 import { contactVisible } from '../core/Targeting';
 import { reducedMotion } from './ArchitectPose';
 import { quality } from './Quality';
@@ -52,6 +52,15 @@ export function siegeGeometry(type:ArchitectType,low=false):BufferGeometry[]{
  }else if(type==='resonance'){
   for(const z of [-1,1]){crown.box(9,58,10,-32,0,z*22,IVORY);crown.box(28,6,10,-20,54,z*22,c);barrel.box(94,7,9,52,14,z*19,IVORY);}
   for(let x=20;x<100;x+=25)barrel.add(new TorusGeometry(19,2,low?3:5,low?10:20),c,x,0,0,{ry:Math.PI/2});
+ }else if(type==='vector'){
+  // Swept accelerator fins and twin rear thrusters identify mobile drive hardware.
+  for(const side of [-1,1]){
+   wing.box(84,12,20,-20,3,side*6,IVORY,{rz:-.32,taper:.55});
+   crown.box(65,16,18,-37,7,side*25,DARK,{rz:.2,taper:.3});
+   crown.cyl(10,13,9,-67,15,side*25,c,{seg:8,rz:Math.PI/2});
+   glow.box(58,3,3,-26,65,side*27,c,{rz:.2});barrel.box(92,5,4,52,12,side*18,c);
+  }
+  crown.box(22,38,8,-18,10,0,IVORY,{rz:-.35,taper:.4});
  }else{
   for(const z of [-1,1])for(let x=-30;x<=6;x+=18){crown.box(15,35,16,x,0,z*24,IVORY,{taper:.12});crown.box(10,5,11,x,35,z*24,BLACK);crown.box(4,3,5,x,37,z*24,c);}
   wing.box(65,16,30,-12,-5,0,DARK,{taper:.15});for(let x=-30;x<20;x+=15)wing.box(10,3,18,x,13,0,c);
@@ -87,7 +96,7 @@ export function siegeBatchGeometry(type:ArchitectType,low=false):BufferGeometry[
   const geometry=mergeGeometries([normal,folded[i]])!;normal.dispose();folded[i].dispose();return geometry;
  });out.forEach(g=>g.computeBoundingSphere());mergedCache.set(key,out);return out;
 }
-interface Rig {owner:Ship;cast:ArchitectBatteryCast;center:ArchitectBatteryPoint;types:ArchitectType[];paths:Map<string,readonly [ArchitectBatteryArc,ArchitectBatteryArc]>}
+interface Rig {owner:Ship;cast:ArchitectBatteryCast;center:ArchitectBatteryPoint;types:ArchitectType[];paths:Map<string,readonly [ArchitectBatteryArc,ArchitectBatteryArc]>;retiredAt?:number}
 export interface BatteryMachineryStats {heads:number;carriers:number;batches:number;triangles:number;peakHeads:number;drops:number;layouts:Record<string,number>}
 
 export class ArchitectSiege {
@@ -95,7 +104,7 @@ export class ArchitectSiege {
  readonly carriers:InstancedMesh[]=[];
  readonly charges:{point:ArchitectBatteryPoint;color:number;strength:number}[]=[];
  private rigs=new Map<number,Rig>();private launches=new Map<string,ArchitectBatteryLaunch>();private off:(()=>void)[]=[];
- private armor=new MeshStandardMaterial({vertexColors:true,metalness:.58,roughness:.57});
+ private armor=new MeshStandardMaterial({vertexColors:true,metalness:.68,roughness:.4});
  private batchMaterial=this.armor.clone();private receiverMaterial=this.armor.clone();private depthMaterial=new MeshDepthMaterial({depthPacking:RGBADepthPacking});private reduced=reducedMotion();
  readonly stats:BatteryMachineryStats={heads:0,carriers:0,batches:0,triangles:0,peakHeads:0,drops:0,layouts:{wide:0,compact:0,folded:0}};
  constructor(private scene:Scene,private game:Game){
@@ -103,6 +112,14 @@ export class ArchitectSiege {
    shader.vertexShader='attribute float layoutPart; attribute float instanceFolded;\n'+shader.vertexShader;
    shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
      if(abs(layoutPart-instanceFolded)>.5)transformed=vec3(0.);`);
+   // Authored saturated seams remain luminous on presets without bloom.
+   shader.fragmentShader=shader.fragmentShader.replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
+    #ifdef USE_COLOR
+    float chroma=max(max(vColor.r,vColor.g),vColor.b)-min(min(vColor.r,vColor.g),vColor.b);
+    vec3 neon=max(vec3(0.),vColor.rgb-vec3(min(min(vColor.r,vColor.g),vColor.b)*.72));
+    neon/=max(.001,max(max(neon.r,neon.g),neon.b));
+    totalEmissiveRadiance+=neon*1.35*smoothstep(.24,.48,chroma);
+    #endif`);
   };
   this.batchMaterial.onBeforeCompile=layoutShader;this.batchMaterial.customProgramCacheKey=()=> 'battery-layout-v2';
   this.depthMaterial.onBeforeCompile=layoutShader;this.depthMaterial.customProgramCacheKey=()=> 'battery-layout-depth-v2';
@@ -121,9 +138,8 @@ export class ArchitectSiege {
   shoe.box(30,20,36,0,0,0,IVORY,{taper:.15});shoe.box(35,4,43,0,20,0,EDGE);shoe.box(12,4,44,0,24,0,0xffb86a);
   for(const [i,geo] of [truss.merge(),shoe.merge()].entries())this.carriers.push(this.make(geo,this.armor,`architect-battery-carrier-${i}`,CAP*2));
   this.off.push(game.events.on('architectBatteryLaunch',launch=>{this.launches.set(`${launch.owner.id}:${launch.slot}`,launch);}),game.events.on('architectCommand',e=>{
-   // Accepted Reconfigure/Recall/Assembly ownership is permanent, including moves
-   // that finish between two render frames. Never recreate a cosmetic recovery rig.
-   if(!['killbox','end','destroy'].includes(e.kind))this.rigs.delete(e.ship.id);
+   // Mechanical withdrawal has its own brief fold; it never enters the death-effect path.
+   if(!['killbox','end','destroy'].includes(e.kind)){const rig=this.rigs.get(e.ship.id);if(rig)rig.retiredAt=this.game.time;}
   }));
  }
  private make(geometry:BufferGeometry,material:MeshStandardMaterial,name:string,cap=CAP):InstancedMesh {
@@ -141,8 +157,9 @@ export class ArchitectSiege {
    if(this.rigs.get(owner.id)?.cast.id!==u.battery.id)this.rigs.set(owner.id,{owner,cast:u.battery,center:{x:u.x,y:0,z:u.z},types:owner.architect!.slots.map(a=>a.type),paths:new Map()});
   }
   for(const [id,rig] of this.rigs){const u=rig.owner.architect?.ultimate,elapsed=this.game.time-rig.cast.startedAt;
-   const movedAfterControl=!u&&elapsed>=7.5&&rig.cast.members.some(member=>!!rig.owner.architect?.slots[member.slot]?.path);
-   if(!this.valid(rig.owner,rig.cast.generation)||elapsed>=8.8||movedAfterControl||u&&u.battery?.id!==rig.cast.id)this.rigs.delete(id);
+   const movedAfterControl=!u&&elapsed>=BATTERY_FOLD_START&&rig.cast.members.some(member=>{const path=rig.owner.architect?.slots[member.slot]?.path;return path&&!path.settling;});
+   const retired=rig.retiredAt!==undefined,finished=retired?this.game.time-rig.retiredAt!>=.3:elapsed>=BATTERY_FOLD_START+BATTERY_FOLD_TIME||movedAfterControl||!!u&&u.battery?.id!==rig.cast.id;
+   if(!this.valid(rig.owner,rig.cast.generation)||finished)this.rigs.delete(id);
   }
   for(const [key,launch] of this.launches)if(!this.valid(launch.owner,launch.generation)||this.game.time-launch.launchTime>1)this.launches.delete(key);
  }
@@ -155,10 +172,11 @@ export class ArchitectSiege {
   this.update();this.charges.length=0;this.stats.heads=0;this.stats.carriers=0;this.stats.batches=0;this.stats.triangles=0;this.stats.layouts={wide:0,compact:0,folded:0};
   for(const meshes of this.batches.values())for(const mesh of meshes)mesh.count=0;for(const mesh of this.carriers)mesh.count=0;
   for(const rig of this.rigs.values()){
-   const elapsed=this.game.time-rig.cast.startedAt;
+   const elapsed=rig.retiredAt===undefined?this.game.time-rig.cast.startedAt:BATTERY_FOLD_START+(this.game.time-rig.retiredAt)/.3*BATTERY_FOLD_TIME;
+   if(elapsed<BATTERY_TRANSPORT_TIME)continue;
    for(const member of rig.cast.members){
     const slot=rig.owner.architect?.slots[member.slot],platform=slot?.entity;
-    if(!platform?.alive||team!==-1&&!contactVisible(platform,team)||elapsed>=7.5&&(slot!.path||slot!.state!=='deployed'))continue;
+    if(!platform?.alive||team!==-1&&!contactVisible(platform,team)||rig.retiredAt===undefined&&elapsed>=BATTERY_FOLD_START&&!slot!.path?.settling&&(slot!.path||slot!.state!=='deployed'))continue;
     const last=this.launches.get(`${rig.owner.id}:${member.slot}`),stage=(elapsed>=7.1?3:elapsed>=5.08?2:elapsed>=3.08?1:0) as ArchitectBatteryStage;
     const latest=last?.castId===rig.cast.id?last:undefined,aimStage=latest&&this.game.time-latest.launchTime<.6?latest.stage:stage,paths=latest&&aimStage===latest.stage?latest.paths:this.paths(rig,member,aimStage);
     const type=rig.types[member.slot],meshes=this.typeBatches(type),dx=platform.renderPos.x-member.carrier.x,dy=platform.renderPos.y-member.carrier.y,dz=platform.renderPos.z-member.carrier.z;
@@ -166,8 +184,8 @@ export class ArchitectSiege {
     for(const head of [0,1] as const){
      const p=getArchitectBatteryHeadPose({carrier:member.carrier,center:rig.center,radius:1500,slot:member.slot,stage:aimStage,type,layout:member.layout,groundHeight:()=>-100,head,elapsed,recoilAge:latest?this.game.time-latest.launchTime:undefined,reducedMotion:this.reduced,path:paths[head]});
      const x=p.position.x+dx,y=p.position.y+dy,z=p.position.z+dz,s=p.scale,baseYaw=member.layout==='folded'?member.carrier.heading-Math.PI/2:Math.atan2(rig.center.z-member.carrier.z,rig.center.x-member.carrier.x);
-     this.put(meshes[0],x,y,z,baseYaw,0,s,s,s,member.layout);
-     const receiver=this.put(meshes[1],x,y,z,p.yaw,0,s,s*(1-(aimStage===3?.045:0)*p.lock),s,member.layout);if(receiver>=0)(meshes[1].geometry.getAttribute('instanceOpen') as InstancedBufferAttribute).setX(receiver,p.shutter);
+     this.put(meshes[0],x,y,z,baseYaw,0,s,s*(.12+.88*p.shutter),s,member.layout);
+     const receiver=this.put(meshes[1],x,y,z,p.yaw,0,s,s*(.15+.85*p.shutter)*(1-(aimStage===3?.045:0)*p.lock),s,member.layout);if(receiver>=0)(meshes[1].geometry.getAttribute('instanceOpen') as InstancedBufferAttribute).setX(receiver,p.shutter);
      const back=-p.recoil-p.barrelRetraction*(1-p.lock)*s;
      this.put(meshes[2],x+Math.cos(p.yaw)*Math.cos(p.pitch)*back,y+p.pivotHeight*s+Math.sin(p.pitch)*back,z+Math.sin(p.yaw)*Math.cos(p.pitch)*back,p.yaw,p.pitch,s*p.extension,s,s,member.layout);
      this.put(meshes[3],x,y-35*(1-p.lock)*s,z,p.yaw+(this.reduced||member.layout==='folded'?0:(1-p.lock)*.28),0,s,s*(.35+.65*p.lock),s,member.layout);
