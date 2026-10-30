@@ -1,5 +1,6 @@
 import { architectSkillPresentation,architectModuleSkillPresentation,architectIncomingBattery } from './ArchitectSkillPresentation';
 import { architectDockingStatus } from '../skills/misc/ArchitectRuntime';
+import { CROSS } from '../skills/misc/CrossStep';
 import { vectorMobilityPresentation } from './VectorMobilityPresentation';
 import { ARCHETYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
@@ -431,7 +432,7 @@ export class HUD {
         if (a.ship === pc.ship) {
           flash(this.skillEls[a.index].root, 'flash');
           if (sp.ult) {
-            const brief:Record<string,string>={flickerStep:'20 strikes · Fold, strike, repeat',crossStep:'60 cuts · Final convergence',afterimageStep:'Four echoes · Your attacks, multiplied',architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Ten siege cannons · Continuous elemental bombardment',architectCitadel:'Airborne battery · Protect allies within 900 m'};
+            const brief:Record<string,string>={flickerStep:'20 strikes · Fold, strike, repeat',crossStep:`${CROSS.cuts} cuts · Final convergence`,afterimageStep:'Four echoes · Your attacks, multiplied',architectAssembly:'Assembling the railgun · Aim until the final lock',architectKillbox:'Ten siege cannons · Continuous elemental bombardment',architectCitadel:'Airborne battery · Protect allies within 900 m'};
             this.callout(sp.name, brief[sp.id]??sp.description, c);
             this.flashScreen(c);
           }

@@ -24,7 +24,8 @@ export interface StepperState {
   cross: CrossState | null;
   repair: { remaining: number } | null;
   repairInterruptedUntil: number;
-  flicker: { x: number; z: number; elapsed: number; count: number } | null;
+  /** `last` is the world bearing, from its target, of the previous strike's landing. */
+  flicker: { x: number; z: number; elapsed: number; count: number; last: number } | null;
   rush: { x0: number; z0: number; x1: number; z1: number; elapsed: number; hit: number[] } | null;
 }
 export function newStepperState(): StepperState {
@@ -202,7 +203,7 @@ export function aroundTarget(s: Ship, t: Ship, r: number, broad = false): Landin
   }
   return null;
 }
-export const SIDESTEP = { distance: 100, phase: 0.08, retrigger: 0.12, lookAhead: 0.16 } as const;
+export const SIDESTEP = { distance: 100, phase: 0.06, retrigger: 0.09, lookAhead: 0.16 } as const;
 
 /** React to an imminent collision as well as the damage fallback used by beams/area hits. */
 export function evadeIncoming(s: Ship): void {
@@ -272,7 +273,10 @@ export function incomingStep(
   if (st.phaseUntil > now) return true;
   if (st.sideUntil <= now || st.dodgeReady > now || st.rush || st.flicker || st.cross || s.mods.stunned || s.mods.silenced)
     return false;
-  const away = (incomingHeading ?? bearingTo(attacker.pos.x, attacker.pos.z, s.pos.x, s.pos.z)) + Math.PI / 2;
+  // A random side and a random angle within 45 degrees of square to the shot, so dodges never settle into one direction.
+  const side = s.game.rng() < 0.5 ? Math.PI : 0,
+    spread = (s.game.rng() - 0.5) * (Math.PI / 2);
+  const away = (incomingHeading ?? bearingTo(attacker.pos.x, attacker.pos.z, s.pos.x, s.pos.z)) + Math.PI / 2 + side + spread;
   // Prefer a full lateral jump, trying the opposite side before shorter/diagonal escapes.
   for (const distance of [SIDESTEP.distance, (SIDESTEP.distance * 2) / 3, SIDESTEP.distance / 3])
     for (const offset of [

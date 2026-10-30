@@ -1,4 +1,5 @@
-import { beginCross, updateCross, endCross } from './CrossStep';
+import { CROSS, beginCross, updateCross, endCross } from './CrossStep';
+import { KNOT, SPEED_SCALE } from '../../config';
 import { bearingTo, forwardX, forwardZ, wrapDeg } from '../../core/math';
 import { canTrack } from '../../core/Targeting';
 import { segmentHitsHull } from '../../core/hull';
@@ -6,6 +7,7 @@ import { buff, hurt, nearestEnemy } from '../kit';
 import { def, type SkillDef } from '../types';
 import {
   FLICKER_RADIUS,
+  SIDESTEP,
   evadeIncoming,
   aimedLanding,
   aroundTarget,
@@ -16,6 +18,8 @@ import {
   type Landing,
 } from './StepperRuntime';
 const VIOLET = 0xb388ff;
+/** Overstep lands at the first clear distance past its target, then fires a fast fan led onto the target's course. */
+export const OVERSTEP = { past: [500, 575, 650], knots: 320, spread: 0.012 } as const;
 const spec = (
   id: string,
   name: string,
@@ -151,7 +155,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
   def(
     {
       ...spec('overStep', 'Overstep', 12, 0, 'torpedo'),
-      description: 'Step 650 m past an enemy within 3 km, then fire eight 140-knot torpedoes backwards: 20k each.',
+      description: `Step ${OVERSTEP.past[0]} m past an enemy within 3 km, then fire eight ${OVERSTEP.knots}-knot torpedoes backwards, led onto its course: 20k each.`,
     },
     {
       activate(s, g, st) {
@@ -160,19 +164,36 @@ export const STEPPER_SKILLS: SkillDef[] = [
         const origin = s.stepper?.mirrorAim ?? s.pos;
         const h = bearingTo(origin.x, origin.z, t.pos.x, t.pos.z);
         const slot = s.stepper?.copy ? (s.stepper.slot - 1.5) * 160 : 0;
-        const p = {
-          x: t.pos.x + forwardX(h) * 650 + Math.cos(h) * slot,
-          z: t.pos.z + forwardZ(h) * 650 + Math.sin(h) * slot,
-          heading: h,
-        };
-        if (!safeStep(s, p.x, p.z, h)) return s.failSkill('Overstep: rearward landing blocked');
+        let p: Landing | null = null;
+        for (const past of OVERSTEP.past) {
+          const q = {
+            x: t.pos.x + forwardX(h) * past + Math.cos(h) * slot,
+            z: t.pos.z + forwardZ(h) * past + Math.sin(h) * slot,
+            heading: h,
+          };
+          if (safeStep(s, q.x, q.z, h)) {
+            p = q;
+            break;
+          }
+        }
+        if (!p) return s.failSkill('Overstep: rearward landing blocked');
         snapStep(s, p, false, 'over');
-        const b = bearingTo(s.pos.x, s.pos.z, t.pos.x, t.pos.z);
+        // Lead the target: aim where its current course meets a torpedo leaving the stern.
+        const speed = OVERSTEP.knots * KNOT * SPEED_SCALE,
+          stern = s.localToWorld(-s.spec.length / 2 - 15, 0, 0);
+        let ax = t.pos.x,
+          az = t.pos.z;
+        for (let i = 0; i < 2; i++) {
+          const lead = Math.hypot(ax - stern.x, az - stern.z) / speed;
+          ax = t.pos.x + forwardX(t.heading) * t.speed * lead;
+          az = t.pos.z + forwardZ(t.heading) * t.speed * lead;
+        }
+        const b = bearingTo(stern.x, stern.z, ax, az);
         for (let i = 0; i < 8; i++) {
           const v = s.localToWorld(-s.spec.length / 2 - 15, 0, (i - 3.5) * 7);
-          const torp = g.torps.launch(s, v.x, v.z, b + (i - 3.5) * 0.018, {
+          const torp = g.torps.launch(s, v.x, v.z, b + (i - 3.5) * OVERSTEP.spread, {
             ...s.spec.torpedoes!,
-            speed: 140,
+            speed: OVERSTEP.knots,
             range: 3000,
             damage: 20000,
             floodChance: 0.4,
@@ -236,7 +257,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
     {
       ...spec('sideStep', 'Sidestep', 18, 8, 'shield'),
       description:
-        'For 8 s, react before incoming projectiles hit with a lateral step up to 100 m. Phase for 0.08 s and dodge again every 0.12 s.',
+        `For 8 s, react before incoming projectiles hit with a step up to ${SIDESTEP.distance} m to a random side. Phase for ${SIDESTEP.phase} s and dodge again every ${SIDESTEP.retrigger} s.`,
     },
     {
       activate(s, g) {
@@ -260,7 +281,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
     {
       ...spec('flickerStep', 'Flicker-step', 90, 3, 'blink', true),
       description:
-        '20 steps behind random detected enemies in a 2 km reticle area, within 4 km. 30k per strike over 3 s; repeat targets allowed.',
+        '20 steps around random detected enemies in a 2 km reticle area, within 4 km, each from a new angle and facing the target. 30k per strike over 3 s; repeat targets allowed.',
     },
     {
       activate(s, g) {
@@ -274,11 +295,15 @@ export const STEPPER_SKILLS: SkillDef[] = [
         dz = origin.z + dz * k;
         if (
           !g.ships.some(
-            (t) => canTrack(s, t) && !t.deep && Math.hypot(t.pos.x - dx, t.pos.z - dz) <= FLICKER_RADIUS && !!behind(s, t),
+            (t) =>
+              canTrack(s, t) &&
+              !t.deep &&
+              Math.hypot(t.pos.x - dx, t.pos.z - dz) <= FLICKER_RADIUS &&
+              !!flickerLanding(s, t, bearingTo(t.pos.x, t.pos.z, s.pos.x, s.pos.z)),
           )
         )
           return s.failSkill('Flicker-step: no detected enemies with safe water in aimed area');
-        stepState(s).flicker = { x: dx, z: dz, elapsed: 0, count: 0 };
+        stepState(s).flicker = { x: dx, z: dz, elapsed: 0, count: 0, last: bearingTo(dx, dz, s.pos.x, s.pos.z) };
         stepState(s).phaseUntil = g.time + 3;
         buff(s, 'flickerStep:phase', 3, (m) => {
           m.invulnerable = true;
@@ -291,16 +316,19 @@ export const STEPPER_SKILLS: SkillDef[] = [
         if (!f) return;
         f.elapsed += dt;
         while (f.count < 20 && f.elapsed + 1e-8 >= (f.count + 1) * 0.15) {
+          // Each strike comes in at least 60 degrees away from the last one.
+          const start = f.last + Math.PI / 3 + (g.rng() * Math.PI * 4) / 3;
           const list = g.ships
             .filter((t) => canTrack(s, t) && !t.deep && Math.hypot(t.pos.x - f.x, t.pos.z - f.z) <= FLICKER_RADIUS)
             .sort((a, b) => a.id - b.id)
-            .map((t) => ({ t, p: behind(s, t) }))
+            .map((t) => ({ t, p: flickerLanding(s, t, start) }))
             .filter((v) => v.p);
           if (!list.length) {
             st.time = 0;
             break;
           }
           const v = list[Math.floor(g.rng() * list.length)];
+          f.last = bearingTo(v.t.pos.x, v.t.pos.z, v.p!.x, v.p!.z);
           snapStep(s, v.p!);
           hurt(s, v.t, 30000, st.spec);
           g.events.emit('stepImpact', { ship: s, x: v.t.pos.x, z: v.t.pos.z, radius: 150, kind: 'flicker' });
@@ -321,7 +349,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
   def(
     {
       ...spec('crossStep', 'Cross-step', 95, 3, 'blade', true),
-      description: 'Aim within 3.5 km: phase around a 1 km zone for 3 s, carving 60 cuts at 6k damage each. Converge for a 150k final slash. 510k total against enemies caught throughout.',
+      description: `Aim within 3.5 km: phase around a 1 km zone for 3 s, carving ${CROSS.cuts} cuts at ${CROSS.damage / 1000}k damage each. Converge for a ${CROSS.finisher / 1000}k final slash. ${(CROSS.cuts * CROSS.damage + CROSS.finisher) / 1000}k total against enemies caught throughout.`,
     },
     {
       activate: beginCross,
@@ -386,13 +414,18 @@ export const STEPPER_SKILLS: SkillDef[] = [
     },
   ),
 ];
-function behind(s: Parameters<typeof stepTarget>[0], t: Parameters<typeof aroundTarget>[1]): Landing | null {
-  const r = (s.spec.length + t.spec.length) / 2 + 100;
-  const extra = s.stepper?.copy ? (s.stepper.slot - 1.5) * 0.35 : 0;
-  for (const offset of [extra, extra + 0.3, extra - 0.3, extra + 0.6, extra - 0.6]) {
-    const h = t.heading + Math.PI + offset;
-    const p = { x: t.pos.x + forwardX(h) * r, z: t.pos.z + forwardZ(h) * r, heading: t.heading };
-    if (safeStep(s, p.x, p.z, p.heading)) return p;
+/** Clear water close around `t`, bow toward it, searched outward in 30 degree steps from the bearing `start`. */
+function flickerLanding(s: Parameters<typeof stepTarget>[0], t: Parameters<typeof aroundTarget>[1], start: number): Landing | null {
+  for (let i = 0; i < 12; i++) {
+    const a = start + Math.ceil(i / 2) * (i % 2 ? 1 : -1) * (Math.PI / 6),
+      rel = a - t.heading;
+    // The target's half-extent along this bearing keeps the bow just clear of its hull from any side.
+    const r =
+      s.spec.length / 2 + (Math.abs(Math.cos(rel)) * t.spec.length) / 2 + (Math.abs(Math.sin(rel)) * t.spec.beam) / 2 + 60;
+    const x = t.pos.x + forwardX(a) * r,
+      z = t.pos.z + forwardZ(a) * r,
+      heading = bearingTo(x, z, t.pos.x, t.pos.z);
+    if (safeStep(s, x, z, heading)) return { x, z, heading };
   }
   return null;
 }

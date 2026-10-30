@@ -1,7 +1,8 @@
 import {expect,it} from 'vitest';
 import {stepperSlashLayout} from '../src/render/StepperSlashLayout';
+import {CROSS} from '../src/skills/misc/CrossStep';
 it('distributes consecutive slash directions and offsets across the whole attack zone',()=>{
-  const cuts=Array.from({length:60},(_,i)=>stepperSlashLayout(i));
+  const cuts=Array.from({length:CROSS.cuts},(_,i)=>stepperSlashLayout(i));
   for(let i=1;i<cuts.length;i++){
     const a=cuts[i-1],b=cuts[i],ax=a.bx-a.ax,az=a.bz-a.az,bx=b.bx-b.ax,bz=b.bz-b.az;
     const parallel=Math.abs((ax*bx+az*bz)/Math.hypot(ax,az)/Math.hypot(bx,bz));expect(parallel).toBeLessThan(.8);

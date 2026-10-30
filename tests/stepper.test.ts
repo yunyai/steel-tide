@@ -8,6 +8,8 @@ import { navalRules } from '../server/rules';
 import { TurnApplier } from '../src/net/navalTurns';
 import { PlayerController } from '../src/player/PlayerController';
 import { stateHash } from '../src/net/hash';
+import { KNOT, SPEED_SCALE } from '../src/config';
+import { OVERSTEP } from '../src/skills/misc/stepper';
 
 function duel() {
   const g = emptyGame();
@@ -90,7 +92,7 @@ describe('Stepper skills', () => {
     const before = me.pos.clone();
     expect(me.takeDamage(10000, foe)).toBe(0);
     expect(me.pos.distanceTo(before)).toBeCloseTo(100);
-    run(g, 0.1);
+    run(g, 0.075);
     expect(me.takeDamage(10000, foe)).toBeGreaterThan(0);
     run(g, 0.05);
     expect(me.takeDamage(10000, foe)).toBe(0);
@@ -125,7 +127,7 @@ describe('Stepper skills', () => {
     me.meter = 1;
     expect(me.activateSkill(7)).toBe(true);
     run(g, 3);
-    expect(foe.stats.received).toBeCloseTo(510000);
+    expect(foe.stats.received).toBeCloseTo(550000);
     expect(ally.stats.received).toBe(0);
   });
 });
@@ -143,7 +145,7 @@ describe('Stepper mirrored ships', () => {
     me.control.aimZ = -1500;
     expect(me.activateSkill(7)).toBe(true);
     run(g, 3);
-    expect(foe.stats.received).toBeGreaterThan(510000);
+    expect(foe.stats.received).toBeGreaterThan(550000);
     expect(g.ships.filter((s) => s.summonOwner === me)).toHaveLength(4);
     expect(copies[0].activateSkill(8)).toBe(false);
     me.withdraw();
@@ -395,12 +397,23 @@ describe('Stepper integration boundaries', () => {
     run(g, 0.1);
     expect(g.shells.shells.filter((p) => p.owner === me).length).toBeGreaterThan(0);
   });
-  it('preserves Flicker charge when only side/front water is safe', () => {
-    const { g, me } = duel();
+  it('lands Flicker on side or far water when the near side of the target is land', () => {
+    const { g, me, foe } = duel();
     me.meter = 1;
     g.map.heightAt = (_x, z) => (z > -1200 ? 10 : -100);
-    expect(me.activateSkill(6)).toBe(false);
-    expect(me.skills[6].meter).toBe(1);
+    const landings: { x: number; z: number; heading: number }[] = [];
+    g.events.on('blink', (e) => {
+      if (e.ship === me) landings.push({ x: me.pos.x, z: me.pos.z, heading: me.heading });
+    });
+    expect(me.activateSkill(6)).toBe(true);
+    run(g, 3.05);
+    expect(landings).toHaveLength(20);
+    for (const p of landings) {
+      expect(safeStep(me, p.x, p.z, p.heading)).toBe(true);
+      const dx = foe.pos.x - p.x,
+        dz = foe.pos.z - p.z;
+      expect((Math.sin(p.heading) * dx - Math.cos(p.heading) * dz) / Math.hypot(dx, dz)).toBeCloseTo(1);
+    }
   });
   it.each([1, 2, 3])('accepts the exact target boundary for step %i', (index) => {
     const { me, foe } = duel();
@@ -523,15 +536,15 @@ describe('Sidestep rapid visible evasion', () => {
     const start = me.pos.clone();
     expect(me.takeDamage(10000, foe)).toBe(0);
     expect(me.pos.distanceTo(start)).toBeCloseTo(100);
-    expect(me.stepper!.phaseUntil - g.time).toBeCloseTo(0.08);
-    expect(me.stepper!.dodgeReady - g.time).toBeCloseTo(0.12);
-    g.time = 0.06;
+    expect(me.stepper!.phaseUntil - g.time).toBeCloseTo(0.06);
+    expect(me.stepper!.dodgeReady - g.time).toBeCloseTo(0.09);
+    g.time = 0.05;
     const a = me.pos.clone();
     expect(me.takeDamage(10000, foe)).toBe(0);
     expect(me.pos.equals(a)).toBe(true);
-    g.time = 0.1;
+    g.time = 0.075;
     expect(me.takeDamage(10000, foe)).toBeGreaterThan(0);
-    g.time = 0.12;
+    g.time = 0.09;
     expect(me.takeDamage(10000, foe)).toBe(0);
     expect(me.pos.distanceTo(a)).toBeCloseTo(100);
   });
@@ -611,4 +624,76 @@ it('replays rapid predictive Sidestep without consuming nondeterministic randomn
     expect(stateHash(games[0].g)).toBe(stateHash(games[1].g));
   }
   expect(games[0].me.stats.received).toBe(0);
+});
+
+describe('Stepper polish', () => {
+  it('dodges to random sides within 45 degrees of square to the shot and keeps its heading', () => {
+    const { me, foe } = duel();
+    me.activateSkill(5);
+    const sides = { left: 0, right: 0 };
+    for (let i = 0; i < 24; i++) {
+      me.stepper!.dodgeReady = me.stepper!.phaseUntil = 0;
+      const before = me.pos.clone(),
+        heading = me.heading;
+      expect(me.takeDamage(10000, foe)).toBe(0);
+      const dx = me.pos.x - before.x,
+        dz = me.pos.z - before.z,
+        d = Math.hypot(dx, dz);
+      const ux = before.x - foe.pos.x,
+        uz = before.z - foe.pos.z,
+        u = Math.hypot(ux, uz);
+      const cross = (ux * dz - uz * dx) / (u * d);
+      expect(d).toBeCloseTo(100);
+      expect(Math.abs(cross)).toBeGreaterThan(Math.SQRT1_2 - 1e-6);
+      expect(me.heading).toBe(heading);
+      sides[cross > 0 ? 'left' : 'right']++;
+    }
+    expect(sides.left).toBeGreaterThanOrEqual(4);
+    expect(sides.right).toBeGreaterThanOrEqual(4);
+  });
+  it('strikes Flicker targets from shifting angles while facing them', () => {
+    const { g, me, foe } = duel();
+    me.meter = 1;
+    const bearings: number[] = [];
+    g.events.on('blink', (e) => {
+      if (e.ship !== me) return;
+      const dx = foe.pos.x - me.pos.x,
+        dz = foe.pos.z - me.pos.z,
+        d = Math.hypot(dx, dz);
+      expect((Math.sin(me.heading) * dx - Math.cos(me.heading) * dz) / d).toBeCloseTo(1);
+      expect(safeStep(me, me.pos.x, me.pos.z, me.heading)).toBe(true);
+      bearings.push(Math.atan2(-dx, dz));
+    });
+    expect(me.activateSkill(6)).toBe(true);
+    run(g, 3.05);
+    expect(bearings).toHaveLength(20);
+    expect(foe.stats.received).toBeCloseTo(600000);
+    const sectors = new Set(bearings.map((b) => Math.floor((((b % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4))));
+    expect(sectors.size).toBeGreaterThanOrEqual(4);
+    for (let i = 1; i < bearings.length; i++) {
+      const d = Math.abs(bearings[i] - bearings[i - 1]) % (Math.PI * 2);
+      expect(Math.min(d, Math.PI * 2 - d)).toBeGreaterThan(Math.PI / 3 - 1e-6);
+    }
+  });
+  it('lands Overstep closer and leads fast torpedoes onto a crossing destroyer', () => {
+    const g = emptyGame();
+    const me = place(g, 'stepper', 0, 0, 0);
+    const foe = place(g, 'shimakaze', 1, 0, -1500, Math.PI / 2);
+    foe.hp = foe.maxHp = 10000000;
+    foe.throttle = 6;
+    foe.speed = foe.maxSpeed;
+    me.throttle = 2;
+    me.speed = 0;
+    me.control.aimX = foe.pos.x;
+    me.control.aimZ = foe.pos.z;
+    let hits = 0;
+    g.events.on('skillHit', (e) => {
+      if (e.skill.id === 'overStep' && e.ship === foe) hits++;
+    });
+    expect(me.activateSkill(3)).toBe(true);
+    expect(Math.hypot(me.pos.x - foe.pos.x, me.pos.z - foe.pos.z)).toBeCloseTo(OVERSTEP.past[0]);
+    expect(g.torps.torps.every((t) => t.speed === OVERSTEP.knots * KNOT * SPEED_SCALE)).toBe(true);
+    run(g, 3);
+    expect(hits).toBeGreaterThanOrEqual(6);
+  });
 });

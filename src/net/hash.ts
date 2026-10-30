@@ -70,7 +70,7 @@ export function stateHash(g: Game): number {
       h=mix(h,a.cross?1:0);h=mix(h,a.repair?1:0);h=mix(h,a.repairInterruptedUntil);
       if(a.repair)h=mix(h,a.repair.remaining);
       if(a.cross)for(const n of [a.cross.x,a.cross.z,a.cross.elapsed,a.cross.count,a.cross.jumps,a.cross.finish.x,a.cross.finish.z,a.cross.finish.heading])h=mix(h,n);
-      if(a.flicker)for(const n of [a.flicker.x,a.flicker.z,a.flicker.elapsed,a.flicker.count])h=mix(h,n);
+      if(a.flicker)for(const n of [a.flicker.x,a.flicker.z,a.flicker.elapsed,a.flicker.count,a.flicker.last])h=mix(h,n);
       if(a.rush)for(const n of [a.rush.x0,a.rush.z0,a.rush.x1,a.rush.z1,a.rush.elapsed,...a.rush.hit])h=mix(h,n);
     }
   }
