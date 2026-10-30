@@ -5,7 +5,7 @@ import {FLEET_DETAILS,addFleetDetails} from '../src/render/FleetDetails';
 describe('fleet detailing',()=>{
  it('covers the entire remaining roster with bounded finite geometry without changing specs',()=>{
   for(const s of ALL){
-   if(['stepper','architect','architectPlatform'].includes(s.id)){expect(FLEET_DETAILS[s.id]).toBeUndefined();continue;}
+   if(['stepper','tungsten','architect','architectPlatform'].includes(s.id)){expect(FLEET_DETAILS[s.id]).toBeUndefined();continue;}
    expect(FLEET_DETAILS[s.id],s.id).toBeDefined();const before=JSON.stringify(s),p=new Parts();addFleetDetails(p,s);const g=p.merge();
    const positions=Array.from(g.getAttribute('position').array);expect(positions.length,s.id).toBeGreaterThan(200);expect(positions.length,s.id).toBeLessThan(90000);expect(positions.every(Number.isFinite),s.id).toBe(true);expect(JSON.stringify(s)).toBe(before);g.dispose();
   }

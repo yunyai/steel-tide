@@ -4,6 +4,12 @@ import type { AmmoType, ConsumableType, GunLook, HitOutcome, SkillSpec, Team } f
 import type { Pickup } from './Pickups';
 import type { Strike } from '../weapons/StrikeSystem';
 
+export type TungstenEventKind =
+  | 'throw' | 'hit' | 'land' | 'dock' | 'break' | 'reform' | 'switch' | 'signature' | 'slam' | 'reel'
+  | 'lunge' | 'arrive' | 'capture' | 'block' | 'shield' | 'contact'
+  | 'collapse' | 'collapseHold' | 'collapseBurst' | 'meteorRise' | 'meteorFall' | 'meteorImpact' | 'fragment'
+  | 'overdrive' | 'overdriveEnd';
+
 export interface GameEventMap {
   gunFired: { ship: Ship; x: number; y: number; z: number; bearing: number; caliber: number; secondary: boolean; look?: GunLook };
   shellHit: {
@@ -57,6 +63,8 @@ export interface GameEventMap {
   architectDash: { ship: Ship; phase: 'launch'|'land'; x: number; z: number; radius: number; vectors: number };
   architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox';slot?:number };
   crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
+  /** The Tungsten's cube: throws, hits, docking, Shield captures, signatures and both cube ultimates. `mode` indexes TUNGSTEN_MODES. */
+  tungsten: { ship: Ship; kind: TungstenEventKind; cube: number; x: number; y: number; z: number; radius: number; mode: number; target?: Ship };
   stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };
   blink: { ship: Ship; fromX: number; fromZ: number; fromHeading?: number; dodge?: boolean; step?: 'flash' | 'ram' | 'broad' | 'over' | 'back' };
   /** A ship refused to sink, or was raised from its wreck. */

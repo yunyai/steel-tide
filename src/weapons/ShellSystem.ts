@@ -1,4 +1,5 @@
 import { elementalShellHit } from '../skills/misc/ArchitectElements';
+import { absorbCube, cubeIntercept } from '../skills/misc/TungstenRuntime';
 import { MAP_HALF, SHELL_TIME_SCALE, SIM_DT, WALL_HEIGHT } from '../config';
 import type { Game } from '../core/Game';
 import { bearingTo, dist2D, forwardX, forwardZ, segmentBox } from '../core/math';
@@ -253,6 +254,13 @@ export class ShellSystem {
   private collideShips(s: Shell, ox: number, oy: number, oz: number): boolean {
     const g = this.game;
     const segLen = Math.hypot(s.x - ox, s.y - oy, s.z - oz);
+    const cube = cubeIntercept(g, s.team, ox, oy, oz, s.x, s.y, s.z, 'shell');
+    if (cube) {
+      const k = cube.t;
+      s.alive = false;
+      absorbCube(cube, s.spec.damage * s.dmgMul, s.owner, ox + (s.x - ox) * k, oy + (s.y - oy) * k, oz + (s.z - oz) * k);
+      return true;
+    }
     for (const ship of g.ships) {
       if (!ship.alive || ship.team === s.team || s.hit.includes(ship.id)) continue;
       if (ship.submerged || ship.mods.banished) continue;

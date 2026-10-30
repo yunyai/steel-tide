@@ -1,4 +1,5 @@
 import { ARCHITECT_TYPES } from '../data/architectLoadout';
+import { CUBE_STATES, PATH_KINDS } from '../skills/misc/TungstenRuntime';
 import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import type { Game } from '../core/Game';
 
@@ -72,6 +73,23 @@ export function stateHash(g: Game): number {
       if(a.cross)for(const n of [a.cross.x,a.cross.z,a.cross.elapsed,a.cross.count,a.cross.jumps,a.cross.finish.x,a.cross.finish.z,a.cross.finish.heading])h=mix(h,n);
       if(a.flicker)for(const n of [a.flicker.x,a.flicker.z,a.flicker.elapsed,a.flicker.count,a.flicker.last])h=mix(h,n);
       if(a.rush)for(const n of [a.rush.x0,a.rush.z0,a.rush.x1,a.rush.z1,a.rush.elapsed,...a.rush.hit])h=mix(h,n);
+    }
+    if (s.tungsten) {
+      const a=s.tungsten;
+      for(const n of [a.mode,a.nextCube,a.charge,a.guardUntil,a.orbitAngle,a.overdriveUntil,a.auraTick,a.cubes.length,a.tethers.length,a.acts.length])h=mix(h,n);
+      for(const c of a.cubes){
+        for(const n of [c.id,c.mode,c.extra?1:0,c.slot,CUBE_STATES.indexOf(c.state),c.x,c.y,c.z,c.yaw,c.scale,c.hp,c.flown,c.reform,c.gone?1:0])h=mix(h,n);
+        for(const k of c.contacts){h=mix(h,k.id);h=mix(h,k.at);}
+        const p=c.path;h=mix(h,p?1:0);
+        if(p)for(const n of [PATH_KINDS.indexOf(p.kind),p.skill,p.tx,p.ty,p.tz,p.speed,p.stops?1:0,p.dealt,p.target,p.bounces,p.hit.length,...p.hit,p.healed.length,...p.healed])h=mix(h,n);
+      }
+      const l=a.lunge;h=mix(h,l?1:0);
+      if(l)for(const n of [l.x0,l.z0,l.x1,l.z1,l.elapsed,l.time,l.cube,...l.hit])h=mix(h,n);
+      for(const x of a.tethers)for(const n of [x.target,x.cube,x.skill,x.until,x.tick])h=mix(h,n);
+      for(const x of a.acts)for(const n of [['slam','reel','field'].indexOf(x.kind),x.cube,x.skill,x.x,x.z,x.elapsed,x.time,x.radius,...x.targets])h=mix(h,n);
+      const u=a.ult;h=mix(h,u?1:0);
+      if(u)for(const n of [u.kind==='collapse'?1:2,u.skill,u.x,u.z,u.elapsed,u.tick,u.stage,u.merged?1:0,...u.cubes,...u.from,...u.spots,...u.falls,...u.struck])h=mix(h,n);
+      for(const st of s.skills)for(const n of [st.cooldown,st.time,st.meter,st.active?1:0])h=mix(h,n);
     }
   }
   h = mix(h, g.shells.shells.length);

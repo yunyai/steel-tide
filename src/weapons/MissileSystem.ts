@@ -1,4 +1,5 @@
 import { canTrack } from '../core/Targeting';
+import { absorbCube, cubeIntercept } from '../skills/misc/TungstenRuntime';
 import type { Game } from '../core/Game';
 import { distToHull } from '../core/hull';
 import { DEG, approachAngle, bearingTo, dist2D, forwardX, forwardZ } from '../core/math';
@@ -146,6 +147,9 @@ export class MissileSystem {
         if (m.delay <= 0) g.events.emit('missileLaunched', { ship: m.owner, x: m.x, y: m.y, z: m.z });
         else continue;
       }
+      const ox = m.x,
+        oy = m.y,
+        oz = m.z;
       // Each missile has its own clock: time warps slow only the rounds inside them.
       const dt = frame * g.fields.timeScale(m.team, m.x, m.z);
       m.age += dt;
@@ -169,7 +173,7 @@ export class MissileSystem {
         m.y = ny;
         m.state = m.u > 0.5 ? 'dive' : 'cruise';
         this.intercept(m, dt);
-        if (!m.alive) continue;
+        if (!m.alive || this.cubeStop(m, ox, oy, oz)) continue;
         if (m.u >= 1 || this.shipAt(m)) this.detonate(m);
         continue;
       }
@@ -219,7 +223,7 @@ export class MissileSystem {
       m.pitch = m.state === 'boost' ? Math.PI / 2 : m.state === 'dive' ? -0.6 : m.state === 'popup' ? 0.5 : 0;
 
       this.intercept(m, dt);
-      if (!m.alive) continue;
+      if (!m.alive || this.cubeStop(m, ox, oy, oz)) continue;
       const ground = g.map.heightAt(m.x, m.z);
       if (m.struck) {
         this.runThrough(m);
@@ -253,6 +257,17 @@ export class MissileSystem {
       m.hp -= (s.spec.aa.dps * 0.15 * s.mods.aaMul * fast * dt) / Math.max(1, n);
     }
     if (m.hp <= 0) this.kill(m);
+  }
+
+  /** A Tungsten cube in the way takes the missile. */
+  private cubeStop(m: Missile, ox: number, oy: number, oz: number): boolean {
+    const hit = cubeIntercept(this.game, m.team, ox, oy, oz, m.x, m.y, m.z, 'missile');
+    if (!hit) return false;
+    m.alive = false;
+    const k = hit.t;
+    absorbCube(hit, m.damage, m.owner, ox + (m.x - ox) * k, oy + (m.y - oy) * k, oz + (m.z - oz) * k);
+    this.game.events.emit('intercept', { x: m.x, y: m.y, z: m.z });
+    return true;
   }
 
   /** Shot down. */

@@ -1,4 +1,5 @@
 import { canTrack } from '../core/Targeting';
+import { absorbCube, cubeIntercept } from '../skills/misc/TungstenRuntime';
 import { KNOT, MAP_HALF, SPEED_SCALE } from '../config';
 import type { Game } from '../core/Game';
 import { DEG, approachAngle, bearingTo, forwardX, forwardZ } from '../core/math';
@@ -119,6 +120,13 @@ export class TorpedoSystem {
       }
       if (g.map.heightAt(t.x, t.z) > -3) {
         t.alive = false;
+        g.events.emit('explosion', { x: t.x, y: 0, z: t.z, size: 0.6 });
+        continue;
+      }
+      const cube = cubeIntercept(g, t.team, ox, 0, oz, t.x, 0, t.z, 'torpedo');
+      if (cube) {
+        t.alive = false;
+        absorbCube(cube, t.damage, t.owner, t.x, 0, t.z);
         g.events.emit('explosion', { x: t.x, y: 0, z: t.z, size: 0.6 });
         continue;
       }

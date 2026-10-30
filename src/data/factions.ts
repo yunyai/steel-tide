@@ -83,7 +83,7 @@ export const ERA_BLURB: Record<Era, string> = {
   modern: 'Missile cruisers, stealth hulls and jets: vertical launch cells and electronic warfare.',
   scifi: 'Railguns, lasers, plasma and orbital strikes: four powers of the next century.',
   anime: 'Heroes and villains of anime at sea. Every ultimate is a Titan Shift: a short, overwhelming titan form.',
-  misc: 'Independent titans from the Fold, the Foundry and the abyss.',
+  misc: 'Independent titans from the Fold, the Foundry, the Lodestone and the abyss.',
 };
 
 export const FACTIONS: Record<Nation, Faction> = {
@@ -366,6 +366,11 @@ export const FACTIONS: Record<Nation, Faction> = {
   },
 
   foundry: { id:'foundry',era:'misc',label:'The Foundry',short:'Foundry',focus:'Modular arsenals that assemble their own battlefield.',trait:{name:'Modular Arsenal',description:'Ten railgun modules share the hull’s HP: each reserves 100k hull capacity to field a 200k-HP platform. Recall returns surviving health; destroyed modules rebuild in 5 s using redistributed hull health.'} },
+  lodestone: {
+    id: 'lodestone', era: 'misc', label: 'The Lodestone', short: 'Lodestone',
+    focus: 'Electromagnet titans that fight with a single tungsten cube.',
+    trait: { name: 'Lodestone Cradle', description: 'The cube blocks enemy fire, repairs 2% a second on the magnet and re-forms there 12 s after it shatters.' },
+  },
   fold: {
     id: 'fold', era: 'misc', label: 'The Fold', short: 'Fold',
     focus: 'Phase warships that fold distance into destructive steps.',

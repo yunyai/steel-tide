@@ -63,7 +63,7 @@ describe('anime roster', () => {
     expect(factionsOf('anime').map((x) => x.id).sort()).toEqual(Object.keys(SERIES).sort());
     for (const [f, ids] of Object.entries(SERIES)) expect(shipsOf('anime').filter((s) => s.nation === f).map((s) => s.id).sort(), f).toEqual([...ids].sort());
     for (const s of ALL.filter((x) => x.formOf)) expect(eraOf(s)).toBe('anime');
-    expect(shipsOf('misc').map((s) => s.id)).toEqual(['stepper', 'hadal', 'architect']);
+    expect(shipsOf('misc').map((s) => s.id)).toEqual(['stepper', 'tungsten', 'hadal', 'architect']);
   });
 
   it('the anime line fields every class: five battleships, eight cruisers, four destroyers, three carriers, four subs', () => {

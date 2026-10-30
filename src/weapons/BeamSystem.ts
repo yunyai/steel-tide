@@ -1,4 +1,5 @@
 import { incomingStep } from '../skills/misc/StepperRuntime';
+import { absorbCube, cubeIntercept } from '../skills/misc/TungstenRuntime';
 import { MAP_HALF } from '../config';
 import type { Game } from '../core/Game';
 import { distToHull, segmentHitsHull } from '../core/hull';
@@ -208,6 +209,17 @@ export class BeamSystem {
 
   private burn(b: Beam, dt: number): void {
     const g = this.game;
+    if (b.mode !== 'orbital') {
+      // A Tungsten cube in the way ends the beam and takes its heat.
+      const cube = cubeIntercept(g, b.team, b.x0, b.y0, b.z0, b.x1, b.y1, b.z1, 'beam');
+      if (cube) {
+        const k = cube.t;
+        b.x1 = b.x0 + (b.x1 - b.x0) * k;
+        b.y1 = b.y0 + (b.y1 - b.y0) * k;
+        b.z1 = b.z0 + (b.z1 - b.z0) * k;
+        absorbCube(cube, b.dps * dt * b.owner.mods.damageMul, b.owner, b.x1, b.y1, b.z1);
+      }
+    }
     const hits: { s: Ship; t: number }[] = [];
     for (const s of g.ships) {
       if (!s.alive || s.team === b.team || s.deep) continue;

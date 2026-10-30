@@ -2,6 +2,7 @@ import { setArchitectLoadout } from '../skills/misc/ArchitectRuntime';
 import { copyLoadout } from '../data/architectLoadout';
 import { clearArchitect, destroyPlatform } from '../skills/misc/ArchitectRuntime';
 import { clearStepper, syncStepCopies } from '../skills/misc/StepperRuntime';
+import { clearTungsten } from '../skills/misc/TungstenRuntime';
 import { eraOf } from '../data/factions';
 import {
   BATTLE_TIME_LIMIT,
@@ -442,7 +443,7 @@ export class Game {
       for (let j = i + 1; j < ships.length; j++) {
         const b = ships[j];
         if(a.architectDrone&&a.architectDrone.owner===(b.architectPlatform?.owner??(b.architectDrone?.owner??b))||b.architectDrone&&b.architectDrone.owner===(a.architectPlatform?.owner??(a.architectDrone?.owner??a)))continue;
-        if (!b.alive || b.deep || b.mods.banished || a.architectPlatform && (a.pos.y > 20 || a.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || a.architectPlatform.owner.architect?.slots[a.architectPlatform.index].path) || b.architectPlatform && (b.pos.y > 20 || b.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || b.architectPlatform.owner.architect?.slots[b.architectPlatform.index].path) || a.stepper?.rush || b.stepper?.rush || a.architect?.drive || b.architect?.drive) continue;
+        if (!b.alive || b.deep || b.mods.banished || a.architectPlatform && (a.pos.y > 20 || a.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || a.architectPlatform.owner.architect?.slots[a.architectPlatform.index].path) || b.architectPlatform && (b.pos.y > 20 || b.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || b.architectPlatform.owner.architect?.slots[b.architectPlatform.index].path) || a.stepper?.rush || b.stepper?.rush || a.tungsten?.lunge || b.tungsten?.lunge || a.architect?.drive || b.architect?.drive) continue;
         const reach = (a.spec.length + b.spec.length) / 2;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
@@ -513,6 +514,7 @@ export class Game {
     clearArchitect(ship);
     const stepCopy = ship.stepper?.copy;
     clearStepper(ship);
+    clearTungsten(ship);
     this.events.emit('shipSunk', { ship, killer });
     if (stepCopy) return;
     this.events.emit('explosion', { x: ship.pos.x, y: 8, z: ship.pos.z, size: 3 + ship.spec.length / 120 });
@@ -584,6 +586,7 @@ export class Game {
     this.battery.clear();
     for (const s of this.ships) if (s.architect) clearArchitect(s);
     for (const s of this.ships) if (s.spec.id === 'stepper' && !s.isSummon) clearStepper(s);
+    for (const s of this.ships) if (s.tungsten) clearTungsten(s);
     this.winner = winner;
     this.reason = reason;
     this.events.emit('gameOver', { winner, reason });

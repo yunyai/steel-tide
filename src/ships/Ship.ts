@@ -5,6 +5,8 @@ import { bulwarkTaken } from '../skills/misc/ArchitectSupport';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
+import { applyTungstenPassives, clearTungsten, newTungstenState, updateTungsten, type TungstenState } from '../skills/misc/TungstenRuntime';
+import { CUBE } from '../skills/misc/TungstenModes';
 import { Vector3 } from 'three';
 import {
   FIRE_DPS_FRACTION,
@@ -521,6 +523,7 @@ export class Ship {
   colossus: boolean;
   expiresAt = Infinity;
   stepper: StepperState | null = null;
+  tungsten: TungstenState | null = null;
 
   pos = new Vector3();
   heading = 0;
@@ -663,6 +666,7 @@ export class Ship {
     this.name = name ?? spec.name;
     this.hp = this.maxHp = spec.hp;
     if (spec.id === 'stepper') this.stepper = newStepperState();
+    if (spec.id === 'tungsten') this.tungsten = newTungstenState();
     this.colossus = spec.cls === 'TT';
     this.trait = traitOf(spec);
     this.build(spec);
@@ -954,7 +958,8 @@ export class Ship {
     this.updateForm();
     this.updateShield(dt);
     this.updateSub(dt);
-    if (!this.architectPlatform && !this.architectDrone && !wasAssembly && !wasDrive && !wasCross && !this.stepper?.flicker && !this.stepper?.rush) this.updateMovement(dt);
+    if (!this.architectPlatform && !this.architectDrone && !wasAssembly && !wasDrive && !wasCross && !this.stepper?.flicker && !this.stepper?.rush && !this.tungsten?.lunge) this.updateMovement(dt);
+    updateTungsten(this, dt);
     this.updateMain(dt);
     this.updateSecondaries(dt);
     this.updateTorpedoes(dt);
@@ -1047,6 +1052,7 @@ export class Ship {
     // Buffs first, then debuffs, so an unstoppable ship can keep its pace through slows and stuns.
     for (const e of this.effects) if (!e.id.startsWith('debuff:')) e.apply(m);
     if (this.architect) applyArsenalPassives(this, m);
+    if (this.tungsten) applyTungstenPassives(this, m);
     const { speedMul, traverseMul, turnMul } = m;
     for (const e of this.effects) if (e.id.startsWith('debuff:')) e.apply(m);
     if (m.unstoppable) {
@@ -1687,6 +1693,7 @@ export class Ship {
     if (hostile && !pierce && this.mods.dodge > 0 && this.game.rng() < this.mods.dodge) return 0;
     let mul = this.mods.damageTakenMul;
     if(this.architect)mul*=(1-architectDockingStatus(this).damageReduction)*(1-architectDashDamageReduction(this));
+    if (this.tungsten?.lunge) mul *= CUBE.lunge.taken;
     const platform=this.architectPlatform,owner=platform?.owner.architect;
     if(platform&&owner?.ultimate?.kind==='killbox'&&owner.ultimate.elapsed>=1.5-1e-8&&owner.slots[platform.index].state==='deployed')mul*=.6;
     if (attacker && this.game.exposed[attacker.team] > 0) mul *= 1.25;
@@ -1950,6 +1957,7 @@ export class Ship {
     this.alive = true;
     clearArchitect(this);
     clearStepper(this);
+    clearTungsten(this);
     this.withdrawn = false;
     this.detonated = false;
     this.hp = this.maxHp;
@@ -2026,6 +2034,7 @@ export class Ship {
     if (!this.alive) return;
     clearArchitect(this);
     clearStepper(this);
+    clearTungsten(this);
     this.alive = false;
     this.withdrawn = true;
     this.hp = 0;

@@ -1,5 +1,6 @@
 import { ARCHITECT_SKILLS } from './misc/architect';
 import { STEPPER_SKILLS } from './misc/stepper';
+import { TUNGSTEN_SKILLS } from './misc/tungsten';
 import type { Game } from '../core/Game';
 import type { SkillSpec } from '../core/types';
 import type { Ship } from '../ships/Ship';
@@ -36,7 +37,7 @@ import type { SkillDef, SkillImpl } from './types';
 export type { SkillDef, SkillImpl, SkillState } from './types';
 
 /** Every titan's skill pool (none of them is carried by a line ship). */
-export const TITAN_POOLS: SkillDef[] = [...TITAN_SKILLS, ...FANTASY_TITAN_SKILLS, ...MODERN_TITAN_SKILLS, ...SCIFI_TITAN_SKILLS, ...HADAL_SKILLS, ...STEPPER_SKILLS, ...ARCHITECT_SKILLS];
+export const TITAN_POOLS: SkillDef[] = [...TITAN_SKILLS, ...FANTASY_TITAN_SKILLS, ...MODERN_TITAN_SKILLS, ...SCIFI_TITAN_SKILLS, ...HADAL_SKILLS, ...STEPPER_SKILLS, ...ARCHITECT_SKILLS, ...TUNGSTEN_SKILLS];
 
 const ALL: SkillDef[] = [
   ...BATTLESHIP_SKILLS,

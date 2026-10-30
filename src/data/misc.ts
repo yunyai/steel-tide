@@ -1,6 +1,7 @@
 import type { ShipSpec } from '../core/types';
 import { STEPPER_SKILLS } from '../skills/misc/stepper';
 import { HADAL_SKILLS } from '../skills/misc/hadal';
+import { TUNGSTEN_SKILLS } from '../skills/misc/tungsten';
 import { kitOf } from '../skills/types';
 import { TITAN_REPAIR, search } from './common';
 
@@ -38,6 +39,37 @@ export const MISC: ShipSpec[] = [
       tower: {x:16,h:28,w:12,len:18,style:'tower'}, funnels: [], masts: [],
       lightStrip: 0xb388ff,
       emitters: [{x:0,y:28,len:24,w:20,color:0xb388ff},{x:70,y:15,len:18,w:6,color:0xe7d9ff},{x:-70,y:15,len:18,w:6,color:0xe7d9ff}],
+    },
+  },
+  {
+    id: 'tungsten', name: 'Tungsten', nation: 'lodestone', cls: 'TT', year: 2091,
+    description: 'A magnet that learned to sail: a horseshoe electromagnet straddles the hull, holding a sixty-metre cube of tungsten etched with neon circuitry. The cube is the weapon, the armour and the anchor.',
+    specialty: 'Cube titan. Throw, recall and lunge to a 2.5M-HP tungsten cube that blocks fire, in six switchable modes. Singularity, meteor and a six-cube Overdrive.',
+    hp: 1600000, length: 400, beam: 64, draft: 15, freeboard: 14,
+    maxSpeed: 30, accelTime: 42, turnRadius: 900, rudderTime: 13,
+    armor: { belt: 300, deck: 180, bow: 70, stern: 70, superstructure: 70, turret: 380, citadelInner: 70, torpedoProtection: 0.55 },
+    citadel: { length: 0.55, top: 2, width: 0.7 },
+    main: {
+      name: '305 mm coil guns', look: 'rail',
+      turrets: [
+        { x: 155, y: 0, facing: 0, halfArc: 150, barrels: 2 },
+        { x: 118, y: 5, facing: 0, halfArc: 150, barrels: 2 },
+        { x: -118, y: 5, facing: 180, halfArc: 150, barrels: 2 },
+        { x: -155, y: 0, facing: 180, halfArc: 150, barrels: 2 },
+      ],
+      reload: 11, traverse: 16, range: 14000, dispersion: 120, barrelLength: 18,
+      ap: { caliber: 305, mass: 470, velocity: 1000, damage: 6000, pen: 520 },
+      he: { caliber: 305, mass: 400, velocity: 1000, damage: 3200, pen: 55, fireChance: 0.18 },
+    },
+    aa: { range: 4500, dps: 1200 }, consumables: [TITAN_REPAIR, search(9000)],
+    skills: kitOf(TUNGSTEN_SKILLS,'tungstenLunge','tungstenSwitch','tungstenSignature','tungstenShot','tungstenDock','tungstenShield','tungstenCollapse','tungstenMeteor','tungstenOverdrive'),
+    model: {
+      palette: { hull: 0x1a1d22, upper: 0x2b3038, deck: 0x22262c, accent: 0x3ff0ff, boot: 0x0b0d10 },
+      bow: 'straight', stern: 'transom', sheer: 0.35,
+      blocks: [{x: 84,len:44,w:30,h:9},{x:-84,len:40,w:28,h:7}],
+      tower: {x:92,h:20,w:14,len:18,style:'block'}, funnels: [], masts: [],
+      lightStrip: 0x3ff0ff,
+      turretStyle: 'rail',
     },
   },
   {
