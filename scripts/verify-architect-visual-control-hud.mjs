@@ -19,7 +19,7 @@ try{
    const utility=document.querySelector('[data-action="architectHullDash"]');
    return{summary:document.querySelector('.architect-battery').getAttribute('aria-label'),utility:utility.title,ready:utility.dataset.state==='ready',buttons:b.huds[0].skillEls.length,storedSearch:{charges:search.charges,cooldown:search.cooldown},overflow:document.documentElement.scrollWidth>innerWidth};
   });
-  if(!docked.ready||!docked.summary.includes('DR 20%')||!docked.summary.includes('CAP 1 ready / 1 half')||!docked.utility.includes('1100m toward reticle')||docked.buttons!==9||docked.overflow)throw Error(JSON.stringify(docked));
+  if(!docked.ready||!docked.summary.includes('DR 15%')||!docked.summary.includes('CAP 1 ready / 1 half')||!docked.utility.includes('1100m toward reticle')||docked.buttons!==9||docked.overflow)throw Error(JSON.stringify(docked));
   await page.screenshot({path:`${out}/docked-drive-${width}.jpg`,quality:88});
   const drive=await page.evaluate(async()=>{
    const f=window.uiReview,{s,g,pc,input,b}=f;

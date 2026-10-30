@@ -39,14 +39,14 @@ describe('Architect command and gun polish',()=>{
   s.architect!.huntUntil=g.time;updateArchitect(s,0);expect(s.turrets[0].reload).toBeCloseTo(4);
  });
  it('applies multiplicative capped docking protection only to living docked slots',()=>{
-  const {s,t}=arena();s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(4000);
+  const {s,t}=arena();s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(4250);
   for(const a of s.architect!.slots.slice(0,5)){a.state='destroyed';a.hp=0;}
-  expect(s.takeDamage(10000,t)).toBeCloseTo(4500);
+  expect(s.takeDamage(10000,t)).toBeCloseTo(4625);
  });
- it('repairs after two seconds using one modified shared health budget',()=>{
+ it('repairs after two seconds without healing hull-worn platforms twice',()=>{
   const {s}=arena();s.hp=1250000;s.mods.regenMul=.5;
   const before=architectPool(s).hp;updateArchitect(s,2);expect(architectPool(s).hp).toBe(before);
-  updateArchitect(s,1);expect(s.hp-before).toBeCloseTo(105000);
+  updateArchitect(s,1);expect(s.hp-before).toBeCloseTo(3750);
   const pool=architectPool(s).hp;const a=s.architect!.slots[0];materialize(s,a);attachModule(s,a);expect(architectPool(s).hp).toBeCloseTo(pool);
  });
  it('gives Siege protection only once its Battery emplacement unfolds',()=>{

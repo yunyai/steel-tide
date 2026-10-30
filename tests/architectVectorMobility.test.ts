@@ -77,9 +77,9 @@ describe('independent Vector mobility',()=>{
   escorts(s,1);expect(s.getVectorMobilityStatus()?.mobileBattery.blockedReason).toBe('');
  });
  it('applies 70 percent multiplicative protection only while the hull is moving',()=>{
-  const {g,s,t}=arena();s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(4000);
-  dash(s);g.step();s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(1200);
-  run(g,.55);s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(4000);
+  const {g,s,t}=arena();s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(4250);
+  dash(s);g.step();s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(1275);
+  run(g,.55);s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(4250);
  });
  it.each(['stunned','rooted','feared','banished'] as const)('rejects and interrupts %s without extending protection',cc=>{
   const {g,s,t}=arena();
@@ -90,7 +90,7 @@ describe('independent Vector mobility',()=>{
   expect(s.getVectorMobilityStatus()?.mobileBattery.cooldownRemaining).toBe(before.mobileBattery.cooldownRemaining);
   s.effects=[];s.refreshModifiers();dash(s);g.step();s.mods[cc]=true;updateArchitect(s,.1);
   expect(s.architect!.drive).toBeNull();s.mods.banished=false;s.mods.invulnerable=false;
-  expect(s.takeDamage(10000,t)).toBeCloseTo(8000);
+  expect(s.takeDamage(10000,t)).toBeCloseTo(8500);
  });
  it('rejects Assembly, zero aim and an immediately blocked footprint without spending a charge',()=>{
   const {g,s}=arena();s.control.aimX=0;dash(s);g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);
@@ -139,6 +139,16 @@ describe('independent Vector mobility',()=>{
   const {s}=arena();const picks:ArchitectSelection[]=defaultLoadout().map((p,i)=>i<n?{type:'resonance',skill:(i%2) as 0|1}:p.type==='resonance'?{type:'storm',skill:0}:p);
   setArchitectLoadout(s,picks);s.refreshModifiers();expect(s.mods.reloadMul).toBeCloseTo(1/(1+RESONANCE_TEMPO*n));
   if(n){const lost=s.architect!.slots[0];lost.state='destroyed';lost.hp=0;s.refreshModifiers();expect(s.mods.reloadMul).toBeCloseTo(1/(1+RESONANCE_TEMPO*(n-1)));}
+ });
+ it('shortens Hull Dash and Mobile Battery recharge for every living Resonance',()=>{
+  const {g,s,t}=arena(1);t.withdraw();const picks=defaultLoadout().map(p=>p.type==='resonance'?{type:'storm' as const,skill:0 as const}:p);
+  picks[0]={type:'vector',skill:0};picks[1]={type:'vector',skill:1};picks[2]={type:'resonance',skill:0};picks[3]={type:'resonance',skill:1};setArchitectLoadout(s,picks);
+  const tempo=1+RESONANCE_TEMPO*2,tuning=vectorTuning(s);
+  expect(tuning.dashRecharge).toBeCloseTo(10/tempo);expect(tuning.mobileCooldown).toBeCloseTo(14/tempo);
+  escorts(s,0);const slot=s.architect!.slots[4],m=materialize(s,slot);slot.state='deployed';m.pos.set(1500,0,1500);
+  const start=g.time;dash(s);mobile(s);g.step();
+  expect(s.vectorMobility.dashRecharge[0]-start).toBeCloseTo(10/tempo+1/60);expect(s.vectorMobility.mobileReadyAt-start).toBeCloseTo(14/tempo+1/60);
+  const lost=s.architect!.slots[2];lost.state='destroyed';lost.hp=0;expect(vectorTuning(s).dashRecharge).toBeCloseTo(10/(1+RESONANCE_TEMPO));
  });
  it('keeps hull spans separated vertically while sweeping under a raised carrier',()=>{
   const {g,s}=arena(),slot=s.architect!.slots[0],block=materialize(s,slot);slot.state='deployed';block.pos.set(0,200,2000);

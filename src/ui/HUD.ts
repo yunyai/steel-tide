@@ -566,7 +566,7 @@ export class HUD {
     if(me.architect){
       // The docking summary rides on the turret strip instead of a bar of its own.
       const docking=architectDockingStatus(me),summary=`Modular arsenal · Dock ${docking.count}/10 · DR ${Math.round(docking.damageReduction*100)}% · Hull +${Math.round(!me.alive||me.mods.healBlock?0:docking.hullRegenPerSecond*me.mods.regenMul).toLocaleString()}/s · CAP ${docking.capacitors} ready / ${docking.chargingCycles} half`;
-      if(e.battery.dataset.summary!==summary){e.battery.dataset.summary=summary;e.battery.setAttribute('aria-label',summary);e.battery.title=`${summary}\nEach docked platform: 2% hull protection, up to 20%. After 2s: platform repair 20%/s and hull repair 0.04%/s. Capacitors store one 18k elemental bolt per two ordinary docked firing cycles.`;}
+      if(e.battery.dataset.summary!==summary){e.battery.dataset.summary=summary;e.battery.setAttribute('aria-label',summary);e.battery.title=`${summary}\nEach docked platform: 1.5% hull protection, up to 15%. After 2s: hull repair 0.03%/s, and a platform below the hull's health repairs 20%/s until it catches up. Capacitors store one 18k elemental bolt per two ordinary docked firing cycles.`;}
     }
     if(me.architect)this.moduleEls.forEach((item,i)=>{
       const a=me.architect!.slots[i],state=a.state;

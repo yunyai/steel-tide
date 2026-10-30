@@ -1,6 +1,6 @@
 import { expect,it } from 'vitest';
 import { emptyGame,place,run } from './helpers';
-import { grantSupportShield,supportHeal } from '../src/skills/misc/ArchitectSupport';
+import { grantSupportShield,supportHeal,bulwarkTaken } from '../src/skills/misc/ArchitectSupport';
 import { ARCHETYPES } from '../src/data/architectLoadout';
 import { startElementAttack,updateElements } from '../src/skills/misc/ArchitectElements';
 function setup(){const g=emptyGame('open',713,'freeplay'),s=place(g,'architect',0,0,2000),t=place(g,'leviathan',1,0,-1000);t.hp=t.maxHp=1e8;t.colossus=false;s.control.aimZ=0;s.throttle=t.throttle=2;s.secondaries.length=t.secondaries.length=0;return {g,s,t};}
@@ -33,7 +33,7 @@ it('casts all support skills and distinguishes surface scans from submarine scan
   expect(stateHash(g)).not.toBe(h);
   if(type==='sentinel'){expect(canTrack(s,skill?sub:t)).toBe(true);expect((skill?t:sub).architectReveal[0]).toBe(0);}
   if(type==='restoration')expect(ally.hp).toBeGreaterThan(50000);
-  if(type==='bastion'){if(skill===0)expect(ally.shield).toBe(120000);else expect(ally.effects.some(e=>e.id==='architectBulwark')).toBe(true);}
+  if(type==='bastion'){if(skill===0)expect(ally.shield).toBe(120000);else expect(ally.effects.some(e=>e.id.startsWith('architectBulwark:'))).toBe(true);}
   if(type==='resonance'){const b=s.architect!.slots[1];expect(skill?b.reactionUntil:b.boostUntil).toBeGreaterThan(g.time);}
  }
 });
@@ -89,14 +89,14 @@ it('Fortify records its presentation expiry without changing active time or reca
  const {g,s}=setup();g.time=12;s.activateSkill(5);expect(s.skills[5].data.activeUntil).toBe(20);expect(s.skills[5].active).toBe(false);expect(s.skills[5].spec.duration).toBe(0);expect(s.skills[5].cooldown).toBe(16);
 });
 
-it('resolves exact support output, duration and strongest nonstacking buffs',()=>{
+it('resolves exact support output and duration, and a recast refreshes its own field',()=>{
  const {g,s,t}=setup();t.withdraw();s.activateSkill(0);run(g,2);const [a,b]=s.architect!.slots,target=b.entity!;
  for(const slot of s.architect!.slots){slot.skillTimer=100;slot.opening=false;slot.castGap=0;}s.architect!.elements.jobs=[];
  a.entity!.pos.copy(target.pos);target.hp=10000;a.type='restoration';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,2);expect(target.hp).toBe(90000);
  a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(target.hp).toBe(115000);
  a.type='bastion';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(target.shield).toBe(120000);expect(target.shieldTime).toBe(5);
- a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.citadelDR).toBe(.2);expect(target.effects.find(e=>e.id==='architectBulwark')!.time).toBe(4);
- startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.citadelDR).toBe(.2);
+ a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.bulwark).toBe(1);expect(target.effects.find(e=>e.id.startsWith('architectBulwark:'))!.time).toBe(4);
+ startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.bulwark).toBe(1);
  a.type='resonance';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(b.boostUntil).toBe(g.time+4);
  a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(b.reactionUntil).toBe(g.time+4);
 });
@@ -105,4 +105,24 @@ it('Hunt strengthens repair and shield output by forty percent exactly once',()=
  for(const slot of s.architect!.slots){slot.skillTimer=100;slot.opening=false;}s.architect!.elements.jobs=[];s.architect!.huntUntil=g.time+10;
  a.entity!.pos.copy(target.pos);target.hp=10000;a.type='restoration';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,2);expect(target.hp).toBe(122000);
  a.type='bastion';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(target.shield).toBe(168000);
+});
+it('stacks Bulwark fields from separate emitters but never past a 60% reduction',()=>{
+ expect([0,1,2,3,4,5,10].map(bulwarkTaken)).toEqual([1,.8,.64,.512,.4096,.4,.4].map(v=>expect.closeTo(v,10)));
+ const {g,s,t}=setup();t.withdraw();const target=s;
+ for(const [x,z] of [[600,2000],[-600,2000],[0,1400]]){s.control.aimX=x;s.control.aimZ=z;s.skills[0].cooldown=0;s.activateSkill(0);run(g,4);}
+ for(const slot of s.architect!.slots){slot.skillTimer=100;slot.opening=false;slot.castGap=0;}s.architect!.elements.jobs=[];
+ const emitters=s.architect!.slots.filter(a=>a.state==='deployed');expect(emitters).toHaveLength(6);for(const a of emitters)a.entity!.pos.set(target.pos.x+50,0,target.pos.z+50);
+ target.refreshModifiers();const base=target.mods.damageTakenMul,taken:number[]=[];
+ for(const a of emitters){a.type='bastion';a.skill=1;a.element=ARCHETYPES.bastion.element;startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();taken.push(target.mods.damageTakenMul/base);}
+ startElementAttack(s,emitters[0],target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.bulwark).toBe(6);
+ expect(taken).toEqual([.8,.64,.512,.4096,.4,.4].map(v=>expect.closeTo(v,10)));
+});
+it('stacks Aegis shields up to one full shield per living Aegis Projector',()=>{
+ const {s,t}=setup();const slots=s.architect!.slots;
+ for(const a of slots){a.type='furnace';a.skill=0;}
+ for(const a of slots.slice(0,2)){a.type='bastion';a.skill=0;}
+ grantSupportShield(s,t,120000,5);expect(t.shield).toBe(120000);
+ t.shieldTime=2;grantSupportShield(s,t,120000,5);expect(t.shield).toBe(240000);expect(t.shieldMax).toBe(240000);expect(t.shieldTime).toBe(5);
+ grantSupportShield(s,t,120000,5);expect(t.shield).toBe(240000);
+ slots[1].state='destroyed';slots[1].hp=0;t.shield=100000;grantSupportShield(s,t,120000,5);expect(t.shield).toBe(120000);
 });

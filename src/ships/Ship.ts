@@ -1,6 +1,7 @@
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
 import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, activateArchitectHullDash, activateArchitectMobileBattery, applyArsenalPassives, getVectorMobilityStatus, updateVectorMobilityTimers, architectDashDamageReduction, type VectorMobilityState, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
+import { bulwarkTaken } from '../skills/misc/ArchitectSupport';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
@@ -156,6 +157,8 @@ export interface Mods {
   apDamageMul: number;
   damageTakenMul: number;
   citadelDR: number;
+  /** Bulwark fields covering this ship; each one stacks on the rest up to a cap. */
+  bulwark: number;
   speedMul: number;
   /** Throttle response and helm response (Vector thrusters). */
   accelMul: number;
@@ -276,6 +279,7 @@ function baseMods(): Mods {
     apDamageMul: 1,
     damageTakenMul: 1,
     citadelDR: 0,
+    bulwark: 0,
     speedMul: 1,
     accelMul: 1,
     rudderMul: 1,
@@ -1062,6 +1066,7 @@ export class Ship {
     // The Kage strike: a cloak primes the next hit.
     if (m.untargetable && this.trait?.ambush) this.ambushReady = true;
     m.damageTakenMul *= 1 - m.citadelDR;
+    if (m.bulwark) m.damageTakenMul *= bulwarkTaken(m.bulwark);
     this.mods = m;
   }
 

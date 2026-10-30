@@ -1,5 +1,5 @@
 import type { ArchitectLoadout, ArchitectSelection } from '../data/architectLoadout';
-export const SIM_PROTOCOL=7;
+export const SIM_PROTOCOL=8;
 // LAN lobby and lockstep wire format, shared by the browser and the lobby server.
 // Keep this file free of DOM and game imports: the server reads it too.
 

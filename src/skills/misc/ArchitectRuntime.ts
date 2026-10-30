@@ -40,9 +40,11 @@ export function newArchitectState(_rng:()=>number=()=>.5,loadout?:ArchitectLoado
   const selections=copyLoadout(loadout);
   return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:2/3,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null,capacitorCycles:0,capacitorCharged:false,follow:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false,drive:null,capacitorReadyAt:0};
 }
+/** Per living docked platform: damage reduction (capped) and hull repair per second as a share of full hull. */
+const DOCK_DR=.015,DOCK_DR_CAP=.15,DOCK_REGEN=.0003;
 export function architectDockingStatus(s:Ship){
   const a=s.architect,slots=a?.slots.filter(v=>v.state==='docked'&&v.hp>0)??[];
-  return {count:slots.length,damageReduction:Math.min(.2,slots.length*.02),hullRegenPerSecond:(a?.fullHp??0)*Math.min(.004,slots.filter(v=>v.dockedFor>2).length*.0004),capacitors:a?.slots.filter(v=>v.capacitorCharged).length??0,chargingCycles:a?.slots.reduce((n,v)=>n+v.capacitorCycles,0)??0};
+  return {count:slots.length,damageReduction:Math.min(DOCK_DR_CAP,slots.length*DOCK_DR),hullRegenPerSecond:(a?.fullHp??0)*slots.filter(v=>v.dockedFor>2).length*DOCK_REGEN,capacitors:a?.slots.filter(v=>v.capacitorCharged).length??0,chargingCycles:a?.slots.reduce((n,v)=>n+v.capacitorCycles,0)??0};
 }
 export interface VectorMobilityState {
   /** Charges ready now, and the time each spent charge comes back (ascending); spent charges recharge in parallel. */
@@ -73,9 +75,11 @@ export function applyArsenalPassives(s:Ship,m:Mods):void{
 /** Dash specializations add reach and charges; Mobile Battery specializations add time and shorten the recharge. */
 export function vectorTuning(s:Ship){
   const {count,dashSpecs,mobileSpecs}=vectorStats(s),extraDash=Math.max(0,dashSpecs-1),extraMobile=Math.max(0,mobileSpecs-1);
+  // Resonance tempo shortens both recharges too; a charge keeps the length it started with.
+  const tempo=1+RESONANCE_TEMPO*living(s,'resonance').length;
   let cooldown=MOBILE_COOLDOWN;for(let i=0;i<extraMobile;i++)cooldown*=.85;
   const extra=Math.max(0,count-1);
-  return {count,dashSpecs,mobileSpecs,dashDistance:dashSpecs?1100+150*extraDash:800,dashCharges:2+extraDash,mobileDuration:mobileSpecs?14+3*extraMobile:10,mobileCooldown:cooldown,
+  return {count,dashSpecs,mobileSpecs,dashDistance:dashSpecs?1100+150*extraDash:800,dashCharges:2+extraDash,dashRecharge:DASH_RECHARGE/tempo,mobileDuration:mobileSpecs?14+3*extraMobile:10,mobileCooldown:cooldown/tempo,
     pathDamage:15000+3000*extra,landDamage:25000+5000*extra,landRadius:450+50*extra,escortSpeed:HOVER_SPEED*(1+VECTOR_THRUST.escort*count)};
 }
 const dashSpec=(s:Ship):SkillSpec=>({...s.skills[1].spec,id:'architectHullDash',name:'Hull Dash',short:'HULL DASH',accent:ARCHETYPES.vector.color,ult:false});
@@ -87,27 +91,27 @@ function vectorMovementBlock(s:Ship):string{
  * charge recharges on its own clock. A lost Vector drops the latest pending charges; a rebuilt or
  * refitted one starts recharging the new slot.
  */
-function vectorCharges(s:Ship,max=vectorTuning(s).dashCharges):{charges:number;recharge:number[]}{
-  const time=s.game.time;let charges=Math.min(max,s.vectorMobility.dashCharges);
+function vectorCharges(s:Ship,tuning=vectorTuning(s)):{charges:number;recharge:number[]}{
+  const time=s.game.time,max=tuning.dashCharges;let charges=Math.min(max,s.vectorMobility.dashCharges);
   const recharge=s.vectorMobility.dashRecharge.slice(0,Math.max(0,max-charges));
   while(recharge.length&&time+1e-8>=recharge[0]){recharge.shift();charges++;}
-  while(charges+recharge.length<max)recharge.push(time+DASH_RECHARGE);
+  while(charges+recharge.length<max)recharge.push(time+tuning.dashRecharge);
   return {charges,recharge};
 }
 export function updateVectorMobilityTimers(s:Ship):void{
-  const max=vectorTuning(s).dashCharges,v=s.vectorMobility;
-  if(v.dashCharges===max&&!v.dashRecharge.length)return;
-  const q=vectorCharges(s,max);v.dashCharges=q.charges;v.dashRecharge=q.recharge;
+  const tuning=vectorTuning(s),v=s.vectorMobility;
+  if(v.dashCharges===tuning.dashCharges&&!v.dashRecharge.length)return;
+  const q=vectorCharges(s,tuning);v.dashCharges=q.charges;v.dashRecharge=q.recharge;
 }
 export function getVectorMobilityStatus(s:Ship){
   const a=s.architect;if(!a)return null;
-  const vectors=livingVectors(s),tuning=vectorTuning(s),q=vectorCharges(s,tuning.dashCharges),v=s.vectorMobility,reason=vectorMovementBlock(s);
+  const vectors=livingVectors(s),tuning=vectorTuning(s),q=vectorCharges(s,tuning),v=s.vectorMobility,reason=vectorMovementBlock(s);
   const escort=a.ultimate?.kind==='killbox'?'Grand Battery active':a.ultimate?.kind==='citadel'?'Citadel active':!a.slots.some(slot=>slot.state==='deployed'&&slot.entity?.alive)?'No deployed platforms':'';
   const cooldownRemaining=Math.max(0,v.mobileReadyAt-s.game.time),activeRemaining=Math.max(0,v.mobileUntil-s.game.time);
   // Equipped but all destroyed: the soonest rebuild, for the greyed-out HUD tiles.
   const rebuild=vectors.length?0:Math.min(Infinity,...a.slots.filter(slot=>slot.type==='vector'&&slot.state==='destroyed').map(slot=>Math.max(0,slot.rebuild)));
   return {unlocked:vectors.length>0,equipped:a.slots.some(slot=>slot.type==='vector'),vectors:vectors.length,rebuildRemaining:Number.isFinite(rebuild)?rebuild:0,
-    hullDash:{charges:q.charges,maxCharges:tuning.dashCharges,rechargeRemaining:q.recharge.length?Math.max(0,q.recharge[0]-s.game.time):0,pending:q.recharge.length,rechargeDuration:DASH_RECHARGE,activeRemaining:a.drive?Math.max(0,DASH_TIME-a.drive.elapsed):0,duration:DASH_TIME,distance:tuning.dashDistance,pathDamage:tuning.pathDamage,landDamage:tuning.landDamage,landRadius:tuning.landRadius,blockedReason:reason||(a.drive?'Hull Dash active':q.charges<=0?'Hull Dash recharging':'')},
+    hullDash:{charges:q.charges,maxCharges:tuning.dashCharges,rechargeRemaining:q.recharge.length?Math.max(0,q.recharge[0]-s.game.time):0,pending:q.recharge.length,rechargeDuration:tuning.dashRecharge,activeRemaining:a.drive?Math.max(0,DASH_TIME-a.drive.elapsed):0,duration:DASH_TIME,distance:tuning.dashDistance,pathDamage:tuning.pathDamage,landDamage:tuning.landDamage,landRadius:tuning.landRadius,blockedReason:reason||(a.drive?'Hull Dash active':q.charges<=0?'Hull Dash recharging':'')},
     mobileBattery:{cooldownRemaining,cooldownDuration:tuning.mobileCooldown,activeRemaining,duration:activeRemaining>0?v.mobileDuration:tuning.mobileDuration,speed:tuning.escortSpeed,blockedReason:reason||(cooldownRemaining>0?'Mobile Battery recharging':escort)},
   };
 }
@@ -121,7 +125,7 @@ export function activateArchitectHullDash(s:Ship):boolean{
   const distance=planDashLanding(s,dx/d,dz/d,want,status.hullDash.distance);
   if(distance===null)return s.failSkill('Hull Dash: no open water to land on');
   updateVectorMobilityTimers(s);const v=s.vectorMobility;
-  v.dashCharges--;v.dashRecharge.push(s.game.time+DASH_RECHARGE);a.drive={dx:dx/d,dz:dz/d,elapsed:0,distance,moving:false,from:s.heading,travelled:0,hit:[]};
+  v.dashCharges--;v.dashRecharge.push(s.game.time+status.hullDash.rechargeDuration);a.drive={dx:dx/d,dz:dz/d,elapsed:0,distance,moving:false,from:s.heading,travelled:0,hit:[]};
   s.game.events.emit('architectDash',{ship:s,phase:'launch',x:s.pos.x,z:s.pos.z,radius:0,vectors:status.vectors});
   return true;
 }
@@ -466,13 +470,14 @@ export function updateArchitect(s:Ship,dt:number):void {
   const a=s.architect;if(!a)return;
   ensureArchitectHealth(s);
   updateArchitectDrive(s,dt);
-  let repairBudget=0;
+  // A platform docked below the hull's own health catches up to it; one worn down with the hull does not heal it twice.
+  let repairBudget=0;const hullRatio=Math.max(0,Math.min(1,s.hp/Math.max(1,s.maxHp)));
   for(const slot of a.slots){
     const t=s.turrets[slot.index];
     if(slot.state==='docked'){
       setModuleReloadScale(s,slot,architectGunReloadScale(s,'docked'));
       slot.reload=Math.max(0,t.reload);slot.disabled=Math.max(0,t.disabled);slot.dockedFor+=dt;
-      if(slot.hp>0&&slot.dockedFor>2){const time=Math.min(dt,slot.dockedFor-2);repairBudget+=Math.max(0,Math.min(a.moduleHp-slot.hp,a.moduleHp*.2*time))/PLATFORM_HEALTH_RATIO+a.fullHp*.0004*time;}
+      if(slot.hp>0&&slot.dockedFor>2){const time=Math.min(dt,slot.dockedFor-2);repairBudget+=Math.max(0,Math.min(a.moduleHp*hullRatio-slot.hp,a.moduleHp*.2*time))/PLATFORM_HEALTH_RATIO+a.fullHp*DOCK_REGEN*time;}
     }else if(slot.state==='destroyed'){
       slot.rebuild-=dt;disableDocked(s,slot);
       if(slot.rebuild<=1e-8){slot.state='docked';slot.reloadScale=architectGunReloadScale(s,'docked');slot.rebuild=0;rebuildArchitectHealth(s,slot);slot.reload=0;slot.disabled=0;slot.dockedFor=0;t.disabled=0;t.reload=0;}
