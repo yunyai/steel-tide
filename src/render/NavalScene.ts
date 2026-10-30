@@ -245,7 +245,7 @@ export class NavalScene implements BattleScene {
     }
   }
 
-  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions]; }
+  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions,...this.batteryFx.distortions]; }
 
   prepare(vp: Viewport, heightPx: number): void {
     this.fleetFx.prepare(vp.team);

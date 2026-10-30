@@ -42,6 +42,7 @@ const SECTIONS: { title: string; scope: ActionInfo['scope'] }[] = [
   { title: 'Helm, weapons and camera', scope: 'both' },
   { title: 'Warships', scope: 'ship' },
   { title: 'Titans', scope: 'titan' },
+  { title: 'Architect · living Vector required', scope: 'architect' },
 ];
 
 const LABEL = Object.fromEntries(ACTIONS.map((a) => [a.id, a.label])) as Record<ActionId, string>;
@@ -181,6 +182,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
         b.classList.add('listening');
         b.textContent = 'Press a key (Esc cancels)';
       } else b.append(code ? h('kbd', {}, keyName(code)) : 'Unbound');
+      if (!code && (id === 'architectHullDash' || id === 'architectMobileBattery')) b.title = 'Keyboard unbound. Choose a key; the controller chord is available.';
       b.onclick = (e) => {
         e.stopPropagation();
         hooks.click();
@@ -261,7 +263,7 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
     };
     actions.prepend(reset);
     return [
-      h('p', { class: 'lede' }, 'Click a key, then press the one you want. Defaults: Space locks targets in both layouts; U follows your shot. Middle mouse always locks. Customized titan bindings keep their skill keys; if one shares the lock key, use middle mouse or rebind lock. Warships, tanks and titans share the helm, weapon and camera keys; a key taken by another action moves to your old key, or is left unbound when that would clash.'),
+      h('p', { class: 'lede' }, 'Click a key, then press the one you want. Space locks; U follows your shot. Middle mouse always locks. Architect: G keeps Search; H is Hull Dash and J is Mobile Battery with any living Vector. Existing custom H/J bindings are kept and a conflicting new action starts Unbound. Architect has no submarine dive controls, so its H can share the titan submarine dive key. Customized titan skills keep a shared lock key; use middle mouse or rebind lock. A key taken by another action moves to your old key, or becomes unbound when that would clash.'),
       status,
       table,
     ];

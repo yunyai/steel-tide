@@ -9,6 +9,7 @@ import { ELEMENT_STYLE, type ElementEvent } from '../skills/misc/ArchitectElemen
 import { audio } from '../fx/Audio';
 import { reducedMotion } from './ArchitectPose';
 import { elementalTurretGeometry } from './ArchitectModel';
+import { getVectorMobilityStatus } from '../skills/misc/ArchitectRuntime';
 import { quality } from './Quality';
 const vertex=`attribute vec4 tint;varying vec4 vTint;varying vec3 vNormal;varying vec3 vEye;void main(){vTint=tint;mat3 im=mat3(instanceMatrix);vec3 n=normal/vec3(dot(im[0],im[0]),dot(im[1],im[1]),dot(im[2],im[2]));vec4 mv=modelViewMatrix*instanceMatrix*vec4(position,1.);vNormal=normalize(normalMatrix*im*n);vEye=-mv.xyz;gl_Position=projectionMatrix*mv;}`;
 const fragment=`varying vec4 vTint;varying vec3 vNormal;varying vec3 vEye;void main(){float rim=pow(1.-abs(dot(normalize(vNormal),normalize(vEye))),1.5);gl_FragColor=vec4(vTint.rgb*(.8+rim*.8),vTint.a*(.25+rim*.65));}`;
@@ -97,10 +98,11 @@ export class ArchitectElementFx {
     const socket=s.spec.main!.turrets[slot.index],h=s.renderHeading,x=s.renderPos.x+Math.sin(h)*socket.x+Math.cos(h)*(socket.z??0),z=s.renderPos.z-Math.cos(h)*socket.x+Math.sin(h)*(socket.z??0),y=s.renderPos.y+s.spec.freeboard+socket.y+18+house.boundingBox!.max.y,c=ARCHETYPES[slot.type].color;
     this.put(2,x,y,z,slot.capacitorCharged?5:3,slot.capacitorCharged?10:5,slot.capacitorCharged?5:3,c,slot.capacitorCharged?.95:.5);
    }
-   if(a.drive){const d=a.drive,back=this.reduced?75:180,c=ARCHETYPES.vector.color,h=s.renderHeading;
+   const vector=getVectorMobilityStatus(s);
+   if(vector?.unlocked&&a.drive?.moving){const d=a.drive,back=this.reduced?75:180,c=ARCHETYPES.vector.color,h=s.renderHeading;
     for(const side of [-1,1]){const x=s.renderPos.x-Math.sin(h)*s.spec.length*.4+Math.cos(h)*side*s.spec.beam*.24,z=s.renderPos.z+Math.cos(h)*s.spec.length*.4+Math.sin(h)*side*s.spec.beam*.24,y=s.renderPos.y+20;this.tube(x,y,z,x-d.dx*back,y,z-d.dz*back,11,c,.7);this.tube(x,y,z,x-d.dx*back*.8,y,z-d.dz*back*.8,3,0xe5ffff,.9);}
    }
-   if(a.mobileUntil>this.game.time)for(const slot of a.slots){const m=slot.entity;if(!m?.alive||slot.state!=='deployed'||a.ultimate)continue;this.put(2,m.renderPos.x,m.renderPos.y-10,m.renderPos.z,8,16,8,ARCHETYPES.vector.color,.65);}
+   if(vector?.unlocked&&s.vectorMobility.mobileUntil>this.game.time)for(const slot of a.slots){const m=slot.entity;if(!m?.alive||!slot.follow||slot.state!=='deployed'||a.ultimate||team!==-1&&!contactVisible(m,team))continue;this.put(2,m.renderPos.x,m.renderPos.y-10,m.renderPos.z,8,16,8,ARCHETYPES.vector.color,.65);}
   }
   // Solid elemental bolt heads and volumetric wakes follow the actual simulation shells.
   if(!this.game.over)for(const shell of this.game.shells.shells){

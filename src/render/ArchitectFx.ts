@@ -84,6 +84,12 @@ export class ArchitectFx {
             r.push(m.pos.x,m.pos.y+3,m.pos.z,slot.path.x,slot.path.y+3,slot.path.z,color,.25,3,1);
             const y=m.pos.y;r.push(m.pos.x-14,y-5,m.pos.z,m.pos.x,y-26,m.pos.z,BLUE,.8,4,2);
             r.push(m.pos.x+14,y-5,m.pos.z,m.pos.x,y-26,m.pos.z,BLUE,.8,4,2);
+          }else if(slot.follow&&slot.state==='deployed'){
+            // Mobile Battery escorts: a Citadel-style tether to the hull plus hover jets.
+            const p=m.renderPos;
+            if(team===-1||contactVisible(s,team))r.push(s.renderPos.x,s.renderPos.y+42,s.renderPos.z,p.x,p.y+8,p.z,color,.28,3,1.2);
+            r.push(p.x-14,p.y-5,p.z,p.x,p.y-30,p.z,BLUE,.75,4,2);
+            r.push(p.x+14,p.y-5,p.z,p.x,p.y-30,p.z,BLUE,.75,4,2);
           }
         }
         if(a.linkUntil>this.game.time)for(const edge of a.links){

@@ -57,8 +57,8 @@ try{
  });await capture('docked-capacitor-discharge');
  await setup('vector',false,false);
  await page.evaluate(async()=>{
-  const f=window.archVisual,{activateConsumable}=await import('/src/ships/Consumables.ts');f.s.control.aimX=0;f.s.control.aimZ=1600;
-  if(!activateConsumable(f.s,1))throw Error(f.s.skillFailure);f.step(.2);
+  const f=window.archVisual,{activateArchitectHullDash}=await import('/src/skills/misc/ArchitectRuntime.ts');f.s.control.aimX=0;f.s.control.aimZ=1600;
+  if(!activateArchitectHullDash(f.s))throw Error(f.s.skillFailure);f.step(.2);
   if(!f.s.architect.drive||f.s.pos.z>=2700)throw Error('Expected active Vector drive and actual hull movement');
   f.pc.camera.position.set(-460,360,f.s.pos.z+440);f.pc.camera.lookAt(0,35,f.s.pos.z+40);f.pc.camera.updateMatrixWorld(true);f.draw();
  });await capture('vector-drive-active');

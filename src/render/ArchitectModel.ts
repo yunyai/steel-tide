@@ -198,7 +198,7 @@ export class ArchitectModel {
       this.clamps[i].forEach((c,n)=>c.rotation.x=(n?1:-1)*open*.85);
     }
     const module=ship?.architectPlatform,slot=module?.owner.architect?.slots[module.index];
-    const flight=!!slot&&(!!slot.path||slot.state==='citadel'||module?.owner.architect?.ultimate?.kind==='killbox');
+    const flight=!!slot&&(!!slot.path||!!slot.follow||slot.state==='citadel'||module?.owner.architect?.ultimate?.kind==='killbox');
     let folded=flight?1:0;
     if(slot?.path){const p=slot.path,k=p.elapsed/p.duration;folded=Math.min(smooth(k*5),smooth((1-k)*5));}
     this.supports.forEach(g=>g.rotation.x=folded*1.25);

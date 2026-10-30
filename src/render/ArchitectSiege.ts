@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Game } from '../core/Game';
 import type { Team } from '../core/types';
 import type { ArchitectBatteryLayout, ArchitectBatteryArc, ArchitectBatteryCast, ArchitectBatteryLaunch, ArchitectBatteryMember, ArchitectBatteryPoint, ArchitectBatteryStage } from '../data/architectBattery';
-import { BATTERY_TRANSPORT_TIME, buildArchitectBatteryPaths, getArchitectBatteryHeadPose } from '../skills/misc/ArchitectBatteryPose';
+import { BATTERY_FOLD_START, BATTERY_FOLD_TIME, BATTERY_TRANSPORT_TIME, buildArchitectBatteryPaths, getArchitectBatteryHeadPose } from '../skills/misc/ArchitectBatteryPose';
 import { contactVisible } from '../core/Targeting';
 import { reducedMotion } from './ArchitectPose';
 import { quality } from './Quality';
@@ -116,7 +116,9 @@ export class ArchitectSiege {
    shader.fragmentShader=shader.fragmentShader.replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
     #ifdef USE_COLOR
     float chroma=max(max(vColor.r,vColor.g),vColor.b)-min(min(vColor.r,vColor.g),vColor.b);
-    totalEmissiveRadiance+=vColor.rgb*2.8*smoothstep(.24,.48,chroma);
+    vec3 neon=max(vec3(0.),vColor.rgb-vec3(min(min(vColor.r,vColor.g),vColor.b)*.72));
+    neon/=max(.001,max(max(neon.r,neon.g),neon.b));
+    totalEmissiveRadiance+=neon*1.35*smoothstep(.24,.48,chroma);
     #endif`);
   };
   this.batchMaterial.onBeforeCompile=layoutShader;this.batchMaterial.customProgramCacheKey=()=> 'battery-layout-v2';
@@ -155,8 +157,8 @@ export class ArchitectSiege {
    if(this.rigs.get(owner.id)?.cast.id!==u.battery.id)this.rigs.set(owner.id,{owner,cast:u.battery,center:{x:u.x,y:0,z:u.z},types:owner.architect!.slots.map(a=>a.type),paths:new Map()});
   }
   for(const [id,rig] of this.rigs){const u=rig.owner.architect?.ultimate,elapsed=this.game.time-rig.cast.startedAt;
-   const movedAfterControl=!u&&elapsed>=7.5&&rig.cast.members.some(member=>!!rig.owner.architect?.slots[member.slot]?.path);
-   const retired=rig.retiredAt!==undefined,finished=retired?this.game.time-rig.retiredAt!>=.3:elapsed>=8.8||movedAfterControl||!!u&&u.battery?.id!==rig.cast.id;
+   const movedAfterControl=!u&&elapsed>=BATTERY_FOLD_START&&rig.cast.members.some(member=>{const path=rig.owner.architect?.slots[member.slot]?.path;return path&&!path.settling;});
+   const retired=rig.retiredAt!==undefined,finished=retired?this.game.time-rig.retiredAt!>=.3:elapsed>=BATTERY_FOLD_START+BATTERY_FOLD_TIME||movedAfterControl||!!u&&u.battery?.id!==rig.cast.id;
    if(!this.valid(rig.owner,rig.cast.generation)||finished)this.rigs.delete(id);
   }
   for(const [key,launch] of this.launches)if(!this.valid(launch.owner,launch.generation)||this.game.time-launch.launchTime>1)this.launches.delete(key);
@@ -170,11 +172,11 @@ export class ArchitectSiege {
   this.update();this.charges.length=0;this.stats.heads=0;this.stats.carriers=0;this.stats.batches=0;this.stats.triangles=0;this.stats.layouts={wide:0,compact:0,folded:0};
   for(const meshes of this.batches.values())for(const mesh of meshes)mesh.count=0;for(const mesh of this.carriers)mesh.count=0;
   for(const rig of this.rigs.values()){
-   const elapsed=rig.retiredAt===undefined?this.game.time-rig.cast.startedAt:8.15+(this.game.time-rig.retiredAt)/.3*.65;
+   const elapsed=rig.retiredAt===undefined?this.game.time-rig.cast.startedAt:BATTERY_FOLD_START+(this.game.time-rig.retiredAt)/.3*BATTERY_FOLD_TIME;
    if(elapsed<BATTERY_TRANSPORT_TIME)continue;
    for(const member of rig.cast.members){
     const slot=rig.owner.architect?.slots[member.slot],platform=slot?.entity;
-    if(!platform?.alive||team!==-1&&!contactVisible(platform,team)||rig.retiredAt===undefined&&elapsed>=7.5&&(slot!.path||slot!.state!=='deployed'))continue;
+    if(!platform?.alive||team!==-1&&!contactVisible(platform,team)||rig.retiredAt===undefined&&elapsed>=BATTERY_FOLD_START&&!slot!.path?.settling&&(slot!.path||slot!.state!=='deployed'))continue;
     const last=this.launches.get(`${rig.owner.id}:${member.slot}`),stage=(elapsed>=7.1?3:elapsed>=5.08?2:elapsed>=3.08?1:0) as ArchitectBatteryStage;
     const latest=last?.castId===rig.cast.id?last:undefined,aimStage=latest&&this.game.time-latest.launchTime<.6?latest.stage:stage,paths=latest&&aimStage===latest.stage?latest.paths:this.paths(rig,member,aimStage);
     const type=rig.types[member.slot],meshes=this.typeBatches(type),dx=platform.renderPos.x-member.carrier.x,dy=platform.renderPos.y-member.carrier.y,dz=platform.renderPos.z-member.carrier.z;

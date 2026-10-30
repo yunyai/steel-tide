@@ -87,6 +87,8 @@ function applyEdge(c: ControlState, e: Edge): void {
   if (e.sl !== undefined) c.slot = e.sl;
   if (e.sk !== undefined) c.skill = e.sk;
   if (e.co !== undefined) c.consumable = e.co;
+  if(e.hd)c.architectHullDash=true;
+  if(e.mb)c.architectMobileBattery=true;
   if (e.du) c.diveUp = true;
   if (e.dd) c.diveDown = true;
 }
@@ -99,12 +101,15 @@ function takeEdge(c: ControlState): Edge | null {
   if (c.slot !== null) e.sl = c.slot;
   if (c.skill >= 0) e.sk = c.skill;
   if (c.consumable >= 0) e.co = c.consumable;
+  if(c.architectHullDash)e.hd=1;
+  if(c.architectMobileBattery)e.mb=1;
   if (c.diveUp) e.du = 1;
   if (c.diveDown) e.dd = 1;
   c.throttleUp = c.throttleDown = c.diveUp = c.diveDown = false;
   c.slot = null;
   c.skill = -1;
   c.consumable = -1;
+  c.architectHullDash=c.architectMobileBattery=false;
   return Object.keys(e).length ? e : null;
 }
 

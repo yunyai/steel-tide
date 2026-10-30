@@ -12,14 +12,15 @@ import { segmentHitsHull } from '../../core/hull';
 import { hurt } from '../kit';
 import { safeStep, type Landing } from './StepperRuntime';
 import { updateArchitectUltimate, endArchitectUltimate, type ArchitectUltimate } from './ArchitectUltimates';
+import { BATTERY_FOLD_TIME } from './ArchitectBatteryPose';
 
 export type ModuleMode = 'docked'|'launching'|'deployed'|'moving'|'returning'|'destroyed'|'assembling'|'citadel';
 export interface ModuleSlot {
   type:ArchitectType; skill:0|1; element:ArchitectElement; skillTimer:number; castGap:number; opening:boolean; boostUntil:number; reactionUntil:number; aboard:boolean; index:number; state:ModuleMode; hp:number; reload:number; reloadScale:number; disabled:number; rebuild:number; dockedFor:number;
   entity:Ship|null;
-  path:{ x:number;y:number;z:number;tx:number;ty:number;tz:number;elapsed:number;duration:number;hit:number[];damage:boolean }|null;
+  path:{ x:number;y:number;z:number;tx:number;ty:number;tz:number;elapsed:number;duration:number;hit:number[];damage:boolean;settling?:boolean }|null;
   capacitorCycles:0|1;capacitorCharged:boolean;
-  follow:{x:number;z:number}|null;
+  follow:HoverOrbit|null;
 }
 export interface ArchitectState {
   huntTarget:number;huntUntil:number;elements:ElementState; fullHp:number;moduleHp:number;healthReady:boolean;healthTransfer:boolean;
@@ -27,44 +28,117 @@ export interface ArchitectState {
   links:{a:number;b:number}[];linkUntil:number;linkTick:number;
   ultimate:ArchitectUltimate|null;
   clearing:boolean;
-  drive:{dx:number;dz:number;elapsed:number;distance:number}|null;
-  mobileUntil:number;capacitorReadyAt:number;
+  drive:{dx:number;dz:number;elapsed:number;distance:number;moving:boolean}|null;
+  capacitorReadyAt:number;
 }
 export interface ArchitectPlatform { owner:Ship; index:number }
+/** One Mobile Battery escort: each platform keeps its own orbit radius, altitude, tilt and pace around Architect. */
+export interface HoverOrbit { angle:number;radius:number;height:number;tilt:number;phase:number;rate:number }
 export const MODULE_HP=MODULE_COMBAT_HP;
+const smooth=(x:number)=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t);};
 export function newArchitectState(_rng:()=>number=()=>.5,loadout?:ArchitectLoadout):ArchitectState {
   const selections=copyLoadout(loadout);
-  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:2/3,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null,capacitorCycles:0,capacitorCharged:false,follow:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false,drive:null,mobileUntil:0,capacitorReadyAt:0};
+  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:2/3,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null,capacitorCycles:0,capacitorCharged:false,follow:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false,drive:null,capacitorReadyAt:0};
 }
 export function architectDockingStatus(s:Ship){
   const a=s.architect,slots=a?.slots.filter(v=>v.state==='docked'&&v.hp>0)??[];
   return {count:slots.length,damageReduction:Math.min(.2,slots.length*.02),hullRegenPerSecond:(a?.fullHp??0)*Math.min(.004,slots.filter(v=>v.dockedFor>2).length*.0004),capacitors:a?.slots.filter(v=>v.capacitorCharged).length??0,chargingCycles:a?.slots.reduce((n,v)=>n+v.capacitorCycles,0)??0};
 }
-export function architectUtilityStatus(s:Ship){
-  const a=s.architect;if(!a)return null;
-  const vectors=a.slots.filter(v=>v.type==='vector'&&v.state!=='destroyed'&&(v.entity?.hp??v.hp)>0),hullDash=vectors.some(v=>v.skill===0),mobileBattery=vectors.some(v=>v.skill===1);
-  const drive=vectors.length>0,c=s.consumables.find(v=>v.spec.type==='search'),cooldown=drive?Math.max(0,s.architectDriveReadyAt-s.game.time):Math.max(0,c?.cooldown??0);
-  const reason=!s.alive?'Ship sunk':!drive?(!c||c.charges<=0?'No Search charges':cooldown>0?'Search reloading':''):a.ultimate?.kind==='assembly'?'Final Assembly active':s.mods.banished?'Banished':s.mods.stunned?'Stunned':s.mods.rooted?'Rooted':s.mods.feared?'Feared':a.drive?'Drive active':cooldown>0?'Drive reloading':'';
-  return {kind:drive?'drive' as const:'search' as const,label:drive?(hullDash&&mobileBattery?'Hull Dash + Mobile Battery':hullDash?'Hull Dash':'Mobile Battery'):'Search',ready:!reason,reason,cooldown,duration:drive?18:c?c.spec.duration+c.spec.cooldown:0,hullDash,mobileBattery};
+export interface VectorMobilityState {
+  dashCharges:number;dashRechargeAt:number;mobileReadyAt:number;mobileUntil:number;mobileDuration:number;
 }
-export function activateArchitectDrive(s:Ship):boolean{
-  const status=architectUtilityStatus(s),a=s.architect;if(!a||status?.kind!=='drive')return false;
-  if(!status.ready)return s.failSkill(status.reason);
-  const dx=s.control.aimX-s.pos.x,dz=s.control.aimZ-s.pos.z,d=Math.hypot(dx,dz);if(d<1)return s.failSkill('Drive: aim away from the hull');
-  a.drive={dx:dx/d,dz:dz/d,elapsed:0,distance:Math.min(d,status.hullDash?650:400)};s.architectDriveReadyAt=s.game.time+18;
-  if(status.mobileBattery){a.mobileUntil=s.game.time+6;for(const slot of a.slots){const m=slot.entity;slot.follow=slot.state==='deployed'&&m?.alive?{x:m.pos.x-s.pos.x,z:m.pos.z-s.pos.z}:null;}}
+const DASH_TIME=.55,DASH_RECHARGE=10,MOBILE_COOLDOWN=14,HOVER_SPEED=1200,HOVER_CLEARANCE=80,HOVER_LANDING=1.2;
+function livingVectors(s:Ship):ModuleSlot[]{return s.architect?.slots.filter(v=>v.type==='vector'&&v.state!=='destroyed'&&v.hp>0&&(!v.entity||v.entity.alive&&v.entity.hp>0))??[];}
+function vectorMovementBlock(s:Ship):string{
+  return !s.alive?'Ship sunk':!livingVectors(s).length?'Requires a living Vector':s.architect?.ultimate?.kind==='assembly'?'Final Assembly active':s.stepper?.cross||s.stepper?.flicker||s.stepper?.rush?'Stepping':s.mods.banished?'Banished':s.mods.stunned?'Stunned':s.mods.rooted?'Rooted':s.mods.feared?'Feared':'';
+}
+/** A pure snapshot lets presentation read timers without advancing authoritative state. */
+function vectorCharges(s:Ship):{charges:number;rechargeAt:number}{
+  let charges=s.vectorMobility.dashCharges,rechargeAt=s.vectorMobility.dashRechargeAt;
+  while(charges<2&&rechargeAt>0&&s.game.time+1e-8>=rechargeAt){charges++;rechargeAt=charges<2?rechargeAt+DASH_RECHARGE:0;}
+  return {charges,rechargeAt};
+}
+export function updateVectorMobilityTimers(s:Ship):void{
+  if(s.vectorMobility.dashCharges>=2||!s.vectorMobility.dashRechargeAt)return;
+  const q=vectorCharges(s);s.vectorMobility.dashCharges=q.charges;s.vectorMobility.dashRechargeAt=q.rechargeAt;
+}
+export function getVectorMobilityStatus(s:Ship){
+  const a=s.architect;if(!a)return null;
+  const vectors=livingVectors(s),q=vectorCharges(s),v=s.vectorMobility,reason=vectorMovementBlock(s);
+  const escort=a.ultimate?.kind==='killbox'?'Grand Battery active':a.ultimate?.kind==='citadel'?'Citadel active':!a.slots.some(slot=>slot.state==='deployed'&&slot.entity?.alive)?'No deployed platforms':'';
+  const cooldownRemaining=Math.max(0,v.mobileReadyAt-s.game.time),activeRemaining=Math.max(0,v.mobileUntil-s.game.time);
+  return {unlocked:vectors.length>0,
+    hullDash:{charges:q.charges,maxCharges:2,rechargeRemaining:q.rechargeAt?Math.max(0,q.rechargeAt-s.game.time):0,rechargeDuration:DASH_RECHARGE,activeRemaining:a.drive?Math.max(0,DASH_TIME-a.drive.elapsed):0,duration:DASH_TIME,distance:vectors.some(slot=>slot.skill===0)?1100:800,blockedReason:reason||(a.drive?'Hull Dash active':q.charges<=0?'Hull Dash recharging':'')},
+    mobileBattery:{cooldownRemaining,cooldownDuration:MOBILE_COOLDOWN,activeRemaining,duration:activeRemaining>0?v.mobileDuration:vectors.some(slot=>slot.skill===1)?14:10,blockedReason:reason||(cooldownRemaining>0?'Mobile Battery recharging':escort)},
+  };
+}
+export function activateArchitectHullDash(s:Ship):boolean{
+  const status=getVectorMobilityStatus(s),a=s.architect;if(!a||!status)return false;
+  if(status.hullDash.blockedReason)return s.failSkill(status.hullDash.blockedReason);
+  const dx=s.control.aimX-s.pos.x,dz=s.control.aimZ-s.pos.z,d=Math.hypot(dx,dz);
+  if(!Number.isFinite(d)||d<1)return s.failSkill('Hull Dash: aim away from the hull');
+  const distance=Math.min(d,status.hullDash.distance),step=Math.min(8,distance);
+  if(!architectStepLegal(s,s.pos.x+dx/d*step,s.pos.z+dz/d*step))return s.failSkill('Hull Dash: movement blocked');
+  updateVectorMobilityTimers(s);const v=s.vectorMobility;
+  if(v.dashCharges===2)v.dashRechargeAt=s.game.time+DASH_RECHARGE;
+  v.dashCharges--;a.drive={dx:dx/d,dz:dz/d,elapsed:0,distance,moving:false};
   return true;
+}
+export function activateArchitectMobileBattery(s:Ship):boolean{
+  const status=getVectorMobilityStatus(s),a=s.architect;if(!a||!status)return false;
+  if(status.mobileBattery.blockedReason)return s.failSkill(status.mobileBattery.blockedReason);
+  const v=s.vectorMobility;v.mobileDuration=status.mobileBattery.duration;v.mobileUntil=s.game.time+v.mobileDuration;v.mobileReadyAt=s.game.time+MOBILE_COOLDOWN;
+  const escorts=a.slots.filter(slot=>slot.state==='deployed'&&slot.entity?.alive),rng=s.game.rng;
+  // Shuffled radius bands keep escorts apart; altitude, tilt and pace are drawn per platform.
+  const bands=escorts.map((_,n)=>n);
+  for(let i=bands.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[bands[i],bands[j]]=[bands[j],bands[i]];}
+  escorts.forEach((slot,n)=>{const m=slot.entity!;
+    slot.follow={angle:Math.atan2(m.pos.x-s.pos.x,-(m.pos.z-s.pos.z)),radius:420+(escorts.length>1?bands[n]/(escorts.length-1):.5)*480+(rng()-.5)*40,
+      height:140+rng()*130,tilt:15+rng()*30,phase:rng()*Math.PI*2,rate:.16+rng()*.18};
+  });
+  return true;
+}
+/** Escort point on a platform's tilted, slightly elliptical orbit. */
+export function hoverPoint(s:Ship,f:HoverOrbit):{x:number;y:number;z:number} {
+  const r=f.radius*(1+.08*Math.sin(f.angle*2+f.phase)),lim=MAP_HALF-100;
+  const x=Math.max(-lim,Math.min(lim,s.pos.x+Math.sin(f.angle)*r)),z=Math.max(-lim,Math.min(lim,s.pos.z-Math.cos(f.angle)*r));
+  return {x,y:Math.max(f.height+f.tilt*Math.sin(f.angle+f.phase)+8*Math.sin(s.game.time*1.7+f.phase*3),s.game.map.heightAt(x,z)+HOVER_CLEARANCE+20),z};
+}
+function moveHovering(s:Ship,slot:ModuleSlot,dt:number):void {
+  const m=slot.entity!,f=slot.follow!;f.angle+=f.rate*dt;
+  const t=hoverPoint(s,f),dx=t.x-m.pos.x,dy=t.y-m.pos.y,dz=t.z-m.pos.z,d=Math.hypot(dx,dy,dz);
+  // Eases into the moving orbit point instead of snapping onto it.
+  const k=Math.min(1,Math.min(HOVER_SPEED,150+d*4)*dt/Math.max(1e-6,d)),x=m.pos.x+dx*k,z=m.pos.z+dz*k,h=Math.hypot(dx,dz);
+  let y=m.pos.y+dy*k;
+  const ahead=h>1?Math.min(150,h)/h:0,ground=Math.max(s.game.map.heightAt(x,z),s.game.map.heightAt(x+dx*ahead,z+dz*ahead))+HOVER_CLEARANCE;
+  // Climb ahead of terrain at a bounded rate; never sink into the ground directly below.
+  if(y<ground)y=Math.max(Math.min(ground,Math.max(y,m.pos.y)+600*dt),s.game.map.heightAt(x,z)+20);
+  m.pos.set(x,y,z);m.heading=bearingTo(m.pos.x,m.pos.z,s.pos.x,s.pos.z);
+}
+/** Escorts never stay airborne: each folds and descends to reserved nearby water, or returns home. */
+function landHovering(s:Ship):void {
+  const reservations:Landing[]=[];
+  for(const slot of s.architect!.slots){
+    const m=slot.entity;if(!slot.follow)continue;slot.follow=null;
+    if(slot.state!=='deployed'||!m?.alive)continue;
+    const p=moduleLanding(s,slot,m.pos.x,m.pos.z,m.heading,reservations,1000);
+    if(p){reservations.push(p);moveModule(s,slot,p,'moving',BATTERY_FOLD_TIME+HOVER_LANDING);}
+    else {const dock=dockPoint(s,slot.index);moveModule(s,slot,dock,'returning',BATTERY_FOLD_TIME+Math.max(1,Math.hypot(dock.x-m.pos.x,dock.z-m.pos.z)/1200));}
+    slot.path!.settling=true;
+  }
+}
+/** Protection ends immediately on interruption, collision, Vector loss or the last motion tick. */
+export function architectDashDamageReduction(s:Ship):number{return s.architect?.drive?.moving&&!vectorMovementBlock(s)? .7:0;}
+function architectStepLegal(m:Ship,x:number,z:number):boolean{
+  const owner=m.architectPlatform?.owner??m,bottom=m.pos.y-m.spec.draft,top=m.pos.y+m.spec.freeboard+30;
+  return safeStep(m,x,z,m.heading,false,[],o=>o.architectDrone?.owner===owner||o.pos.y-o.spec.draft>top||bottom>o.pos.y+o.spec.freeboard+30);
 }
 /** Small swept steps stop at the last legal footprint, including thin terrain and walls. */
 function moveArchitectLegally(m:Ship,x:number,z:number):boolean{
   const dx=x-m.pos.x,dz=z-m.pos.z,n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/8)),ox=m.pos.x,oz=m.pos.z;
-  const owner=m.architectPlatform?.owner??m;
-  // Match the physical vertical span used by elemental hull intersections.
-  const bottom=m.pos.y-m.spec.draft,top=m.pos.y+m.spec.freeboard+30;
-  const ignoreShip=(o:Ship)=>o.architectDrone?.owner===owner||o.pos.y-o.spec.draft>top||bottom>o.pos.y+o.spec.freeboard+30;
   for(let i=1;i<=n;i++){
     const nx=ox+dx*i/n,nz=oz+dz*i/n;
-    if(!safeStep(m,nx,nz,m.heading,false,[],ignoreShip))return false;
+    if(!architectStepLegal(m,nx,nz))return false;
     m.pos.x=nx;m.pos.z=nz;
   }
   return true;
@@ -72,19 +146,20 @@ function moveArchitectLegally(m:Ship,x:number,z:number):boolean{
 function updateArchitectDrive(s:Ship,dt:number):void{
   const a=s.architect!,p=a.drive;
   if(p){
-    if(a.ultimate?.kind==='assembly'||s.mods.stunned||s.mods.rooted||s.mods.feared||s.mods.banished)a.drive=null;
-    else {const step=Math.min(dt,.65-p.elapsed),d=p.distance*step/.65;p.elapsed+=step;
-      if(!moveArchitectLegally(s,s.pos.x+p.dx*d,s.pos.z+p.dz*d)||p.elapsed>=.65-1e-8)a.drive=null;
+    if(vectorMovementBlock(s))a.drive=null;
+    else {const step=Math.min(dt,DASH_TIME-p.elapsed),d=p.distance*step/DASH_TIME;p.elapsed+=step;
+      const ox=s.pos.x,oz=s.pos.z,legal=moveArchitectLegally(s,s.pos.x+p.dx*d,s.pos.z+p.dz*d);p.moving=s.pos.x!==ox||s.pos.z!==oz;
+      if(!legal||p.elapsed>=DASH_TIME-1e-8)a.drive=null;
     }
   }
-  if(a.mobileUntil>s.game.time){
-    if(!a.ultimate&&!s.mods.stunned&&!s.mods.rooted&&!s.mods.feared&&!s.mods.banished)for(const slot of a.slots){
-      const m=slot.entity;if(slot.state!=='deployed'||!m?.alive||m.mods.stunned||m.mods.rooted||m.mods.feared||m.mods.banished)continue;
-      slot.follow??={x:m.pos.x-s.pos.x,z:m.pos.z-s.pos.z};
-      const dx=s.pos.x+slot.follow.x-m.pos.x,dz=s.pos.z+slot.follow.z-m.pos.z,k=Math.min(1,1200*dt/Math.max(1,Math.hypot(dx,dz)));
-      moveArchitectLegally(m,m.pos.x+dx*k,m.pos.z+dz*k);
+  if(a.ultimate)return;
+  if(s.vectorMobility.mobileUntil>s.game.time&&livingVectors(s).length){
+    // Crowd control holds escorts in place; the clock keeps running.
+    if(!s.mods.stunned&&!s.mods.rooted&&!s.mods.feared&&!s.mods.banished)for(const slot of a.slots){
+      const m=slot.entity;if(!slot.follow||slot.state!=='deployed'||!m?.alive||m.mods.stunned||m.mods.rooted||m.mods.feared||m.mods.banished)continue;
+      moveHovering(s,slot,dt);
     }
-  }else for(const slot of a.slots)slot.follow=null;
+  }else if(a.slots.some(slot=>slot.follow))landHovering(s);
 }
 export function recordArchitectGunCycle(s:Ship,index:number):void{
   const slot=s.architect?.slots[index];if(!slot||slot.state!=='docked'||slot.hp<=0||slot.capacitorCharged)return;
@@ -145,7 +220,7 @@ export function moveModule(s:Ship,a:ModuleSlot,p:{x:number;y?:number;z:number;he
   if(mode==='returning'||mode==='assembling'){a.opening=false;}
   if(a.state==='docked'){const t=s.turrets[a.index];a.reload=t.reload;a.disabled=t.disabled;}
   const m=materialize(s,a);m.control.fire=false;
-  a.state=mode;a.dockedFor=0;
+  a.state=mode;a.dockedFor=0;a.follow=null;
   if(p.heading!==undefined)m.heading=p.heading;
   a.path={x:m.pos.x,y:m.pos.y,z:m.pos.z,tx:p.x,ty:p.y??0,tz:p.z,elapsed:0,duration:duration??Math.max(.05,Math.hypot(m.pos.x-p.x,m.pos.z-p.z)/1200),hit:[],damage};
   disableDocked(s,a);
@@ -153,7 +228,7 @@ export function moveModule(s:Ship,a:ModuleSlot,p:{x:number;y?:number;z:number;he
 export function attachModule(s:Ship,a:ModuleSlot):void {
   setModuleReloadScale(s,a,architectGunReloadScale(s,'docked'));
   const m=a.entity;
-  if(m){a.hp=m.hp;a.reload=Math.max(0,m.turrets[0].reload);a.disabled=Math.max(0,m.turrets[0].disabled);m.withdraw();}
+  if(m){a.hp=m.hp;a.reload=Math.max(0,m.turrets[0].reload);a.disabled=Math.max(0,m.turrets[0].disabled);m.withdraw(true);}
   returnArchitectHealth(s,a);
   a.entity=null;a.path=null;a.state='docked';a.dockedFor=0;
   a.follow=null;
@@ -180,7 +255,7 @@ export function recallModules(s:Ship):boolean {
   s.game.events.emit('architectCommand',{ship:s,kind:'recall'});return true;
 }
 export function reconfigureModules(s:Ship):boolean {
-  const slots=available(s).filter(a=>a.state==='deployed');
+  const slots=available(s).filter(a=>a.state==='deployed'||a.state==='moving'&&a.path?.settling);
   if(!slots.length)return s.failSkill('Reconfigure: deploy platforms first');
   const p=archAim(s),poses=formation(s,slots,p.x,p.z,900);
   if(!poses)return s.failSkill('Reconfigure: no safe formation in aimed water');
@@ -268,9 +343,11 @@ export function updateModulePath(s:Ship,a:ModuleSlot,dt:number):void {
   const p=a.path,m=a.entity;if(!p||!m)return;
   if(a.state==='returning'){const q=dockPoint(s,a.index);p.tx=q.x;p.ty=q.y;p.tz=q.z;}
   const ox=m.pos.x,oz=m.pos.z;
-  p.elapsed+=dt;const f=Math.min(1,p.elapsed/p.duration);
+  p.elapsed+=dt;const f=p.settling?smooth((p.elapsed-BATTERY_FOLD_TIME)/Math.max(.001,p.duration-BATTERY_FOLD_TIME)):Math.min(1,p.elapsed/p.duration);
   m.pos.set(p.x+(p.tx-p.x)*f,p.y+(p.ty-p.y)*f,p.z+(p.tz-p.z)*f);
-  if(f<1){m.pos.y+=Math.sin(f*Math.PI)*160;m.pos.y=Math.max(m.pos.y,s.game.map.heightAt(m.pos.x,m.pos.z)+60);}
+  if(f<1&&!p.settling){m.pos.y+=Math.sin(f*Math.PI)*160;m.pos.y=Math.max(m.pos.y,s.game.map.heightAt(m.pos.x,m.pos.z)+60);}
+  // Descents follow the ground over islands instead of cutting through them.
+  else if(f<1)m.pos.y=Math.max(m.pos.y,s.game.map.heightAt(m.pos.x,m.pos.z)+40);
   if(p.damage)for(const t of s.game.ships){if(t.alive&&t.team!==s.team&&!t.deep&&!p.hit.includes(t.id)&&segmentHitsHull(t,ox,oz,m.pos.x,m.pos.z,22)>=0){p.hit.push(t.id);hurt(s,t,20000,s.skills[3].spec);}}
   if(f>=1){
     if(a.state==='returning'){attachModule(s,a);return;}

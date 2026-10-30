@@ -2,7 +2,6 @@ import type { ConsumableSpec, ConsumableType, Era, ShipSpec } from '../core/type
 import { eraOf } from '../data/factions';
 import { mark } from '../skills/kit';
 import type { Ship } from './Ship';
-import { activateArchitectDrive, architectUtilityStatus } from '../skills/misc/ArchitectRuntime';
 
 export interface ConsumableState {
   spec: ConsumableSpec;
@@ -64,7 +63,6 @@ export function canActivate(c: ConsumableState): boolean {
 
 export function activateConsumable(ship: Ship, index: number): boolean {
   const c = ship.consumables[index];
-  if(c?.spec.type==='search'&&architectUtilityStatus(ship)?.kind==='drive')return activateArchitectDrive(ship);
   if (!c || !canActivate(c) || !ship.alive) return false;
   const g = ship.game;
   switch (c.spec.type) {

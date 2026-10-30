@@ -1,5 +1,5 @@
 import { ARCHITECT_BATTERY_FLIGHT, type ArchitectBatteryCast, type ArchitectBatteryStage } from '../../data/architectBattery';
-import { planArchitectBatteryLayout, buildArchitectBatteryPaths, planArchitectBatteryFormation, BATTERY_TRANSPORT_TIME } from './ArchitectBatteryPose';
+import { planArchitectBatteryLayout, buildArchitectBatteryPaths, planArchitectBatteryFormation, BATTERY_TRANSPORT_TIME, BATTERY_FOLD_TIME } from './ArchitectBatteryPose';
 import { applyElementMark, ultimateElementHit } from './ArchitectElements';
 import type { Ship } from '../../ships/Ship';
 import { MAP_HALF } from '../../config';
@@ -151,7 +151,12 @@ export function endArchitectUltimate(s:Ship,recalling=false):void {
       const m=slot.entity,p=moduleLanding(s,slot,m.pos.x,m.pos.z,m.heading,reservations.filter((p):p is NonNullable<typeof p>=>!!p),1000);
       if(p){reservations.push(p);moveModule(s,slot,p,'moving',1);}
       else moveModule(s,slot,dockPoint(s,i),'returning');
-    }else if(slot.entity?.alive){if(slot.path)slot.entity.pos.set(slot.path.tx,slot.path.ty,slot.path.tz);slot.state='deployed';slot.path=null;}
+    }else if(slot.entity?.alive){
+      const m=slot.entity,p=moduleLanding(s,slot,m.pos.x,m.pos.z,m.heading,reservations.filter((p):p is NonNullable<typeof p>=>!!p),1000);
+      if(p){reservations.push(p);const still=Math.hypot(p.x-m.pos.x,p.z-m.pos.z)<1&&m.pos.y<=1;moveModule(s,slot,p,'moving',BATTERY_FOLD_TIME+(still?0:1));}
+      else {const dock=dockPoint(s,i);moveModule(s,slot,dock,'returning',BATTERY_FOLD_TIME+Math.max(1,Math.hypot(dock.x-m.pos.x,dock.z-m.pos.z)/1200));}
+      if(slot.path)slot.path.settling=true;
+    }
   }
   const st=s.skills[indexOf(u.kind)];if(st){st.time=0;if(st.active){st.active=false;s.game.events.emit('skillEnd',{ship:s,index:st.index});}}
   s.game.events.emit('architectCommand',{ship:s,kind:'end'});

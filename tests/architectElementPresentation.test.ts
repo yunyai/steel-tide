@@ -26,8 +26,16 @@ it('keeps stored capacitor cores above the opaque docked gun housings',()=>{
 
 it.each([[0,0,-1],[0,1,0],[Math.PI/2,1,0],[Math.PI/2,0,-1]])('anchors Vector exhaust to the physical stern at hull heading %s and drive %s/%s',(heading,dx,dz)=>{
  const g=emptyGame('open',1,'freeplay'),s=place(g,'architect',0,0,1500),scene=new Scene(),fx=new ArchitectElementFx(scene,g);
- s.architect!.drive={dx,dz,elapsed:.2,distance:650};g.interpolate();s.renderHeading=heading;const before=stateHash(g);fx.prepare(0);
+ s.architect!.slots[0].type='vector';s.architect!.drive={dx,dz,elapsed:.2,distance:650,moving:true};g.interpolate();s.renderHeading=heading;const before=stateHash(g);fx.prepare(0);
  const mesh=scene.getObjectByName('architect-elements-3') as InstancedMesh,matrix=new Matrix4();expect(mesh.count).toBe(4);
  for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,matrix);const ends=[-.5,.5].map(y=>new Vector3(0,y,0).applyMatrix4(matrix));expect(ends.some(p=>{const x=p.x-s.renderPos.x,z=p.z-s.renderPos.z,across=x*Math.cos(heading)+z*Math.sin(heading),along=x*Math.sin(heading)-z*Math.cos(heading);return Math.abs(across)<=s.spec.beam/2&&along < -s.spec.length*.25&&along > -s.spec.length*.5;})).toBe(true);}
  expect(stateHash(g)).toBe(before);fx.dispose();
+});
+
+it('stops Vector exhaust when movement is blocked or the last Vector is lost',()=>{
+ const g=emptyGame('open',1,'freeplay'),s=place(g,'architect',0,0,1500),fx=new ArchitectElementFx(new Scene(),g);
+ s.architect!.slots[0].type='vector';s.architect!.drive={dx:1,dz:0,elapsed:.2,distance:800,moving:false};
+ fx.prepare(0);expect(fx.count).toBe(0);
+ s.architect!.drive.moving=true;fx.prepare(0);expect(fx.count).toBeGreaterThan(0);
+ s.architect!.slots[0].hp=0;fx.prepare(0);expect(fx.count).toBe(0);fx.dispose();
 });

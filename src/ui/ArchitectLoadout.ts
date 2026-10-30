@@ -19,7 +19,7 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
   let lastSyncKey=JSON.stringify(value)+editable.join();
   const root=h('section',{class:'arsenal-editor','aria-label':'Architect turret loadout'});
   const stopFeedback=menuFeedback(root);
-  const title=h('h3',{},'Platform arsenal'),note=h('p',{class:'arsenal-note'},`Ten platforms · ${ARCHITECT_TYPES.length} types · elemental guns work while docked. Vector specializes your manual utility; other skills fire automatically when deployed.`);
+  const title=h('h3',{},'Platform arsenal'),note=h('p',{class:'arsenal-note'},`Ten platforms · ${ARCHITECT_TYPES.length} types · elemental guns work while docked. Any living Vector unlocks Hull Dash and Mobile Battery; its specialization improves one action. Other skills fire automatically when deployed.`);
   const presets=h('div',{class:'arsenal-presets'}),slots=h('div',{class:'arsenal-slots',role:'group','aria-label':'Platform slots'}),detail=h('div',{class:'arsenal-detail'});
   const result=h('p',{class:'arsenal-result',role:'status','aria-live':'polite','aria-atomic':'true'});
   const disclosure=h('button',{type:'button',class:'arsenal-disclosure','aria-expanded':'false'},'Import / export');
@@ -112,7 +112,7 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
     });
     const pick=state.selection(slot),a=ARCHETYPES[pick.type];
     slotLabel.textContent=`Platform ${slot+1}`;select.setAttribute('aria-label',`Platform ${slot+1} type`);select.value=pick.type;select.disabled=!state.canEdit(slot);
-    cards.forEach((b,i)=>{const skill=a.skills[i];b.setAttribute('aria-pressed',String(pick.skill===i));b.disabled=!state.canEdit(slot);b.children[0].textContent=skill.name;b.children[1].textContent=skill.description;b.children[2].textContent=pick.type==='vector'?`18s drive recharge · utility ${keyName(bindings().utility)} / D-pad right`:`${skill.cooldown}s recharge · automatic when deployed`;});
+    cards.forEach((b,i)=>{const skill=a.skills[i];b.setAttribute('aria-pressed',String(pick.skill===i));b.disabled=!state.canEdit(slot);b.children[0].textContent=skill.name;b.children[1].textContent=skill.description;b.children[2].textContent=pick.type==='vector'?i===0?`Manual ${keyName(bindings().architectHullDash)||'Unbound'} / LB + D-pad right · 2 charges · 10s each`:`Manual ${keyName(bindings().architectMobileBattery)||'Unbound'} / RB + D-pad right · 14s recharge`:`${skill.cooldown}s recharge · automatic when deployed`;});
     lockNote.hidden=state.canEdit(slot);lockNote.textContent=state.isPending(slot)?'Refit pending. Waiting for battle confirmation.':'Refitting requires a living captain, a docked platform and no transformation. Refits start the selected skill’s cooldown.';
     if(candidate&&!transfer.hidden&&previewing)preview();
   }

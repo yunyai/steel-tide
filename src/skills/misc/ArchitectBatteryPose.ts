@@ -7,6 +7,8 @@ export const BATTERY_HEAD_SCALE=1.05;
 export const BATTERY_HEAD_RADIUS=100;
 export const BATTERY_TRANSPORT_TIME=.9;
 export const BATTERY_READY_TIME=1.5;
+export const BATTERY_FOLD_START=7.5;
+export const BATTERY_FOLD_TIME=.65;
 const clamp=(x:number)=>Math.max(0,Math.min(1,x));
 const smooth=(x:number)=>{const t=clamp(x);return t*t*(3-2*t);};
 const socketX:Record<ArchitectType,number>={furnace:110,cryo:133.5,storm:110,gravity:110,prism:123,sentinel:124.5,abyss:110,restoration:110,bastion:110,resonance:110,swarm:110,vector:110};
@@ -46,8 +48,12 @@ export function planArchitectBatteryFormation(center:{x:number;z:number},count:n
   const radius=1500,limit=MAP_HALF-radius-320,cx=Math.max(-limit,Math.min(limit,center.x)),cz=Math.max(-limit,Math.min(limit,center.z));
   return Array.from({length:Math.max(0,count)},(_,i)=>{
     const angle=i*Math.PI*2/count,x=cx+Math.sin(angle)*radius,z=cz-Math.cos(angle)*radius;
-    let y=55;
-    for(let dx=-300;dx<=300;dx+=20)for(let dz=-300;dz<=300;dz+=20)y=Math.max(y,groundHeight(x+dx,z+dz)+72);
+    let y=0;
+    for(let dx=-300;dx<=300;dx+=20)for(let dz=-300;dz<=300;dz+=20){
+      const ground=groundHeight(x+dx,z+dz);
+      // Submerged shelves are water, not obstacles. Only solid machinery contact lifts a hub.
+      if(ground>=0)y=Math.max(y,ground+72);
+    }
     return {x,y,z,heading:Math.atan2(center.x-x,-(center.z-z))};
   });
 }
@@ -109,7 +115,7 @@ export function buildArchitectBatteryPaths(input:BatteryPathInput):readonly [Arc
 /** One pose drives receiver/barrel transforms and launch sockets. No game or render state is written. */
 export function getArchitectBatteryHeadPose(input:BatteryPoseInput):BatteryHeadPose {
   const full=architectBatteryHeadPosition(input.carrier,input.center,input.layout,input.head),hardware=architectBatteryHardware(input.type,input.layout),scale=hardware.scale;
-  const elapsed=input.elapsed,recovery=1-smooth((elapsed-8.15)/.65),shutter=smooth((elapsed-.9)/.24)*recovery,carriage=smooth((elapsed-.9)/.4)*recovery,lock=smooth((elapsed-1.2)/.3)*recovery;
+  const elapsed=input.elapsed,recovery=1-smooth((elapsed-BATTERY_FOLD_START)/BATTERY_FOLD_TIME),shutter=smooth((elapsed-.9)/.24)*recovery,carriage=smooth((elapsed-.9)/.4)*recovery,lock=smooth((elapsed-1.2)/.3)*recovery;
   const position={x:input.carrier.x+(full.x-input.carrier.x)*carriage,y:full.y-12*(1-carriage),z:input.carrier.z+(full.z-input.carrier.z)*carriage};
   const solved=input.path?{path:input.path,yaw:Math.atan2(input.path.control.z-input.path.muzzle.z,input.path.control.x-input.path.muzzle.x),pitch:Math.atan2(input.path.control.y-input.path.muzzle.y,Math.hypot(input.path.control.x-input.path.muzzle.x,input.path.control.z-input.path.muzzle.z))}:solve(input,input.head);
   const yaw=input.layout==='folded'?input.carrier.heading-Math.PI/2:solved.yaw,pitch=input.layout==='folded'?Math.PI/2:solved.pitch+(1-lock)*.65,extension=.3+.7*lock;

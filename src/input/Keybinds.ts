@@ -16,6 +16,8 @@ export type ActionId =
   | 'slot5'
   | 'repair'
   | 'utility'
+  | 'architectHullDash'
+  | 'architectMobileBattery'
   | 'zoom'
   | 'follow'
   | 'skill1'
@@ -38,8 +40,8 @@ export type ActionId =
   | 'tdiveUp'
   | 'tdiveDown';
 
-/** Which layouts an action is in: both, warships only, or titans only. */
-export type Scope = 'both' | 'ship' | 'titan';
+/** Architect adds mobility to the titan layout, without submarine dive controls. */
+export type Scope = 'both' | 'ship' | 'titan' | 'architect';
 
 export interface ActionInfo {
   id: ActionId;
@@ -61,6 +63,8 @@ export const ACTIONS: ActionInfo[] = [
   { id: 'slot5', label: 'Weapon 5', scope: 'both', pad: 'LB / RB' },
   { id: 'repair', label: 'Repair kit: puts out fires and flooding, mends tracks, heals', scope: 'both', pad: 'D-pad up' },
   { id: 'utility', label: 'Class utility (smoke, search, boost, plates)', scope: 'both', pad: 'D-pad right' },
+  { id: 'architectHullDash', label: 'Vector: Hull Dash', scope: 'architect', pad: 'LB + D-pad right' },
+  { id: 'architectMobileBattery', label: 'Vector: Mobile Battery', scope: 'architect', pad: 'RB + D-pad right' },
   { id: 'zoom', label: 'Gunsight scope or artillery view (also: wheel past the closest view)', scope: 'both', pad: 'LT (hold) or d-pad left' },
   { id: 'follow', label: 'Follow shot: ride your newest shell in (ships)', scope: 'both', pad: 'RS click' },
   { id: 'skill1', label: 'Skill 1', scope: 'ship', pad: 'X' },
@@ -107,6 +111,8 @@ export const DEFAULT_BINDINGS: Bindings = (() => {
     slot5: M.slots[4],
     repair: M.consumables[0],
     utility: M.consumables[1],
+    architectHullDash: 'KeyH',
+    architectMobileBattery: 'KeyJ',
     zoom: M.zoom,
     follow: M.follow,
     skill1: M.skills[0],
@@ -138,6 +144,9 @@ function shareLayout(a: ActionId, b: ActionId, stored = false): boolean {
   if (stored && (a === 'lock' && SCOPE[b] === 'titan' || b === 'lock' && SCOPE[a] === 'titan')) return false;
   const sa = SCOPE[a];
   const sb = SCOPE[b];
+  // Architect uses titan skills, but has no submarine dive controls. Default H is contextual.
+  if (sa === 'architect' && (b === 'tdiveUp' || b === 'tdiveDown') || sb === 'architect' && (a === 'tdiveUp' || a === 'tdiveDown')) return false;
+  if (sa === 'architect' || sb === 'architect') return sa !== 'ship' && sb !== 'ship';
   return sa === 'both' || sb === 'both' || sa === sb;
 }
 
@@ -180,6 +189,10 @@ export function parseBindings(raw: unknown): Bindings {
   let b = { ...DEFAULT_BINDINGS };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return b;
   const saved = raw as Record<string, unknown>;
+  // New actions must not claim a legacy custom key or acquire its former key via a swap.
+  for (const action of ['architectHullDash', 'architectMobileBattery'] as const) {
+    if (!Object.hasOwn(saved, action) && Object.entries(saved).some(([id, code]) => id !== action && Object.hasOwn(SCOPE, id) && shareLayout(id as ActionId, action, true) && code === DEFAULT_BINDINGS[action])) b[action] = '';
+  }
   const followKeyOccupied=Object.entries(saved).some(([id,code])=>id!=='follow'&&Object.hasOwn(SCOPE,id)&&code==='KeyU');
   const entries = saved.lock === 'KeyX' && saved.follow === 'Space' && !followKeyOccupied ? { ...saved, lock: 'Space', follow: 'KeyU' } : saved;
   for (const [k, v] of Object.entries(entries)) {

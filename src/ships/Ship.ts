@@ -1,7 +1,7 @@
 import type { SupportAdmission } from '../skills/misc/ArchitectSupport';
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
-import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
+import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, activateArchitectHullDash, activateArchitectMobileBattery, getVectorMobilityStatus, updateVectorMobilityTimers, architectDashDamageReduction, type VectorMobilityState, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
@@ -84,6 +84,8 @@ export interface ControlState {
   /** Skill to trigger this tick: 0 and 1 normal skills, 2 the ultimate, -1 none. */
   skill: number;
   consumable: number;
+  architectHullDash:boolean;
+  architectMobileBattery:boolean;
   diveUp: boolean;
   diveDown: boolean;
   /** Preferred target ship id (-1 none). */
@@ -102,6 +104,8 @@ export function emptyControl(): ControlState {
     slot: null,
     skill: -1,
     consumable: -1,
+    architectHullDash:false,
+    architectMobileBattery:false,
     diveUp: false,
     diveDown: false,
     targetId: -1,
@@ -488,7 +492,9 @@ export class Ship {
   architectReveal:[number,number]=[0,0];
   architectDrone:{owner:Ship;slot:number}|null=null;
   architectLoadout:ArchitectLoadout=copyLoadout(undefined);
-  architectDriveReadyAt=0;
+  /** Captain-owned clocks survive loadout refits, Architect rebuilds and temporary hull forms. */
+  vectorMobility:VectorMobilityState={dashCharges:2,dashRechargeAt:0,mobileReadyAt:0,mobileUntil:0,mobileDuration:10};
+  getVectorMobilityStatus(){return getVectorMobilityStatus(this);}
   readonly id: number;
   /** The hull as it sails now: the base hull, or its titan form during a Titan Shift. */
   spec: ShipSpec;
@@ -910,6 +916,7 @@ export class Ship {
   // ---------------------------------------------------------------- update
 
   update(dt: number): void {
+    updateVectorMobilityTimers(this);
     if (!this.alive) {
       this.deathTime += dt;
       this.speed *= 1 - dt * 0.3;
@@ -1061,6 +1068,8 @@ export class Ship {
 
   private applyControl(): void {
     const c = this.control;
+    if(c.architectHullDash)activateArchitectHullDash(this);
+    if(c.architectMobileBattery)activateArchitectMobileBattery(this);
     if (!this.stepper?.cross && this.architect?.ultimate?.kind !== 'assembly') {
       if (c.throttleSet !== null) this.throttle = clamp(c.throttleSet, 0, THROTTLE_STEPS.length - 1);
       if (c.throttleUp) this.throttle = Math.min(THROTTLE_STEPS.length - 1, this.throttle + 1);
@@ -1085,6 +1094,7 @@ export class Ship {
     c.slot = null;
     c.skill = -1;
     c.consumable = -1;
+    c.architectHullDash=c.architectMobileBattery=false;
   }
 
   /** Ready to trigger: off cooldown (or meter full for an ultimate) and not already running. */
@@ -1662,7 +1672,7 @@ export class Ship {
     if (attacker?.stepper?.copy && !forwarded) amount *= 0.75;
     if (hostile && !pierce && this.mods.dodge > 0 && this.game.rng() < this.mods.dodge) return 0;
     let mul = this.mods.damageTakenMul;
-    if(this.architect)mul*=1-architectDockingStatus(this).damageReduction;
+    if(this.architect)mul*=(1-architectDockingStatus(this).damageReduction)*(1-architectDashDamageReduction(this));
     const platform=this.architectPlatform,owner=platform?.owner.architect;
     if(platform&&owner?.ultimate?.kind==='killbox'&&owner.ultimate.elapsed>=1.5-1e-8&&owner.slots[platform.index].state==='deployed')mul*=.6;
     if (attacker && this.game.exposed[attacker.team] > 0) mul *= 1.25;
@@ -1995,14 +2005,15 @@ export class Ship {
     this.game.events.emit('respawn', { ship: this });
   }
 
-  withdraw(): void {
+  /** Leaves the battle without sinking. Quiet withdrawals (a platform docking) skip the small blast. */
+  withdraw(quiet = false): void {
     if (!this.alive) return;
     clearArchitect(this);
     clearStepper(this);
     this.alive = false;
     this.withdrawn = true;
     this.hp = 0;
-    this.game.events.emit('explosion', { x: this.pos.x, y: 5, z: this.pos.z, size: 0.3 });
+    if (!quiet) this.game.events.emit('explosion', { x: this.pos.x, y: 5, z: this.pos.z, size: 0.3 });
   }
 }
 

@@ -1,5 +1,5 @@
 import type { ArchitectLoadout, ArchitectSelection } from '../data/architectLoadout';
-export const SIM_PROTOCOL=4;
+export const SIM_PROTOCOL=5;
 // LAN lobby and lockstep wire format, shared by the browser and the lobby server.
 // Keep this file free of DOM and game imports: the server reads it too.
 
@@ -42,6 +42,9 @@ export interface Edge {
   sl?: number;
   sk?: number;
   co?: number;
+  /** Independent Vector mobility actions. */
+  hd?:1;
+  mb?:1;
   /** Submarine depth up / down. */
   du?: 1;
   dd?: 1;

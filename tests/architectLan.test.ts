@@ -54,9 +54,9 @@ it('replays Vector drive, following offsets, Recall and ordinary capacitor cycle
  const a=new Game(config),b=new Game(structuredClone(config)),x=new TurnApplier(a),y=new TurnApplier(b);let followed=false,charged=false;
  for(const g of [a,b]){g.map.heightAt=()=>-100;const [s,t]=g.fleet;s.pos.set(0,0,1500);t.pos.set(0,0,-1500);t.hp=t.maxHp=1e8;for(const m of g.fleet){m.throttle=2;m.speed=0;m.secondaries=[];}}
  for(let k=0;k<240;k++){
-  const turn:Turn={k,p:[[0,[0,k===0?1000:0,k===0?1500:-1500,k===0?0:1,-1]]],e:k===0?[[0,0,{sk:0}]]:k===60?[[0,0,{co:1}]]:k===100?[[0,0,{sk:4}]]:undefined};
+  const turn:Turn={k,p:[[0,[0,k===0?1000:0,k===0?1500:-1500,k===0?0:1,-1]]],e:k===0?[[0,0,{sk:0}]]:k===60?[[0,0,{hd:1,mb:1}]]:k===100?[[0,0,{sk:4}]]:undefined};
   for(let tick=0;tick<TURN_TICKS;tick++){x.applyTick(turn,tick);y.applyTick(structuredClone(turn),tick);expect(x.hash()).toBe(y.hash());}
   const ar=a.humans()[0].architect!;followed ||= ar.slots.some(slot=>!!slot.follow);charged ||= ar.slots.some(slot=>slot.capacitorCycles>0||slot.capacitorCharged);
  }
- expect(followed).toBe(true);expect(charged).toBe(true);expect(a.humans()[0].architectDriveReadyAt).toBeCloseTo(20+1/60);
+ expect(followed).toBe(true);expect(charged).toBe(true);expect(a.humans()[0].vectorMobility.dashRechargeAt).toBeCloseTo(12+1/60);
 });

@@ -3970,5 +3970,18 @@ select {
 .architect-docking { display:flex; justify-content:center; flex-wrap:wrap; gap:3px 12px; color:#d7e9f1; background:#07131ee8; padding:4px 7px; font-size:11px; line-height:1.35; margin:1px 0 5px; font-variant-numeric:tabular-nums; }
 .architect-docking b { color:#91e2f0; font-weight:600; }
 .architect-slot[data-capacitor="charged"] { box-shadow:inset 0 2px #91e2f0; }
-.sk.cons[data-utility="drive"] .nm { color:#91e2f0; }
+.vector-mobility { display:flex; justify-content:center; gap:8px; margin:0 0 3px; }
+.vector-mobility[hidden] { display:none; }
+.vector-action { --progress:1; position:relative; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; column-gap:8px; row-gap:2px; width:calc(50% - 4px); min-width:0; padding:6px 10px 8px; background:#07131ef2; color:#d7e9f1; font-size:12px; line-height:1.25; }
+.vector-action::after { content:''; position:absolute; bottom:0; left:0; width:100%; height:2px; background:#91e2f0; transform:scaleX(var(--progress)); transform-origin:left; }
+.vector-action kbd { grid-row:1 / 3; min-width:20px; padding:3px 5px; color:#07131e; background:#eaf6ff; border:1px solid #7896a8; font:600 11px var(--display); text-align:center; }
+.vector-action kbd.unbound { background:#ffd18a; font-size:10px; }
+.vector-name { font-weight:600; }
+.vector-count { color:#91e2f0; font-variant-numeric:tabular-nums; font-weight:700; }
+.vector-detail { grid-column:2 / 4; min-width:0; font-size:11px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.vector-action[data-state="ready"] .vector-detail { color:#91e2f0; }
+.vector-action[data-state="active"] { background:#103341f2; }
+.vector-action[data-state="blocked"] .vector-detail { color:#ffd18a; }
+.vector-action[data-state="blocked"]::after { background:#b3cbd8; }
+@media(max-width:1350px) { .vector-action { padding:4px 7px 6px; column-gap:6px; font-size:11px; } .vector-detail { font-size:10px; } }
 @media(max-width:520px) { .arsenal-omissions label { flex:1 1 130px; } .arsenal-omissions select { flex:1; } }

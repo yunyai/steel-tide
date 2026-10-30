@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { emptyGame, place, run } from './helpers';
-import { ARCHETYPES, ARCHITECT_TYPES, defaultLoadout, loadoutPreset } from '../src/data/architectLoadout';
-import { activateConsumable } from '../src/ships/Consumables';
+import { ARCHETYPES, ARCHITECT_TYPES, loadoutPreset } from '../src/data/architectLoadout';
 import { attachModule, materialize, preparePlatform, refitArchitect, setArchitectLoadout, updateArchitect } from '../src/skills/misc/ArchitectRuntime';
 import { architectPool } from '../src/skills/misc/ArchitectHealth';
 import { elementTarget } from '../src/skills/misc/ArchitectElements';
-import { stateHash } from '../src/net/hash';
 
 function arena(){
  const g=emptyGame('open',713,'freeplay');g.map.heightAt=()=>-100;
@@ -14,9 +12,6 @@ function arena(){
  s.addEffect({id:'test-no-passive',time:100,apply(m){m.regenMul=0;}});
  s.control.aimX=1000;s.control.aimZ=1500;t.hp=t.maxHp=1e7;
  return{g,s,t};
-}
-function vector(s:ReturnType<typeof arena>['s'],skills:(0|1)[]){
- const picks=defaultLoadout();skills.forEach((skill,i)=>picks[i]={type:'vector',skill});setArchitectLoadout(s,picks);
 }
 function fire(s:ReturnType<typeof arena>['s'],index=0,force=false){const t=s.turrets[index];t.reload=0;t.aligned=t.canBear=true;return s.fireTurret(index,'AP',force);}
 
@@ -98,67 +93,12 @@ describe('Vector manual utility',()=>{
   expect(ARCHETYPES.vector.element).toBe('storm');expect(loadoutPreset('shuffle','swarm',()=>.999)[0].type).toBe('vector');
   const picks=loadoutPreset('unique',['furnace','cryo']);expect(new Set(picks.map(p=>p.type)).size).toBe(10);expect(picks.some(p=>p.type==='vector')).toBe(true);
  });
- it.each([[0,650],[1,400]] as const)('replaces Search for specialization %i and retains Search state', (skill,distance)=>{
-  const {g,s}=arena();vector(s,[skill,skill]);const scan=s.consumables[1];scan.charges=8;scan.cooldown=30;scan.active=4;
-  expect(activateConsumable(s,1)).toBe(true);expect(scan.charges).toBe(8);expect(scan.cooldown).toBe(30);expect(scan.active).toBe(4);
-  run(g,.65);expect(s.pos.x).toBeCloseTo(distance);expect(activateConsumable(s,1)).toBe(false);
-  refitArchitect(s,0,{type:'storm',skill:0});refitArchitect(s,1,{type:'storm',skill:0});scan.cooldown=0;
-  expect(activateConsumable(s,1)).toBe(true);expect(scan.charges).toBe(7);vector(s,[0]);expect(activateConsumable(s,1)).toBe(false);
- });
- it('combines variants without stacking duplicates and never autocasts Vector',()=>{
-  const {g,s}=arena();vector(s,[0,1,0,1]);expect(s.activateSkill(0)).toBe(true);run(g,2);
-  const a=s.architect!.slots[0],m=a.entity!;s.control.aimX=1000;s.control.aimZ=1500;const before=m.pos.clone();expect(activateConsumable(s,1)).toBe(true);run(g,.65);
-  expect(s.pos.x).toBeCloseTo(650);expect(a.state).toBe('deployed');expect(m.pos.distanceTo(before)).toBeGreaterThan(0);
-  expect(m.control.fire).toBe(true);expect(s.architect!.elements.jobs.some(j=>j.type==='vector'&&j.attack==='skill')).toBe(false);
- });
- it('rejects Assembly and movement control effects while destroyed Vectors restore Search',()=>{
-  const {s}=arena();vector(s,[0]);s.mods.rooted=true;expect(activateConsumable(s,1)).toBe(false);s.mods.rooted=false;
-  s.meter=1;s.activateSkill(6);expect(activateConsumable(s,1)).toBe(false);
-  s.architect!.ultimate=null;s.architect!.slots[0].hp=0;s.architect!.slots[0].state='destroyed';expect(activateConsumable(s,1)).toBe(true);
- });
- it('keeps drive cooldown through a hull form change and return',()=>{
-  const {g,s}=arena();vector(s,[0]);expect(activateConsumable(s,1)).toBe(true);const readyAt=s.architectDriveReadyAt;
-  s.queueShift(g.shipSpec('stepper'),.5,[6,7,8]);run(g,1);expect(s.architect).not.toBeNull();expect(s.architectDriveReadyAt).toBe(readyAt);
-  expect(activateConsumable(s,1)).toBe(false);expect(s.architect!.drive).toBeNull();
- });
  it('never automatically activates a selected ability for a complete Vector arsenal',()=>{
   const {g,s}=arena();setArchitectLoadout(s,Array.from({length:10},(_,i)=>({type:'vector',skill:i%2 as 0|1})));
   const casts:string[]=[];g.events.on('architectElement',e=>{if(e.attack==='skill'&&e.phase==='cast')casts.push(e.type??'');});
   const p=s.pos.clone();s.meter=1;expect(s.activateSkill(8)).toBe(true);run(g,2);
-  expect(casts).toEqual([]);expect(s.architectDriveReadyAt).toBe(0);expect(s.pos.distanceTo(p)).toBeCloseTo(0);
+  expect(casts).toEqual([]);expect(s.vectorMobility.dashRechargeAt).toBe(0);expect(s.pos.distanceTo(p)).toBeCloseTo(0);
   expect(s.architect!.slots.some(a=>a.entity!.stats.shotsFired>0)).toBe(true);
- });
- it('sweeps the whole hull through narrow terrain and stops before an island',()=>{
-  const {g,s}=arena();vector(s,[0]);g.map.heightAt=(x)=>x>=300&&x<=315?50:-100;
-  expect(activateConsumable(s,1)).toBe(true);run(g,.65);expect(s.pos.x).toBeGreaterThan(0);expect(s.pos.x).toBeLessThan(250);
- });
- it('stops at a closer reticle rather than overshooting it',()=>{
-  const {g,s}=arena();vector(s,[0]);s.control.aimX=150;expect(activateConsumable(s,1)).toBe(true);run(g,.65);expect(s.pos.x).toBeCloseTo(150);
- });
- it('retains a following formation target when platform speed limits its progress',()=>{
-  const {g,s}=arena();vector(s,[1]);const a=s.architect!.slots[0],m=materialize(s,a);a.state='deployed';m.pos.set(1000,0,0);
-  expect(activateConsumable(s,1)).toBe(true);s.architect!.drive=null;s.pos.x=2000;
-  updateArchitect(s,.1);expect(m.pos.x).toBeCloseTo(1120);updateArchitect(s,.1);expect(m.pos.x).toBeCloseTo(1240);
-  expect(g.ships.includes(m)).toBe(true);
- });
- it('keeps anchored Battery and orbiting Citadel independent from Mobile Battery follow',()=>{
-  const {g,s}=arena();vector(s,[1]);s.meter=1;s.activateSkill(7);run(g,1.5);const a=s.architect!.slots[0],p=a.entity!.pos.clone();
-  expect(activateConsumable(s,1)).toBe(true);run(g,.65);expect(a.entity!.pos.distanceTo(p)).toBeCloseTo(0);
- });
- it('drives the full distance below a Battery carrier when vertical hull spans do not overlap',()=>{
-  const {g,s}=arena();vector(s,[0]);s.control.aimX=0;s.control.aimZ=500;s.meter=1;expect(s.activateSkill(7)).toBe(true);run(g,1.5);
-  const rear=s.architect!.slots.find(a=>Math.abs(a.entity!.pos.x)<1&&Math.abs(a.entity!.pos.z-2000)<1)!.entity!;
-  expect(rear.pos.y-rear.spec.draft).toBeGreaterThan(s.pos.y+s.spec.freeboard+30);
-  s.control.aimZ=2500;expect(activateConsumable(s,1)).toBe(true);run(g,.65);expect(s.pos.z).toBeCloseTo(2150);
- });
- it('keeps same-height enemy ships as physical obstacles during a drive',()=>{
-  const {g,s}=arena();vector(s,[0]);const block=place(g,'iowa',1,0,2000);block.throttle=2;block.speed=0;block.secondaries=[];
-  s.control.aimX=0;s.control.aimZ=2500;expect(activateConsumable(s,1)).toBe(true);run(g,.65);
-  expect(s.pos.z).toBeGreaterThan(1500);expect(s.pos.z).toBeLessThan(1800);expect(block.alive).toBe(true);
- });
- it('hashes every new charge and drive state that can change future simulation',()=>{
-  const {g,s}=arena();const a=s.architect!.slots[0],h=stateHash(g);a.capacitorCycles=1;expect(stateHash(g)).not.toBe(h);
-  const h2=stateHash(g);s.architect!.mobileUntil=4;expect(stateHash(g)).not.toBe(h2);
  });
  it('does not let its own Brood drones push the source platform',()=>{
   const {g,s}=arena(),a=s.architect!.slots[0],m=materialize(s,a);a.state='deployed';m.pos.set(1000,0,0);

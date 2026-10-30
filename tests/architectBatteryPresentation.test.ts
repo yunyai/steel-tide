@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { buildArchitectBatteryPaths, getArchitectBatteryHeadPose, planArchitectBatteryLayout, planArchitectBatteryFormation, sampleArchitectBatteryArc } from '../src/skills/misc/ArchitectBatteryPose';
 import { ARCHITECT_TYPES } from '../src/data/architectLoadout';
 
@@ -13,7 +13,30 @@ it('keeps full paired artillery over islands instead of folding or omitting head
   const a=planArchitectBatteryFormation({x:4400,z:4400},10,ground);
   expect(a).toEqual(planArchitectBatteryFormation({x:4400,z:4400},10,ground));
   expect(a).toHaveLength(10);expect(new Set(a.map(p=>`${p.x}:${p.z}`)).size).toBe(10);
-  for(const p of a){expect(Math.abs(p.x)).toBeLessThan(4200);expect(Math.abs(p.z)).toBeLessThan(4200);expect(p.y).toBeGreaterThanOrEqual(55);for(let x=-260;x<=260;x+=20)for(let z=-260;z<=260;z+=20)expect(p.y).toBeGreaterThan(ground(p.x+x,p.z+z)+35);}
+  for(const p of a){expect(Math.abs(p.x)).toBeLessThan(4200);expect(Math.abs(p.z)).toBeLessThan(4200);expect(p.y).toBeGreaterThanOrEqual(0);for(let x=-260;x<=260;x+=20)for(let z=-260;z<=260;z+=20)expect(p.y).toBeGreaterThan(ground(p.x+x,p.z+z)+35);}
+});
+
+it('keeps clear and shallow water formations at the ordinary waterline',()=>{
+ for(const depth of [-100,-20,-.01]){
+  const formation=planArchitectBatteryFormation({x:0,z:0},10,()=>depth);
+  expect(formation).toHaveLength(10);expect(formation.map(p=>p.y)).toEqual(Array(10).fill(0));
+ }
+});
+
+it('raises only carriers whose full machinery footprint encounters solid terrain',()=>{
+ // The first carrier is (0,-1500). An obstacle under its outer carriage edge must count.
+ const ground=(x:number,z:number)=>Math.abs(x-280)<11&&Math.abs(z+1500)<11?120:-100;
+ const formation=planArchitectBatteryFormation({x:0,z:0},10,ground);
+ expect(formation[0].y).toBeGreaterThanOrEqual(192);
+ expect(formation.slice(1).every(p=>p.y===0)).toBe(true);
+});
+
+it('folds both heads fully before the natural recovery begins descending',()=>{
+ const ready=getArchitectBatteryHeadPose({...input,head:0,elapsed:7.5});
+ const middle=getArchitectBatteryHeadPose({...input,head:0,elapsed:7.825});
+ const folded=getArchitectBatteryHeadPose({...input,head:0,elapsed:8.15});
+ expect(ready.carriage).toBe(1);expect(middle.carriage).toBeGreaterThan(0);expect(middle.carriage).toBeLessThan(1);
+ expect(folded.carriage).toBeCloseTo(0);expect(folded.lock).toBeCloseTo(0);expect(folded.shutter).toBeCloseTo(0);
 });
 
 it('transports only ordinary hubs before building machinery between .9 and 1.5 seconds',()=>{
@@ -67,6 +90,7 @@ import { ShipView } from '../src/render/ShipModel';
 import { emptyGame, place, run } from './helpers';
 import { stateHash } from '../src/net/hash';
 import type { ArchitectBatteryLaunch } from '../src/data/architectBattery';
+import { setQuality } from '../src/render/Quality';
 
 function fixture(){
  const g=emptyGame('open',7,'freeplay'),owner=place(g,'architect',0,0,3000),scene=new Scene(),fx=new ArchitectBatteryFx(scene,g);
@@ -236,6 +260,46 @@ it('gives five elemental impacts distinct volumetric silhouettes larger than the
   expect(largest).toBeGreaterThan(220);fx.dispose();
  }
  expect(new Set(signatures).size).toBe(5);
+});
+
+it.each(['ultralow','low','medium','high'] as const)('retains saturated impact volumes and thick flight cores on %s',preset=>{
+ setQuality(preset);
+ const {g,fx,scene}=fixture();run(g,1.55);const launch=g.battery.pending[0];
+ g.events.emit('architectBatteryImpact',{launch,resolvedAt:g.time-.3,recipients:[]});fx.prepare(0);
+ const volume=scene.getObjectByName('architect-battery-fx-corona') as InstancedMesh;
+ expect(volume?.count??0).toBeGreaterThan(0);expect(volume.material).toHaveProperty('transparent',true);
+ const matrix=new Matrix4(),scale=new Vector3();fx.pools.shells.mesh.getMatrixAt(0,matrix);scale.setFromMatrixScale(matrix);
+ expect(Math.min(scale.x,scale.y,scale.z)).toBeGreaterThan(14.99);
+ expect(fx.hazard.count).toBeGreaterThan(0);fx.dispose();setQuality('high');
+});
+
+it('keeps reduced-motion elemental volume without a transient white impact flash',()=>{
+ vi.stubGlobal('matchMedia',()=>({matches:true}));
+ try{
+  const {g,fx,scene}=fixture();run(g,1.95);
+  fx.prepare(0);
+  expect((scene.getObjectByName('architect-battery-fx-corona') as InstancedMesh)?.count??0).toBeGreaterThan(0);
+  // The .42s first flight is already resolved; no charge or muzzle pulse should remain.
+  const matrix=new Matrix4(),point=new Vector3();
+  for(let n=0;n<fx.pools.hot.count;n++){
+   fx.pools.hot.mesh.getMatrixAt(n,matrix);point.setFromMatrixPosition(matrix);
+   expect(point.y).toBeGreaterThan(100);
+  }
+  fx.dispose();
+ }finally{vi.unstubAllGlobals();}
+});
+
+it.each([false,true])('bounds gravity distortion to public impact cells and suppresses it for reduced motion=%s',reduced=>{
+ vi.stubGlobal('matchMedia',()=>({matches:reduced}));
+ try{
+  const {g,fx}=fixture();run(g,1.55);const launch=g.battery.pending[0];
+  for(let slot=0;slot<10;slot++)g.events.emit('architectBatteryImpact',{launch:{...launch,type:'gravity',slot,stage:3},resolvedAt:g.time-.3,recipients:[]});
+  fx.prepare(0);
+  const fields=fx.distortions;
+  expect(fields.length).toBe(reduced?0:12);
+  for(const field of fields){expect(Math.hypot(field.x,field.z)).toBeLessThan(1500);expect(field.radius).toBeLessThan(500);expect(field.strength).toBeLessThanOrEqual(.5);}
+  g.finish(-1,'test');fx.prepare(0);expect(fx.distortions).toHaveLength(0);fx.dispose();
+ }finally{vi.unstubAllGlobals();}
 });
 
 it('creates elemental destruction only on true platform loss and clears it on match end',()=>{

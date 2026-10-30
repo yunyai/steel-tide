@@ -96,7 +96,7 @@ export class PlayerController {
   private readonly reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   private padTimers = { thr: 0, rud: 0 };
   /** A shoulder button was used as a skill modifier since it went down (so its release does not switch weapons). */
-  private padChord = false;
+  private padChord = 0;
   /** The weapon a shoulder press last asked for, and how long to count from it rather than the
    * ship's own (in LAN the switch takes a turn or two to arrive, so quick presses would repeat). */
   private slotAsked = 0;
@@ -271,6 +271,11 @@ export class PlayerController {
       L.consumables.forEach((k, i) => {
         if (input.pressed(k)) c.consumable = i;
       });
+      if (s.architect) {
+        const keys = bindings();
+        if (input.pressed(keys.architectHullDash)) c.architectHullDash = true;
+        if (input.pressed(keys.architectMobileBattery)) c.architectMobileBattery = true;
+      }
       if (input.pressed(L.diveUp)) c.diveUp = true;
       if (input.pressed(L.diveDown)) c.diveDown = true;
       if (input.pressed(L.zoom)) this.zoomToggle = !this.zoomToggle;
@@ -306,6 +311,16 @@ export class PlayerController {
       // X, B: skills; Y: the ultimate. Titans hold LB or RB for their second and third set.
       // D-pad up: repair kit; right: utility.
       const chords = s.ultIndices.length > 1;
+      // Remember each shoulder separately, including simultaneous chord presses and releases.
+      if (input.padPressed(p, PAD.LB)) this.padChord &= ~1;
+      if (input.padPressed(p, PAD.RB)) this.padChord &= ~2;
+      const shoulders = (input.padDown(p, PAD.LB) ? 1 : 0) | (input.padDown(p, PAD.RB) ? 2 : 0);
+      const vectorChord = !!s.architect && shoulders !== 0 && input.padPressed(p, PAD.RIGHT);
+      if (vectorChord) {
+        if (shoulders & 1) c.architectHullDash = true;
+        else c.architectMobileBattery = true;
+        this.padChord |= shoulders;
+      }
       const bank = chords ? (input.padDown(p, PAD.LB) ? 1 : input.padDown(p, PAD.RB) ? 2 : 0) : 0;
       const normal = s.skills.filter((st) => !st.spec.ult).map((st) => st.index);
       const face: [number, number | undefined][] = [
@@ -316,12 +331,11 @@ export class PlayerController {
       for (const [b, idx] of face) {
         if (!input.padPressed(p, b) || idx === undefined) continue;
         c.skill = idx;
-        if (bank) this.padChord = true;
+        if (bank) this.padChord |= shoulders;
       }
       // Shoulders cycle weapons; a titan's switch on release, unless they were held as a modifier.
-      if (input.padPressed(p, PAD.LB) || input.padPressed(p, PAD.RB)) this.padChord = false;
-      const next = chords ? input.padReleased(p, PAD.RB) && !this.padChord : input.padPressed(p, PAD.RB);
-      const prev = chords ? input.padReleased(p, PAD.LB) && !this.padChord : input.padPressed(p, PAD.LB);
+      const next = chords ? input.padReleased(p, PAD.RB) && !(this.padChord & 2) : input.padPressed(p, PAD.RB);
+      const prev = chords ? input.padReleased(p, PAD.LB) && !(this.padChord & 1) : input.padPressed(p, PAD.LB);
       const cur = this.slotAskedTime > 0 ? this.slotAsked : s.slot;
       if (next || prev) {
         c.slot = this.slotAsked = (cur + (next ? 1 : -1) + s.slots.length) % s.slots.length;
@@ -329,7 +343,7 @@ export class PlayerController {
       }
       if (input.padPressed(p, PAD.A)) this.toggleLock(true);
       if (input.padPressed(p, PAD.UP)) c.consumable = 0;
-      if (input.padPressed(p, PAD.RIGHT)) c.consumable = 1;
+      if (input.padPressed(p, PAD.RIGHT) && !vectorChord) c.consumable = 1;
       if (input.padPressed(p, PAD.DOWN)) {
         this.assistOn = !this.assistOn;
         this.notice = this.assistOn ? 'Fire control: assisted' : 'Fire control: manual';

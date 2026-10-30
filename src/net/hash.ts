@@ -36,21 +36,21 @@ export function stateHash(g: Game): number {
     h = mix(h, s.shield);
     h = mix(h, s.alive ? 1 : 0);
     h = mix(h, s.form ? 1 : 0);
-    h=mix(h,s.architectDriveReadyAt);
+    for(const n of [s.vectorMobility.dashCharges,s.vectorMobility.dashRechargeAt,s.vectorMobility.mobileReadyAt,s.vectorMobility.mobileUntil,s.vectorMobility.mobileDuration])h=mix(h,n);
     for(const n of s.architectReveal)h=mix(h,n);
     for(const a of s.architectSupport)for(const n of [a.owner,a.slot,a.until])h=mix(h,n);
     for(const a of s.architectLoadout){h=mix(h,ARCHITECT_TYPES.indexOf(a.type));h=mix(h,a.skill);}
     if(s.architectDrone){h=mix(h,s.architectDrone.owner.id);h=mix(h,s.architectDrone.slot);h=mix(h,s.expiresAt);}
     if (s.architect) {
       const a=s.architect;
-      for(const n of [a.mobileUntil,a.capacitorReadyAt,a.drive?1:0])h=mix(h,n);
-      if(a.drive)for(const n of [a.drive.dx,a.drive.dz,a.drive.elapsed,a.drive.distance])h=mix(h,n);
+      for(const n of [a.capacitorReadyAt,a.drive?1:0])h=mix(h,n);
+      if(a.drive)for(const n of [a.drive.dx,a.drive.dz,a.drive.elapsed,a.drive.distance,a.drive.moving?1:0])h=mix(h,n);
       for (const n of [a.huntTarget,a.huntUntil,a.fullHp,a.moduleHp,a.healthReady?1:0,a.linkUntil,a.linkTick,a.clearing?1:0]) h=mix(h,n);
       for (const slot of a.slots) {
         h=mix(h,slot.capacitorCycles);h=mix(h,slot.capacitorCharged?1:0);
-        h=mix(h,slot.follow?1:0);if(slot.follow){h=mix(h,slot.follow.x);h=mix(h,slot.follow.z);}
+        h=mix(h,slot.follow?1:0);if(slot.follow)for(const n of [slot.follow.angle,slot.follow.radius,slot.follow.height,slot.follow.tilt,slot.follow.phase,slot.follow.rate])h=mix(h,n);
         for (const n of [ELEMENTS.indexOf(slot.element),slot.skillTimer,ARCHITECT_TYPES.indexOf(slot.type),slot.skill,slot.boostUntil,slot.reactionUntil,slot.castGap,slot.opening?1:0,slot.aboard?1:0,slot.index,['docked','launching','deployed','moving','returning','destroyed','assembling','citadel'].indexOf(slot.state),slot.hp,slot.reload,slot.reloadScale,slot.disabled,slot.rebuild,slot.dockedFor,slot.entity?.id??0])h=mix(h,n);
-        if(slot.path)for(const n of [slot.path.x,slot.path.y,slot.path.z,slot.path.tx,slot.path.ty,slot.path.tz,slot.path.elapsed,slot.path.duration,slot.path.damage?1:0,...slot.path.hit])h=mix(h,n);
+        if(slot.path)for(const n of [slot.path.x,slot.path.y,slot.path.z,slot.path.tx,slot.path.ty,slot.path.tz,slot.path.elapsed,slot.path.duration,slot.path.damage?1:0,slot.path.settling?1:0,...slot.path.hit])h=mix(h,n);
       }
       h=mix(h,a.elements.serial);
       for(const d of a.elements.drones)for(const n of [d.id,d.slot,d.next])h=mix(h,n);
