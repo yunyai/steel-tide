@@ -214,7 +214,8 @@ export class TungstenModel {
       // A shattered cube re-forms in the cradle over its last two seconds.
       const reforming = !!c && c.state === 'broken' && slot === 0 && c.reform < 2;
       // Overdrive ring cubes assemble when they arrive and dissolve when they leave; the cradle cube just docks.
-      const present = !!ship && !!c && docked;
+      // With no ship (the menu preview), the cradle cube sits docked.
+      const present = ship ? docked : slot === 0;
       if (present !== v.present) {
         v.present = present;
         v.since = now;
@@ -222,14 +223,14 @@ export class TungstenModel {
       if (c) v.mode = c.mode;
       const fade = slot === 0 ? (present ? 1 : 0) : present ? Math.min(1, (now - v.since) / 0.5) : 1 - Math.min(1, (now - v.since) / 0.6);
       const solid = reforming ? Math.max(0.02, 1 - c!.reform / 2) : this.reduce ? (present ? 1 : 0) : fade;
-      v.mesh.visible = !!ship && (reforming || solid > 0.001);
+      v.mesh.visible = reforming || solid > 0.001;
       if (!v.mesh.visible) continue;
       const lift = c && t ? slamLift(t, c.id) : 0;
-      if (slot === 0) v.mesh.position.set(0, ship!.spec.freeboard + 6 + CUBE.edge / 2 + lift, 0);
+      if (slot === 0) v.mesh.position.set(0, MAGNET.deck + 6 + CUBE.edge / 2 + lift, 0);
       else {
         const a = ((slot - 1) / 5) * Math.PI * 2;
         // Matches dockPoint: local x forward, z starboard.
-        v.mesh.position.set(Math.cos(a) * CUBE.ringRadius, ship!.spec.freeboard + 6 + CUBE.edge / 2 + CUBE.ringLift + lift + (this.reduce ? 0 : Math.sin(anim * 1.4 + slot) * 2), Math.sin(a) * CUBE.ringRadius);
+        v.mesh.position.set(Math.cos(a) * CUBE.ringRadius, MAGNET.deck + 6 + CUBE.edge / 2 + CUBE.ringLift + lift + (this.reduce ? 0 : Math.sin(anim * 1.4 + slot) * 2), Math.sin(a) * CUBE.ringRadius);
       }
       v.mesh.rotation.set(0, slot && !this.reduce ? anim * 0.3 + slot : 0, 0);
       if (slot) v.sweep.apply(v.u, v.mode, now, this.reduce);

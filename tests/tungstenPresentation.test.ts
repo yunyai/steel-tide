@@ -13,11 +13,14 @@ import { emptyGame, place, run } from './helpers';
 
 // Skill slots: Q Lunge, E Switch, Z Signature, X Shot, C Dock, V Shield, R Collapse, T Meteor, B Overdrive.
 const SWITCH = 1;
+const SIGNATURE = 2;
 const SHOT = 3;
 const DOCK = 4;
 const COLLAPSE = 6;
 const METEOR = 7;
 const OVERDRIVE = 8;
+const CRUSH = 1;
+const MEND = 5;
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -76,6 +79,17 @@ describe('Tungsten model', () => {
     expect(yamato.tungstenModel).toBeFalsy();
     tungsten.dispose();
     yamato.dispose();
+  });
+
+  it('shows the cube docked in its first mode in the ship preview', () => {
+    const view = new ShipView(SHIP_BY_ID.tungsten);
+    view.pose(1);
+    const [cradle, ...ring] = view.tungstenModel!.cubes;
+    expect(cradle.mesh.visible).toBe(true);
+    expect(cradle.u.uAssemble.value).toBe(1);
+    expect(cradle.u.uGlow.value.equals(modeColor(0))).toBe(true);
+    expect(ring.every((c) => !c.mesh.visible)).toBe(true);
+    view.dispose();
   });
 
   it('sweeps the docked cube to the new mode colour after Switch, without touching game state', () => {
@@ -216,6 +230,43 @@ describe('Tungsten cube effects', () => {
     expect(fx.trails.count).toBeGreaterThan(0);
     fx.dispose();
   });
+
+  it("keeps a concealed enemy's docked-cube moves and Restore pulse off its hidden hull", () => {
+    const hidden = (mode: number) => {
+      const g = emptyGame('open', 7, 'freeplay');
+      const s = place(g, 'tungsten', 1, 0, 1500);
+      place(g, 'yamato', 0, 0, -4000);
+      const fx = new TungstenCubeFx(new Scene(), g);
+      s.tungsten!.mode = s.tungsten!.cubes[0].mode = mode;
+      return { g, s, fx };
+    };
+    const look = (s: Ship, fx: TungstenCubeFx, team: 0 | 1) => {
+      s.mods.untargetable = true;
+      fx.prepare(team, 720);
+      return fx.count;
+    };
+    // Restore and Slam fired from the magnet: nothing for the enemy to see.
+    for (const mode of [MEND, CRUSH]) {
+      const { g, s, fx } = hidden(mode);
+      cast(s, SIGNATURE);
+      play(g, fx, 0.3);
+      expect(look(s, fx, 1)).toBeGreaterThan(0);
+      expect(look(s, fx, 0)).toBe(0);
+      fx.dispose();
+    }
+    // Restore from a cube out at sea: its tide shows, but not the pulse on the hull.
+    const { g, s, fx } = hidden(MEND);
+    s.control.aimX = 0;
+    s.control.aimZ = 4000;
+    cast(s, SHOT);
+    play(g, fx, 3);
+    expect(s.tungsten!.cubes[0].state).toBe('hover');
+    cast(s, SIGNATURE);
+    play(g, fx, 0.3);
+    expect(look(s, fx, 0)).toBeGreaterThan(0);
+    expect(look(s, fx, 0)).toBeLessThan(look(s, fx, 1));
+    fx.dispose();
+  });
 });
 
 describe('Tungsten ultimate effects', () => {
@@ -283,6 +334,30 @@ describe('Tungsten ultimate effects', () => {
     expect(fx.singularities.count).toBe(1);
     expect(lenses(fx)).toHaveLength(0);
     fx.dispose();
+  });
+
+  it('drops the Collapse and Meteor shock warps under reduced motion', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const { g, s, fx } = collapsing();
+    play(g, fx, CUBE.collapse.travel + CUBE.collapse.pull + 0.2, [s]);
+    fx.prepare(0, 720);
+    expect(fx.particles.count).toBeGreaterThan(0);
+    expect(fx.distortions).toHaveLength(0);
+    fx.dispose();
+
+    const g2 = emptyGame('open', 7, 'freeplay');
+    const s2 = place(g2, 'tungsten', 0, 0, 0);
+    place(g2, 'yamato', 1, 0, -2000);
+    const fx2 = new TungstenCubeFx(new Scene(), g2);
+    s2.control.aimX = 0;
+    s2.control.aimZ = -2000;
+    cast(s2, METEOR);
+    const M = CUBE.meteor;
+    play(g2, fx2, M.rise + M.grow + M.fall + 0.2, [s2]);
+    fx2.prepare(0, 720);
+    expect(fx2.particles.count).toBeGreaterThan(0);
+    expect(fx2.distortions).toHaveLength(0);
+    fx2.dispose();
   });
 
   it('heats the meteor through its fall and draws its strike within bounds', () => {

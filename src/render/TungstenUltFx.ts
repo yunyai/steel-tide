@@ -326,7 +326,7 @@ export class TungstenUltFx {
     p.ring(e.x, e.z, e.radius * 1.1 * ease(age / 1.1), hot(color, 1.8), 0.7 * (1 - f));
     p.loop(e.x, y, e.z, e.radius * 0.8 * ease(age / 0.45), hot(color, 2.2), 0.8 * (1 - clamp01(age / 0.6)), 10);
     p.foamRing(e.x, e.z, front * 0.95, 0.65 * (1 - f), id);
-    if (age < 0.7) this.distortions.push({ x: e.x, y: 40, z: e.z, radius: front / 0.48, strength: 0.9 * (1 - age / 0.7), priority: 4 });
+    if (!p.reduce && age < 0.7) this.distortions.push({ x: e.x, y: 40, z: e.z, radius: front / 0.48, strength: 0.9 * (1 - age / 0.7), priority: 4 });
     // A shell of sparks thrown out in every direction.
     for (let i = 0; i < p.n(120); i++) {
       const a = R(i, 0) * TAU,
@@ -371,7 +371,7 @@ export class TungstenUltFx {
     const front = r * 1.35 * ease(age / 0.7);
     p.ring(e.x, e.z, front, hot(WHITE, 2.2), 0.95 * (1 - clamp01(age / 1)));
     p.ring(e.x, e.z, r * ease(age / 1), hot(color, 1.9), 0.8 * (1 - clamp01(age / 1.6)));
-    if (age < 0.8) this.distortions.push({ x: e.x, y: 30, z: e.z, radius: front / 0.48, strength: 0.9 * (1 - age / 0.8), priority: 4 });
+    if (!p.reduce && age < 0.8) this.distortions.push({ x: e.x, y: 30, z: e.z, radius: front / 0.48, strength: 0.9 * (1 - age / 0.8), priority: 4 });
     p.foamRing(e.x, e.z, r * 1.1 * ease(age / 1.6), 0.7 * (1 - f), id);
     // The cavity punched in the sea, bared as the cube shrinks off it, then closing again.
     p.ring(e.x, e.z, half * 1.1 * (0.7 + 0.3 * ease(age / 0.3)), CAVITY, 0.75 * (1 - clamp01(age / 1.6)), BK.Foam, id);

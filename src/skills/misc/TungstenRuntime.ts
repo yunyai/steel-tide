@@ -208,6 +208,8 @@ const skillSpec = (s: Ship, i: number): SkillSpec => s.skills[Math.max(0, i)].sp
 const hostile = (s: Ship, o: Ship) => o.alive && o.team !== s.team && !o.deep && !o.mods.banished;
 const foesNear = (s: Ship, x: number, z: number, r: number) => s.game.ships.filter((o) => hostile(s, o) && gap(o.pos.x, o.pos.z, x, z) <= r);
 const busy = (c: Cube) => c.state === 'meteor' || c.state === 'collapse';
+/** A cube on its way keeps the mode it was sent with: its hits, speed and fall were set by it. */
+export const inFlight = (c: Cube) => c.state === 'flying' || busy(c);
 const parked = (c: Cube) => c.state === 'hover' || c.state === 'guard' || c.state === 'orbit';
 
 /** Centre height over water, or clear of the land beneath. */
@@ -488,8 +490,9 @@ export function lungeToCube(s: Ship, skill: number): boolean {
 export function switchMode(s: Ship): boolean {
   const t = s.tungsten!;
   if (overdriveOn(s)) return s.failSkill('Switch: every mode is live during Overdrive');
-  t.mode = (t.mode + 1) % TUNGSTEN_MODES.length;
   const c = t.cubes[0];
+  if (inFlight(c)) return s.failSkill('Switch: the cube is in flight');
+  t.mode = (t.mode + 1) % TUNGSTEN_MODES.length;
   c.mode = t.mode;
   emit(s, 'switch', c, c.x, c.y, c.z);
   return true;
@@ -666,6 +669,7 @@ export const collapse = (s: Ship, skill: number) => beginUlt(s, 'collapse', skil
 export const meteor = (s: Ship, skill: number) => beginUlt(s, 'meteor', skill, CUBE.meteor.range);
 
 export function overdrive(s: Ship): boolean {
+  if (overdriveOn(s)) return s.failSkill('Overdrive: already running');
   const t = s.tungsten!;
   t.cubes = t.cubes.filter((c) => !c.extra);
   t.overdriveUntil = s.game.time + CUBE.overdrive.time;
@@ -699,6 +703,9 @@ export function updateTungsten(s: Ship, dt: number): void {
     t.overdriveUntil = 0;
     emit(s, 'overdriveEnd', t.cubes[0], s.pos.x, 0, s.pos.z);
   }
+  // Overdrive's skill has no duration (the AI holds every skill while an ultimate runs), so its meter is
+  // held empty here instead, as a running ultimate's would be.
+  if (t.overdriveUntil) for (const st of s.skills) if (st.spec.id === 'tungstenOverdrive') st.meter = 0;
   if (t.lunge) stepLunge(s, t, dt);
   if (t.ult?.kind === 'collapse') stepCollapse(s, t, dt);
   else if (t.ult?.kind === 'meteor') stepMeteor(s, t, dt);

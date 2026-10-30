@@ -8,6 +8,7 @@ import { TurnApplier } from '../src/net/navalTurns';
 import { stateHash } from '../src/net/hash';
 import { CUBE, TUNGSTEN_MODES } from '../src/skills/misc/TungstenModes';
 import { cubeIntercept, damageCube, type Cube } from '../src/skills/misc/TungstenRuntime';
+import { aiWantsSkill } from '../src/skills/registry';
 import type { Ship } from '../src/ships/Ship';
 
 const Q = 0, E = 1, Z = 2, X = 3, C = 4, V = 5, R = 6, T = 7, B = 8;
@@ -226,6 +227,30 @@ describe('Switch', () => {
       run(g, 0.6);
     }
     expect(seen).toEqual([1, 2, 3, 4, 5, 0]);
+  });
+  it('keeps a cube in flight in the mode it was sent with', () => {
+    const { g, me, foe, t } = duel();
+    aim(me, 0, -3000);
+    expect(me.activateSkill(X)).toBe(true);
+    run(g, 0.1);
+    expect(me.activateSkill(E)).toBe(false);
+    expect(me.skillFailure).toBe('Switch: the cube is in flight');
+    expect(t.cubes[0].mode).toBe(modeIndex('kinetic'));
+    // Badly hurt, the AI wants Mend, but not while the cube flies.
+    me.hp = me.maxHp * 0.3;
+    expect(aiWantsSkill(me, g, E, foe)).toBe(false);
+    run(g, 3);
+    expect(t.cubes[0].state).toBe('hover');
+    expect(aiWantsSkill(me, g, E, foe)).toBe(true);
+    expect(me.activateSkill(E)).toBe(true);
+  });
+  it('holds the mode while the cube rises and falls as a meteor', () => {
+    const { g, me } = duel();
+    me.meter = 1;
+    expect(me.activateSkill(T)).toBe(true);
+    run(g, 0.5);
+    expect(me.activateSkill(E)).toBe(false);
+    expect(me.skillFailure).toBe('Switch: the cube is in flight');
   });
 });
 
@@ -507,6 +532,21 @@ describe('Overdrive', () => {
     run(g, 22);
     expect(t.cubes).toHaveLength(1);
   });
+  it('cannot be renewed while it runs, and charges again only once it ends', () => {
+    const { g, me } = duel();
+    me.meter = 1;
+    me.activateSkill(B);
+    me.charge(1e9);
+    run(g, 0.05);
+    expect(me.skills[B].meter).toBe(0);
+    expect(me.skills[R].meter).toBe(1);
+    me.skills[B].meter = 1;
+    expect(me.activateSkill(B)).toBe(false);
+    expect(me.skillFailure).toBe('Overdrive: already running');
+    run(g, CUBE.overdrive.time);
+    me.charge(1e9);
+    expect(me.skills[B].meter).toBe(1);
+  });
   it('orbits the cubes as a shield that batters hulls', () => {
     const { g, me, foe, t } = duel();
     foe.pos.set(420, 0, 0);
@@ -662,8 +702,10 @@ describe('Tungsten AI', () => {
     g.events.on('skill', (e) => {
       if (e.ship === me) used.add(e.index);
     });
-    run(g, 120);
+    // It holds the line for a minute; in this fight it sinks at about 95 s, as Stepper does.
+    run(g, 60);
     expect(me.alive).toBe(true);
+    run(g, 60);
     for (const c of me.tungsten!.cubes) expect([c.x, c.y, c.z, c.hp, c.scale].every(Number.isFinite)).toBe(true);
     expect(used.size).toBeGreaterThanOrEqual(7);
   });

@@ -24,6 +24,18 @@ export function projectDistortions(fields:readonly SpatialDistortion[],camera:Pe
   }
   return out;
 }
+/**
+ * How far a lens pulls a pixel `r` lens radii from its centre, as a share of the pixel's offset from it. Outside
+ * the inner 30%, each pixel shows the scene from nearer the rim (but never from inside it), so the background
+ * just past the hole is magnified and the horizon behind bows round it. Written in the GLSL subset JavaScript
+ * also parses, so tests check the profile exactly as the shader runs it. Nothing past the rim moves.
+ */
+export const LENS_SHIFT_GLSL=/* glsl */`float lensShift(float r){
+    if(r<=.3||r>=1.0)return 0.0;
+    float u=clamp((r-.3)/.7,0.0,1.0);
+    float source=.3+.7*u*mix(.5,1.0,smoothstep(0.0,1.0,u));
+    return 1.0-source/r;
+  }`;
 export const SpatialDistortionShader={
   uniforms:{tDiffuse:{value:null},tDepth:{value:null},uCount:{value:0},uShape:{value:Array.from({length:MAX_DISTORTIONS},()=>new Vector4())},uDepth:{value:Array.from({length:MAX_DISTORTIONS},()=>new Vector4())},uNear:{value:1},uFar:{value:100000},uReverse:{value:0},uAspect:{value:1},uHeight:{value:720}},
   vertexShader:/* glsl */`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
@@ -34,6 +46,7 @@ export const SpatialDistortionShader={
   uniform float uNear,uFar,uReverse,uAspect,uHeight;
   varying vec2 vUv;
   float distanceAt(vec2 uv){float d=texture2D(tDepth,uv).r;return uNear*uFar/(uReverse>.5?uNear+d*(uFar-uNear):uFar-d*(uFar-uNear));}
+  ${LENS_SHIFT_GLSL}
   void main(){
     if(uCount==0){gl_FragColor=texture2D(tDiffuse,vUv);return;}
     vec2 offset=vec2(0.0),lens=vec2(0.0);float sceneDepth=distanceAt(vUv);
@@ -42,12 +55,9 @@ export const SpatialDistortionShader={
       vec4 f=uShape[i];vec2 d=(vUv-f.xy)*vec2(uAspect,1.0)/f.z;float r=length(d);
       float visible=smoothstep(uDepth[i].x-uDepth[i].y*.2-10.0,uDepth[i].x-uDepth[i].y*.2+10.0,sceneDepth);
       if(uDepth[i].z>.5){
-        // Outside the inner 30%, each pixel shows the scene from nearer the rim (but never from inside
-        // it), so the background just past the hole is magnified and the horizon behind bows round it.
         // Water in front of the hole fades out of the lens gradually, so no seam tears across it.
-        float u=clamp((r-.3)/.7,0.0,1.0),source=.3+.7*u*mix(.5,1.0,smoothstep(0.0,1.0,u));
         float behind=smoothstep(uDepth[i].x-uDepth[i].y*.6,uDepth[i].x-uDepth[i].y*.1,sceneDepth);
-        if(r>.3)lens-=(vUv-f.xy)*(1.0-source/r)*f.w*behind;
+        lens-=(vUv-f.xy)*lensShift(r)*f.w*behind;
         continue;
       }
       float envelope=exp(-pow((r-.48)*4.5,2.0))*(1.0-smoothstep(.75,1.0,r));

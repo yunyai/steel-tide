@@ -7,6 +7,7 @@ import {
   collapse,
   dockCubes,
   foesNearCube,
+  inFlight,
   lungeToCube,
   meteor,
   overdrive,
@@ -53,7 +54,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
   def(spec('tungstenSwitch', 'Switch', 'MODE', 0.5, 0, 'swap', 'Cycle the cube to its next mode: Kinetic, Crush, Shard, Repel, Tether, Mend.'), {
     activate: (s) => switchMode(s),
     aiShouldUse(s, g, t) {
-      return !overdriveOn(s) && tungstenWantedMode(s, t, underFire(s, g, 1500)) !== s.tungsten!.mode;
+      return !overdriveOn(s) && !inFlight(cube(s)) && tungstenWantedMode(s, t, underFire(s, g, 1500)) !== s.tungsten!.mode;
     },
   }),
   def(spec('tungstenSignature', 'Signature', 'SIG', 14, 0, 'rune', "The current mode's move, from the cube: Ricochet, Slam, Fragment Storm, Repulse, Reel or Restore."), {

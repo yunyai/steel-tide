@@ -524,6 +524,7 @@ export class TungstenCubeFx {
     }
     for (const a of t.acts) {
       const c = t.cubes.find((k) => k.id === a.cube);
+      if (c?.state === 'docked' && !seen) continue;
       const color = modeColor(c?.mode ?? t.mode);
       const k = a.elapsed / a.time;
       if (a.kind === 'reel' && c) {
@@ -580,6 +581,9 @@ export class TungstenCubeFx {
     const seen = this.shipVisible(s, team);
     // The ults are overt: everyone sees them.
     if (this.ult.burst(e, b.id, age, f, color)) return;
+    // A docked cube rides its hull, so whatever it does there is seen only when the hull is.
+    const c = s.tungsten?.cubes.find((k) => k.id === e.cube);
+    if (c?.state === 'docked' && !seen) return;
     switch (e.kind) {
       case 'throw': {
         if (!seen) return;
@@ -666,15 +670,13 @@ export class TungstenCubeFx {
         return;
       }
       case 'switch': {
-        const c = s.tungsten?.cubes.find((k) => k.id === e.cube);
-        if (c?.state === 'docked' && !seen) return;
         const o = c?.state === 'docked' ? this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge / 2, 0, this.v) : this.v.set(e.x, e.y, e.z);
         this.paint.loop(o.x, o.y, o.z, CUBE.edge * (0.7 + 1.2 * ease(age / 0.4)), hot(color, 2.2), 0.8 * (1 - f));
         if (age < 0.1) p.push(BK.Flare, o.x, o.y, o.z, 140, hot(color, 1.6), 1 - age / 0.1);
         return;
       }
       case 'signature':
-        this.signature(b, age, f, color);
+        this.signature(b, age, f, color, seen);
         return;
       case 'slam': {
         const base = this.paint.surface(e.x, e.z);
@@ -711,7 +713,6 @@ export class TungstenCubeFx {
         return;
       }
       case 'capture': {
-        const c = s.tungsten?.cubes.find((k) => k.id === e.cube);
         const to = c ? this.renderPos(c, this.v) : this.v.set(e.x, e.y, e.z);
         // Sparks wrenched off course into the cube.
         for (let i = 0; i < n(8); i++) {
@@ -810,7 +811,7 @@ export class TungstenCubeFx {
     }
   }
 
-  private signature(b: Burst, age: number, f: number, color: Color): void {
+  private signature(b: Burst, age: number, f: number, color: Color, seen: boolean): void {
     const e = b.e,
       p = this.particles;
     const sig = TUNGSTEN_MODES[e.mode].signature.id;
@@ -867,7 +868,7 @@ export class TungstenCubeFx {
         p.push(BK.Glow, e.x + Math.cos(a) * r, base + 5 + rise, e.z + Math.sin(a) * r, 10 + 10 * R(i, 3), hot(color, 2.2), 0.8 * (1 - f));
       }
       const s = e.ship;
-      this.paint.loop(s.renderPos.x, 40, s.renderPos.z, s.spec.length * 0.4 * (0.6 + 0.4 * ease(age / 0.5)), hot(color, 1.6), 0.6 * (1 - f));
+      if (seen) this.paint.loop(s.renderPos.x, 40, s.renderPos.z, s.spec.length * 0.4 * (0.6 + 0.4 * ease(age / 0.5)), hot(color, 1.6), 0.6 * (1 - f));
     }
   }
 
