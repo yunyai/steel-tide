@@ -2,6 +2,7 @@ import { architectSkillPresentation,architectModuleSkillPresentation,architectIn
 import { architectDockingStatus } from '../skills/misc/ArchitectRuntime';
 import { CROSS } from '../skills/misc/CrossStep';
 import { vectorMobilityPresentation } from './VectorMobilityPresentation';
+import { tungstenPresentation } from './TungstenPresentation';
 import { ARCHETYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
@@ -101,6 +102,8 @@ interface SkillEl {
   wasReady: boolean;
   /** Key (or pad buttons) shown on the button. */
   key?: HTMLElement;
+  /** Short name under a skill button. */
+  nm?: HTMLElement;
 }
 
 /** Edge chevrons shown at most, nearest first. */
@@ -326,8 +329,9 @@ export class HUD {
       el('div', 'sweep', hx);
       const t = el('div', 't', hx);
       const k = this.keyLabel(root, () => pc.layout?.skills[i], pad);
-      el('div', 'nm', root).textContent = st.spec.short;
-      this.skillEls.push({ root, t, wasReady: me.skillReady(i), key: k });
+      const nm = el('div', 'nm', root);
+      nm.textContent = st.spec.short;
+      this.skillEls.push({ root, t, wasReady: me.skillReady(i), key: k, nm });
     });
     el('div', 'gap', sb);
     me.consumables.forEach((c, i) => {
@@ -872,11 +876,12 @@ export class HUD {
       if(a.broadUntil>g.time)st.push([`Broadstep ${Math.ceil(a.broadUntil-g.time)}s`, 'buff',glyph('salvo')]);
       const copies=g.ships.filter(s=>s.alive&&s.summonOwner===me&&s.stepper?.copy);
       if(copies.length)st.push([`Afterimages ${copies.length}/4 · ${Math.ceil(Math.max(...copies.map(s=>s.expiresAt))-g.time)}s`, 'buff',glyph('fleet')]);
-      if(a.cross)st.push([`Cross-step ${a.cross.count}/60`, 'buff',glyph('blade')]);
+      if(a.cross)st.push([`Cross-step ${a.cross.count}/${CROSS.cuts}`, 'buff',glyph('blade')]);
       if(a.repair)st.push([`Backstep repair ${Math.ceil(a.repair.remaining)}s`, 'buff',glyph('heal')]);
       if(a.repairInterruptedUntil>g.time)st.push(['Backstep repair interrupted', '',glyph('heal')]);
       if(a.flicker)st.push([`Flicker ${a.flicker.count}/20`, 'buff',glyph('blink')]);
     }
+    if (me.tungsten) for (const line of tungstenPresentation(me.tungsten, g.time, me.pos.x, me.pos.z).status) st.push([line.text, line.buff ? 'buff' : '', glyph(line.icon)]);
     if (me.effects.some((f) => f.id === 'pickup:fury')) st.push(['Fury', 'buff', glyph('fire')]);
     if (g.exposed[team] > 0) st.push(['Enemies exposed', 'buff', glyph('reveal')]);
     if (g.exposed[enemy] > 0) st.push(['You are exposed', '', glyph('reveal')]);
@@ -903,8 +908,17 @@ export class HUD {
 
   private updateSkills(): void {
     const me = this.pc.ship;
+    const tungsten = me.tungsten ? tungstenPresentation(me.tungsten, this.game.time, me.pos.x, me.pos.z) : null;
     me.skills.forEach((st, i) => {
       const se = this.skillEls[i];
+      // Switch and Signature name the current mode and its move, in its colour.
+      if (tungsten && se.nm && (st.spec.id === 'tungstenSwitch' || st.spec.id === 'tungstenSignature')) {
+        const sig = st.spec.id === 'tungstenSignature';
+        setText(se.nm, sig ? tungsten.signatureLabel : tungsten.switchLabel);
+        const title = `${st.spec.name}: ${st.spec.description}\n${sig ? tungsten.signatureTitle : tungsten.switchTitle}`;
+        if (se.root.title !== title) se.root.title = title;
+        if (se.root.style.getPropertyValue('--accent') !== tungsten.accent) se.root.style.setProperty('--accent', tungsten.accent);
+      }
       const ready = me.skillReady(i);
       let p: number;
       let t = '';

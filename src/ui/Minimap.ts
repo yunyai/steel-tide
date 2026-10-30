@@ -7,6 +7,8 @@ import type { Team } from '../core/types';
 import { GameMap } from '../world/GameMap';
 import type { PlayerController } from '../player/PlayerController';
 import { ALLY, palette } from './palette';
+import { minimapCubes } from './TungstenPresentation';
+import { CUBE } from '../skills/misc/TungstenModes';
 
 // Tactical minimap: static terrain layer plus live contacts at ~12 Hz.
 
@@ -208,6 +210,17 @@ export class Minimap {
         c.stroke();
       } else c.fill();
       c.restore();
+    }
+    // Tungsten cubes out in the open: a square in the mode colour, ringed in the team colour.
+    for (const m of minimapCubes(g.ships, this.team)) {
+      const r = Math.max(2.6 * (s / 230), (CUBE.edge * m.size * k) / 2);
+      const x = this.toPx(m.x) - r;
+      const y = this.toPx(m.z) - r;
+      c.fillStyle = m.color;
+      c.fillRect(x, y, r * 2, r * 2);
+      c.strokeStyle = m.ally ? ALLY : palette().enemy;
+      c.lineWidth = 1.2 * (s / 230);
+      c.strokeRect(x, y, r * 2, r * 2);
     }
     // Spotted torpedoes.
     c.fillStyle = 'rgba(255,160,170,0.95)';
