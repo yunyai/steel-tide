@@ -22,7 +22,7 @@ try{for(const [width,height]of[[1280,720],[1920,1080],[2560,1080]]){
  const preset=await page.evaluate(()=>{const f=window.uiReview;f.b.pickerSync?.();return{failure:f.s.skillFailure,locked:f.s.architect.slots.filter(a=>a.state!=='docked').map(a=>({type:a.type,skill:a.skill,timer:a.skillTimer})),result:document.querySelector('.arsenal-result')?.textContent};});
  if(preset.failure)throw Error(`Preset produced failure: ${preset.failure}`);
  await page.screenshot({path:`${out}/refit-${width}.jpg`,quality:88});
- const unlocked=await page.evaluate(()=>{const f=window.uiReview,slot=document.querySelector('[data-arsenal-key="slot-0"]');slot.click();const before=document.querySelector('.arsenal-detail select').disabled;f.s.activateSkill(4);for(let i=0;i<180;i++)f.g.step();f.draw();return{before,after:document.querySelector('.arsenal-detail select').disabled,focus:document.activeElement?.dataset.arsenalKey};});
+ const unlocked=await page.evaluate(()=>{const f=window.uiReview,slot=document.querySelector('[data-arsenal-key="slot-0"]');slot.click();const before=document.querySelector('.arsenal-types button').disabled;f.s.activateSkill(4);for(let i=0;i<180;i++)f.g.step();f.draw();return{before,after:document.querySelector('.arsenal-types button').disabled,focus:document.activeElement?.dataset.arsenalKey};});
  if(!unlocked.before||unlocked.after)throw Error(JSON.stringify(unlocked));
  rows.push({width,hud,preset,unlocked,errors});if(errors.length)throw Error(errors.join('\n'));await page.close();console.log(`Battle UI ${width}: passed active durations, single rings and refit synchronization`);
 }writeFileSync(`${out}/battle-results.json`,JSON.stringify(rows,null,2));}finally{await browser.close();}

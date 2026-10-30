@@ -3927,7 +3927,7 @@ select {
 
 .turret-dots i.remote { background:#77deee; opacity:.55; }
 
-/* Architect arsenal: ten compact selectors, one readable detail panel. */
+/* Architect arsenal: a top-down hull plan of the ten sockets, then the selected socket's type and skill. */
 .arsenal-editor { margin:16px 0; padding:14px; background:#0c1721e8; border:1px solid #60778166; border-radius:6px; min-width:0; }
 .arsenal-editor h3 { margin:0 0 5px; color:#ffcf86; }
 .arsenal-note { font-size:12px; color:#a7bdc8; margin:5px 0 12px; line-height:1.45; }
@@ -3935,13 +3935,43 @@ select {
 .arsenal-editor button,.arsenal-editor select { color:#dfecf3; background:#172734; border:1px solid #607989; border-radius:3px; padding:7px; cursor:pointer; font:inherit; font-size:12px; }
 .arsenal-editor button:hover,.arsenal-editor button:focus-visible { border-color:#b9f3ff; background:#234353; }
 .arsenal-editor button[aria-pressed="true"] { background:#35434c; border-color:#ffd38e; box-shadow:inset 0 -2px #ffd38e; }
-.arsenal-slots { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
-.arsenal-slots button { text-align:left; min-width:0; border-top:2px solid var(--type-color); }
-.arsenal-slots b { color:var(--type-color); display:block; }
-.arsenal-slots small { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:10px; }
-.arsenal-detail { margin-top:12px; }
-.arsenal-detail label { display:flex; align-items:center; gap:12px; font-size:13px; }
-.arsenal-detail select { flex:1; min-width:0; }
+.arsenal-plan { position:relative; height:150px; margin:4px 0 0; }
+.arsenal-hull { position:absolute; inset:0; width:100%; height:100%; }
+.arsenal-hull path,.arsenal-hull rect { vector-effect:non-scaling-stroke; fill:none; stroke-width:1; }
+.arsenal-hull .hull { fill:rgba(77,232,255,.06); stroke:var(--edge-hi); }
+.arsenal-hull .deck,.arsenal-hull .block { stroke:var(--edge); }
+.arsenal-hull .block { fill:rgba(110,210,255,.08); }
+.arsenal-hull .rail { stroke:rgba(255,181,71,.3); stroke-dasharray:6 5; }
+.arsenal-hull .keel { stroke:var(--edge); stroke-dasharray:2 6; }
+/* Columns centre on the real turret stations at 15%, 33%, 50%, 68% and 85% of the hull. */
+.arsenal-slots { position:absolute; inset:0 5.9% 0 6.6%; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); grid-template-rows:1fr 1fr; column-gap:2px; }
+.arsenal-editor .arsenal-socket { --ring:color-mix(in srgb,var(--type-color) 55%,transparent); display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:3px; min-width:0; padding:6px 0 0; background:none; border:0; border-radius:0; box-shadow:none; }
+/* Port sockets hang their caption above the hex so both rails hug the hull. */
+.arsenal-editor .arsenal-socket[data-side="port"] { flex-direction:column-reverse; padding:0 0 6px; }
+.arsenal-socket b { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; flex:none; width:46px; height:40px; background:var(--ring); clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%); font-family:var(--display); line-height:1; }
+.arsenal-socket b::before { content:''; position:absolute; inset:1.5px; clip-path:inherit; background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--type-color) 30%,var(--abyss-2)),var(--abyss) 80%); }
+.arsenal-socket b i,.arsenal-socket b span { position:relative; font-style:normal; }
+.arsenal-socket b i { font-size:9px; font-weight:600; color:var(--mute); font-variant-numeric:tabular-nums; }
+.arsenal-socket b span { font-size:14px; font-weight:700; letter-spacing:.03em; color:var(--type-color); text-shadow:0 0 8px color-mix(in srgb,var(--type-color) 70%,transparent); }
+.arsenal-socket small { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:10px; line-height:12px; color:#a7bdc8; text-shadow:0 1px 2px #000; }
+.arsenal-editor .arsenal-socket:hover,.arsenal-editor .arsenal-socket:focus-visible { --ring:var(--type-color); background:none; }
+.arsenal-editor .arsenal-socket[aria-pressed="true"] { --ring:var(--amber); background:none; box-shadow:none; filter:drop-shadow(0 0 6px rgba(255,181,71,.55)); }
+.arsenal-socket[aria-pressed="true"] small { color:#ffe3b0; }
+.arsenal-detail { margin-top:10px; }
+.arsenal-detail-head { display:flex; align-items:baseline; gap:10px; margin-bottom:8px; font-family:var(--display); }
+.arsenal-detail-head b { color:var(--ice); font-size:14px; }
+.arsenal-detail-head span { color:var(--type-color); font-size:12px; font-weight:600; }
+.arsenal-types { display:grid; grid-template-columns:repeat(auto-fill,minmax(86px,1fr)); gap:4px; }
+.arsenal-editor .arsenal-type { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; padding:6px 6px 5px 10px; text-align:left; border:0; border-radius:0;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--type-color) 16%,transparent),var(--glass) 70%);
+  box-shadow:inset 3px 0 var(--type-color), inset 0 0 0 1px color-mix(in srgb,var(--type-color) 26%,transparent);
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,0 100%); }
+.arsenal-type b { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--display); font-size:12px; font-weight:700; color:var(--ice); }
+.arsenal-type small { font-size:10px; color:var(--element-color); }
+.arsenal-editor .arsenal-type:hover { background:linear-gradient(90deg,color-mix(in srgb,var(--type-color) 30%,transparent),var(--glass-hi) 70%); }
+.arsenal-editor .arsenal-type[aria-pressed="true"] { background:linear-gradient(90deg,color-mix(in srgb,var(--type-color) 34%,transparent),#35434c 80%); box-shadow:inset 3px 0 var(--type-color), inset 0 0 0 1px var(--amber); }
+/* The chamfer clips anything outside the tile, so its focus ring sits inside. */
+.arsenal-editor .arsenal-type:focus-visible { outline-offset:-3px; }
 .arsenal-choices { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
 .arsenal-skill { display:flex; flex-direction:column; text-align:left; gap:7px; line-height:1.4; }
 .arsenal-skill b { color:#ffe3b0; }
@@ -3949,7 +3979,7 @@ select {
 .arsenal-editor button:disabled,.arsenal-editor select:disabled { opacity:.55; cursor:default; }
 .module-cooldowns { display:flex; position:absolute; left:50%; transform:translateX(-50%); bottom:100%; gap:4px; margin-bottom:4px; }
 .module-cooldowns i { width:21px; height:21px; display:grid; place-items:center; border-radius:50%; background:conic-gradient(var(--cool-color,#a4e8ff) calc(var(--ready)*1turn),#14232eaa 0); border:1px solid #111d28; color:#fff; font:10px sans-serif; text-shadow:0 1px 2px #000; box-shadow:0 0 0 2px #11202bc9; }
-@media(max-width:700px){.arsenal-slots{grid-template-columns:repeat(5,minmax(0,1fr));}.arsenal-choices{grid-template-columns:1fr;}.arsenal-slots small{display:none;}}
+@media(max-width:700px){.arsenal-choices{grid-template-columns:1fr;}}
 .pop.elemental-hit b,.pop.elemental-hit span { color:var(--accent); }
 .pop.elemental-reaction { border-left:3px solid var(--accent); padding:4px 9px; background:linear-gradient(90deg,#07151ee0,transparent); }
 .pop.elemental-reaction b { color:var(--accent); font-size:1.15em; text-shadow:0 0 12px var(--accent),0 2px 3px #000; }
@@ -3966,10 +3996,12 @@ select {
 .arsenal-transfer-status,.arsenal-result { margin:9px 0 0; color:#b9d5e2; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .arsenal-transfer-status.error { color:#ffb7a8; }
 .arsenal-result:empty { display:none; }
-.arsenal-slots [data-refit="pending"] small { color:#ffd38e; }
-.arsenal-slots [data-refit="locked"] { border-top-style:dashed; }
+.arsenal-socket[data-refit="pending"] small { color:var(--amber); }
+.arsenal-socket[data-refit="pending"] b { background:repeating-conic-gradient(from 15deg,var(--amber) 0 30deg,transparent 0 60deg); }
+.arsenal-socket[data-refit="locked"] b { filter:saturate(.3) brightness(.75); }
+.arsenal-socket[data-refit="locked"] small { color:var(--mute); }
 .arsenal-editor button:focus-visible,.arsenal-editor select:focus-visible { outline:2px solid #b9f3ff; outline-offset:2px; }
-@media(max-width:520px){.arsenal-editor{padding:10px;}.arsenal-presets select{max-width:100%;}.arsenal-detail label{flex-wrap:wrap;gap:6px;}.arsenal-detail select{flex-basis:100%;}.arsenal-transfer-actions button{flex:1 1 auto;}}
+@media(max-width:520px){.arsenal-editor{padding:10px;}.arsenal-presets select{max-width:100%;}.arsenal-transfer-actions button{flex:1 1 auto;}}
 .module-skill-cooldown[data-phase="paused"] { --cool-color:#8aa5b3; color:#c4d9e3; }
 .module-skill-cooldown[data-phase="disabled"] { --cool-color:#b5968d; color:#ffd5c6; }
 
