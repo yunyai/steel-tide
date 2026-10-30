@@ -64,7 +64,7 @@ export const MISC: ShipSpec[] = [
     aa: { range: 4500, dps: 1200 }, consumables: [TITAN_REPAIR, search(9000)],
     skills: kitOf(TUNGSTEN_SKILLS,'tungstenLunge','tungstenSwitch','tungstenSignature','tungstenShot','tungstenDock','tungstenShield','tungstenCollapse','tungstenMeteor','tungstenOverdrive'),
     model: {
-      palette: { hull: 0x1a1d22, upper: 0x2b3038, deck: 0x22262c, accent: 0x3ff0ff, boot: 0x0b0d10 },
+      palette: { hull: 0x3b4149, upper: 0x59616b, deck: 0x464c54, accent: 0x3ff0ff, boot: 0x15181c },
       bow: 'straight', stern: 'transom', sheer: 0.35,
       blocks: [{x: 84,len:44,w:30,h:9},{x:-84,len:40,w:28,h:7}],
       tower: {x:92,h:20,w:14,len:18,style:'block'}, funnels: [], masts: [],

@@ -1,0 +1,1030 @@
+import { BoxGeometry, Color, DynamicDrawUsage, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, Quaternion, Vector3, type Scene } from 'three';
+import type { Game } from '../core/Game';
+import type { GameEventMap } from '../core/Events';
+import type { Team } from '../core/types';
+import { contactVisible } from '../core/Targeting';
+import type { Ship } from '../ships/Ship';
+import { CUBE, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf } from '../skills/misc/TungstenModes';
+import type { Cube, TungstenState } from '../skills/misc/TungstenRuntime';
+import { audio } from '../fx/Audio';
+import { waveHeight } from '../world/Waves';
+import { reducedMotion } from './ArchitectPose';
+import { BK, BurstParticles, drift, hash01 } from './BurstParticles';
+import { Ribbons } from './Projectiles';
+import { quality } from './Quality';
+import { ModeSweep, cubeGeometry, cubeSkin, modeColor, slamLift, type CubeSkinUniforms } from './TungstenLook';
+import { MAGNET, type TungstenModel } from './TungstenModel';
+
+type TungstenEvent = GameEventMap['tungsten'];
+interface Burst {
+  e: TungstenEvent;
+  at: number;
+  id: number;
+  life: number;
+  /** The struck ship's position when struck, so a sinking or moving target does not drag its sparks. */
+  tx: number;
+  tz: number;
+}
+interface FreeCube {
+  mesh: Mesh;
+  material: MeshStandardMaterial;
+  u: CubeSkinUniforms;
+  sweep: ModeSweep;
+  /** Recent render positions and times, newest last: x, y, z, t. */
+  trail: number[];
+  tumble: number;
+  axisX: number;
+  axisZ: number;
+  lastX: number;
+  lastY: number;
+  lastZ: number;
+  live: boolean;
+  /** Render time it vanished (dissolving), or -1. */
+  gone: number;
+  /** Last capture or block, for the face flash. */
+  struck: number;
+  mode: number;
+}
+
+const TAU = Math.PI * 2;
+const WHITE = new Color(0xffffff);
+const SPRAY = new Color(0xdfeef3);
+const FOAM = new Color(0xe9f4f7);
+const DEBRIS_CAP = 96;
+const TRAIL = 0.32;
+const LIFE: Partial<Record<TungstenEvent['kind'], number>> = {
+  throw: 0.55,
+  hit: 0.95,
+  land: 1.3,
+  dock: 0.6,
+  break: 2.8,
+  reform: 1.1,
+  switch: 0.55,
+  signature: 1.6,
+  slam: 1.7,
+  reel: 0.8,
+  lunge: 0.7,
+  arrive: 0.9,
+  capture: 0.45,
+  block: 0.4,
+  shield: 1,
+  contact: 0.7,
+  overdrive: 1.8,
+  overdriveEnd: 1.1,
+};
+const TETHER = modeOf('tether');
+const tint = new Color();
+const tint2 = new Color();
+const hot = (c: Color, k: number) => tint.copy(c).multiplyScalar(k);
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const ease = (v: number) => 1 - (1 - clamp01(v)) ** 3;
+
+/**
+ * Everything the Tungsten's cubes do away from the magnet: the cubes themselves once undocked, their trails,
+ * levitation fields, Shield arcs, tether chains, Lunge streaks, hits, breaks and the six signatures.
+ * Rebuilt from game state and timed event snapshots each prepare; it never writes game state.
+ */
+export class TungstenCubeFx {
+  readonly particles: BurstParticles;
+  /** Arcs, chains and rings that keep an even width. */
+  readonly lines = new Ribbons(2400, true, false);
+  /** Motion trails that fade toward their tails. */
+  readonly trails = new Ribbons(600, true, true);
+  readonly debris: InstancedMesh;
+  private views = new Map<string, FreeCube>();
+  private bursts: Burst[] = [];
+  private off: (() => void)[] = [];
+  private locals: Ship[] = [];
+  private serial = 0;
+  private heard = new Map<string, number>();
+  private reduce = reducedMotion();
+  private detail = quality().particles;
+  private shadows = quality().shadowMap > 0;
+  private m4 = new Matrix4();
+  private q = new Quaternion();
+  private q2 = new Quaternion();
+  private v = new Vector3();
+  private v2 = new Vector3();
+  private scale = new Vector3();
+  private up = new Vector3(0, 1, 0);
+
+  constructor(
+    private scene: Scene,
+    private game: Game,
+    /** The ship's magnet model, when it has a view, for anchoring arcs to the moving hull. */
+    private model: (s: Ship) => TungstenModel | null = () => null,
+  ) {
+    this.particles = new BurstParticles(scene, { additive: 3200, alpha: 900, flat: 400 }, 'tungsten-cube-fx');
+    this.lines.mesh.name = 'tungsten-arcs';
+    this.trails.mesh.name = 'tungsten-trails';
+    scene.add(this.lines.mesh, this.trails.mesh);
+    const chunk = new MeshStandardMaterial({ color: 0x3a3f46, metalness: 0.9, roughness: 0.42 });
+    chunk.onBeforeCompile = (shader) => {
+      // Torn etching: each chunk glows in its instance colour, which is the cube's mode colour.
+      shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vColor.rgb * 0.9;');
+    };
+    chunk.customProgramCacheKey = () => 'tungsten-debris';
+    this.debris = new InstancedMesh(new BoxGeometry(1, 1, 1), chunk, DEBRIS_CAP);
+    this.debris.name = 'tungsten-debris';
+    this.debris.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.debris.setColorAt(0, WHITE);
+    this.debris.count = 0;
+    this.debris.frustumCulled = false;
+    this.debris.castShadow = this.shadows;
+    scene.add(this.debris);
+    this.off.push(
+      game.events.on('tungsten', (e) => this.event(e)),
+      game.events.on('gameOver', () => this.clear()),
+      game.events.on('respawn', (e) => this.drop(e.ship)),
+      game.events.on('shipChanged', (e) => this.drop(e.old)),
+    );
+  }
+
+  private event(e: TungstenEvent): void {
+    if (this.game.over) return;
+    const life = LIFE[e.kind];
+    if (life !== undefined) {
+      this.bursts.push({ e, at: this.game.time, id: this.serial++, life, tx: e.target?.pos.x ?? e.x, tz: e.target?.pos.z ?? e.z });
+      if (this.bursts.length > 160) this.bursts.splice(0, this.bursts.length - 160);
+    }
+    if (e.kind === 'capture' || e.kind === 'block') {
+      const v = this.views.get(this.key(e.ship, e.cube));
+      if (v) v.struck = this.game.time;
+    }
+    this.sound(e);
+  }
+
+  private sound(e: TungstenEvent): void {
+    const local = this.locals.includes(e.ship);
+    const gain = local ? 1 : 0.6;
+    const asset = (name: string) => `${import.meta.env.BASE_URL}audio/${name}.m4a`;
+    const play = (kind: Parameters<typeof audio.play>[0], name: string, g: number, rate = 1, size = 100) =>
+      audio.play(kind, e.x, Math.max(10, e.y), e.z, size, g * gain, { category: 'ability', priority: local ? 3 : 1, asset: asset(name), rate });
+    // Rapid captures and blocks share one voice per ship.
+    const throttle = (k: string, gap: number) => {
+      const id = `${e.ship.id}:${k}`;
+      const last = this.heard.get(id) ?? -1e9;
+      if (this.game.time - last < gap) return false;
+      this.heard.set(id, this.game.time);
+      return true;
+    };
+    switch (e.kind) {
+      case 'throw':
+        play('charge', 'energy-pulse', 0.7, 0.8);
+        break;
+      case 'hit':
+        play('hit', 'mechanical-hit', 0.9, 0.75, 2);
+        break;
+      case 'contact':
+        play('hit', 'mechanical-hit', 0.7, 0.9, 2);
+        break;
+      case 'land':
+        play('splash', 'sonniss-splash', 0.45, 1.2, 2);
+        break;
+      case 'dock':
+        play('hit', 'mechanical-hit', 0.6, 0.6, 2);
+        break;
+      case 'break':
+        play('explosion', 'blast-shock', 1, 0.85, 2);
+        break;
+      case 'reform':
+        play('charge', 'ward-rise', 0.6, 1.1);
+        break;
+      case 'switch':
+        play('zap', 'energy-pulse', 0.35, 1.4);
+        break;
+      case 'lunge':
+        play('charge', 'energy-heavy', 0.8, 0.85);
+        break;
+      case 'arrive':
+        play('hit', 'mechanical-hit', 0.8, 0.55, 2);
+        break;
+      case 'capture':
+        if (throttle('capture', 0.12)) play('shield', 'shield', 0.35, 1.5);
+        break;
+      case 'block':
+        if (throttle('block', 0.1)) play('ricochet', 'ricochet', 0.4, 0.8, 2);
+        break;
+      case 'shield':
+        play('shield', 'shield', 0.7, 0.9);
+        break;
+      case 'overdrive':
+        play('charge', 'transform', 1, 0.9);
+        break;
+      case 'overdriveEnd':
+        play('charge', 'ward-rise', 0.5, 0.7);
+        break;
+      case 'signature': {
+        const sig = TUNGSTEN_MODES[e.mode].signature.id;
+        if (sig === 'ricochet') play('ricochet', 'ricochet', 0.8, 1);
+        else if (sig === 'storm') play('explosion', 'blast-shock', 0.8, 1.2, 2);
+        else if (sig === 'repulse') play('charge', 'energy-heavy', 0.9, 1.1);
+        else if (sig === 'reel') play('charge', 'energy-charge', 0.8, 0.8);
+        else if (sig === 'restore') play('charge', 'ward-rise', 0.8, 1);
+        else play('charge', 'energy-charge', 0.6, 0.7);
+        break;
+      }
+      case 'slam':
+        play('explosion', 'blast-heavy', 1, 0.8, 2);
+        break;
+      case 'reel':
+        play('hit', 'mechanical-hit', 0.9, 0.65, 2);
+        break;
+    }
+  }
+
+  private key(s: Ship, cube: number): string {
+    return `${s.id}:${cube}`;
+  }
+
+  private drop(s: Ship): void {
+    this.bursts = this.bursts.filter((b) => b.e.ship !== s);
+    for (const [k, v] of this.views) if (k.startsWith(`${s.id}:`)) v.live = false;
+  }
+
+  private clear(): void {
+    this.bursts = [];
+    for (const v of this.views.values()) this.release(v);
+    this.views.clear();
+    this.debris.count = 0;
+    this.particles.begin();
+    this.particles.end();
+    this.lines.begin();
+    this.lines.end();
+    this.trails.begin();
+    this.trails.end();
+  }
+
+  private release(v: FreeCube): void {
+    this.scene.remove(v.mesh);
+    v.material.dispose();
+  }
+
+  /** Cubes away from the magnet: everything but docked, shattered and removed ones. */
+  private *free(): Generator<[Ship, Cube]> {
+    for (const s of this.game.ships) {
+      const t = s.tungsten;
+      if (!t || s.withdrawn) continue;
+      for (const c of t.cubes) if (!c.gone && c.state !== 'docked' && c.state !== 'broken') yield [s, c];
+    }
+  }
+
+  private renderPos(c: Cube, out: Vector3): Vector3 {
+    const a = this.game.alpha;
+    return out.set(c.px + (c.x - c.px) * a, c.py + (c.y - c.py) * a, c.pz + (c.z - c.pz) * a);
+  }
+
+  update(dt: number, locals: Ship[] = []): void {
+    this.locals = locals;
+    if (this.game.over) {
+      if (this.views.size || this.bursts.length) this.clear();
+      return;
+    }
+    const now = this.game.renderTime;
+    this.bursts = this.bursts.filter((b) => this.game.time - b.at < b.life);
+    for (const v of this.views.values()) v.live = false;
+    for (const [s, c] of this.free()) {
+      const k = this.key(s, c.id);
+      let v = this.views.get(k);
+      if (!v) {
+        const { material, u } = cubeSkin();
+        const mesh = new Mesh(cubeGeometry(), material);
+        mesh.name = `tungsten-free-cube-${k}`;
+        mesh.castShadow = this.shadows;
+        mesh.frustumCulled = false;
+        this.scene.add(mesh);
+        this.renderPos(c, this.v);
+        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, mode: c.mode };
+        this.views.set(k, v);
+      }
+      v.live = true;
+      v.gone = -1;
+      v.mode = c.mode;
+      const p = this.renderPos(c, this.v);
+      const moved = Math.hypot(p.x - v.lastX, p.z - v.lastZ);
+      if (moved > 0.5) {
+        v.axisX = (p.z - v.lastZ) / moved;
+        v.axisZ = -(p.x - v.lastX) / moved;
+      }
+      // Rolling while it flies; settling onto a face once it stops.
+      if (!this.reduce && c.state === 'flying') v.tumble += moved / 260;
+      else {
+        const rest = Math.round(v.tumble / (Math.PI / 2)) * (Math.PI / 2);
+        v.tumble += (rest - v.tumble) * (1 - Math.exp(-dt * 6));
+      }
+      if (moved > 1 || v.trail.length === 0) v.trail.push(p.x, p.y, p.z, now);
+      v.lastX = p.x;
+      v.lastY = p.y;
+      v.lastZ = p.z;
+    }
+    for (const [k, v] of this.views) {
+      while (v.trail.length && now - v.trail[3] > TRAIL) v.trail.splice(0, 4);
+      if (!v.live && v.gone < 0) v.gone = now;
+      if (v.gone >= 0 && now - v.gone > 0.65) {
+        this.release(v);
+        this.views.delete(k);
+      }
+    }
+  }
+
+  get count(): number {
+    return this.particles.count + this.lines.count + this.trails.count;
+  }
+
+  setFog(color: Color, density: number): void {
+    this.particles.setFog(color, density);
+    this.lines.setFog(color, density);
+    this.trails.setFog(color, density);
+  }
+
+  private surface(x: number, z: number): number {
+    return Math.max(waveHeight(x, z, this.game.renderTime), this.game.map.heightAt(x, z)) + 0.6;
+  }
+
+  private shipVisible(s: Ship, team: Team | -1): boolean {
+    return s.alive && !s.withdrawn && (team === -1 || s.team === team || contactVisible(s, team));
+  }
+
+  /** A point in the ship's hull space, on the drawn hull when it has a view. */
+  private anchor(s: Ship, lx: number, ly: number, lz: number, out: Vector3): Vector3 {
+    const m = this.model(s);
+    if (m) {
+      m.root.updateWorldMatrix(true, false);
+      return out.set(lx, ly, lz).applyMatrix4(m.root.matrixWorld);
+    }
+    const h = s.renderHeading;
+    return out.set(s.renderPos.x + Math.sin(h) * lx + Math.cos(h) * lz, s.renderPos.y + ly, s.renderPos.z - Math.cos(h) * lx + Math.sin(h) * lz);
+  }
+
+  /** A crackling arc from a to b, re-struck about twenty times a second. */
+  private arc(ax: number, ay: number, az: number, bx: number, by: number, bz: number, seed: number, color: Color, alpha: number, width: number, jitter: number, segs = 8): void {
+    const strike = this.reduce ? 0 : Math.floor(this.game.renderTime * 20);
+    let px = ax,
+      py = ay,
+      pz = az;
+    for (let i = 1; i <= segs; i++) {
+      const t = i / segs,
+        bend = i === segs ? 0 : Math.sin(Math.PI * t) * jitter;
+      const x = ax + (bx - ax) * t + (hash01(seed + strike * 31, i * 3) - 0.5) * 2 * bend;
+      const y = ay + (by - ay) * t + (hash01(seed + strike * 31, i * 3 + 1) - 0.5) * 2 * bend;
+      const z = az + (bz - az) * t + (hash01(seed + strike * 31, i * 3 + 2) - 0.5) * 2 * bend;
+      this.lines.push(px, py, pz, x, y, z, color, alpha, width, 1.2);
+      px = x;
+      py = y;
+      pz = z;
+    }
+  }
+
+  /** A level ring of light at height y. */
+  private loop(x: number, y: number, z: number, r: number, c: Color, alpha: number, width = Math.max(1.5, r * 0.025)): void {
+    if (alpha < 0.01 || r < 1) return;
+    const n = Math.max(16, Math.min(48, Math.round(r / 10)));
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * TAU,
+        a1 = ((i + 1) / n) * TAU;
+      this.lines.push(x + Math.cos(a0) * r, y, z + Math.sin(a0) * r, x + Math.cos(a1) * r, y, z + Math.sin(a1) * r, c, alpha, width, 1.5);
+    }
+  }
+
+  /** Dipole field lines looping out of the cube's top and back into its base: the Shield's capture zone. */
+  private field(x: number, y: number, z: number, reach: number, c: Color, alpha: number, spin: number, count = 8): void {
+    const steps = 18,
+      floor = this.surface(x, z) + 2;
+    for (let k = 0; k < count; k++) {
+      const phi = (k / count) * TAU + spin;
+      let px = 0,
+        py = 0,
+        pz = 0;
+      for (let i = 0; i <= steps; i++) {
+        const th = 0.22 + (i / steps) * (Math.PI - 0.44);
+        const r = reach * Math.sin(th) ** 2;
+        const nx = x + r * Math.sin(th) * Math.cos(phi),
+          ny = Math.max(floor, y + r * Math.cos(th) * 0.8),
+          nz = z + r * Math.sin(th) * Math.sin(phi);
+        if (i) {
+          // Charge runs along each line from the north pole to the south.
+          const run = this.reduce ? 0.5 : 0.5 + 0.5 * Math.sin(th * 5 - this.game.renderTime * 7 + k);
+          this.lines.push(px, py, pz, nx, ny, nz, c, alpha * (0.45 + 0.55 * run), 2, 1.2);
+        }
+        px = nx;
+        py = ny;
+        pz = nz;
+      }
+    }
+  }
+
+  /**
+   * A ring on the water. Plain rings are a crisp line riding the waves over a faint halo, so a
+   * kilometre-wide shock front stays a thin edge; other kinds are painted as one flat decal.
+   */
+  private ring(x: number, z: number, r: number, c: Color, alpha: number, kind: BK = BK.Ring, rot = 0): void {
+    if (alpha < 0.01 || r < 1) return;
+    if (kind !== BK.Ring) {
+      this.particles.push(kind, x, this.surface(x, z) + 0.4, z, r / 0.43, c, alpha, rot);
+      return;
+    }
+    this.particles.push(BK.Ring, x, this.surface(x, z) + 0.4, z, r / 0.43, c, alpha * 0.3, rot);
+    const n = Math.max(16, Math.min(64, Math.round(r / 12)));
+    const width = Math.max(2, Math.min(9, r * 0.012));
+    let px = x + r,
+      pz = z,
+      py = this.surface(px, pz) + 1.5;
+    for (let i = 1; i <= n; i++) {
+      const a = (i / n) * TAU;
+      const nx = x + Math.cos(a) * r,
+        nz = z + Math.sin(a) * r,
+        ny = this.surface(nx, nz) + 1.5;
+      this.lines.push(px, py, pz, nx, ny, nz, c, alpha, width, 1.5);
+      px = nx;
+      py = ny;
+      pz = nz;
+    }
+  }
+
+  /** Churned water along a circle: foam patches laid round the circumference, each on its own wave. */
+  private foamRing(x: number, z: number, r: number, alpha: number, seed: number): void {
+    if (alpha < 0.01 || r < 1) return;
+    const patch = Math.max(25, Math.min(70, r * 0.12));
+    const n = Math.max(6, Math.min(36, Math.round((r * TAU) / (patch * 1.4))));
+    for (let i = 0; i < n; i++) {
+      const a = ((i + hash01(seed, i) * 0.4) / n) * TAU,
+        d = r * (0.96 + 0.08 * hash01(seed, i + 50));
+      const px = x + Math.cos(a) * d,
+        pz = z + Math.sin(a) * d;
+      this.particles.push(BK.Foam, px, this.surface(px, pz) + 0.4, pz, patch * 2, FOAM, alpha, a, hash01(seed, i + 99));
+    }
+  }
+
+  /** A chain of links from a to b, sagging toward the water. */
+  private chain(ax: number, ay: number, az: number, bx: number, by: number, bz: number, c: Color, alpha: number, sag: number, flow: number): void {
+    const d = Math.hypot(bx - ax, bz - az);
+    const n = Math.max(6, Math.min(80, Math.round(d / 16)));
+    for (let i = 0; i < n; i++) {
+      const t0 = (i + 0.12) / n,
+        t1 = (i + 0.88) / n;
+      const y0 = ay + (by - ay) * t0 - sag * 4 * t0 * (1 - t0),
+        y1 = ay + (by - ay) * t1 - sag * 4 * t1 * (1 - t1);
+      const sx = ax + (bx - ax) * t0,
+        sz = az + (bz - az) * t0;
+      const ex = ax + (bx - ax) * t1,
+        ez = az + (bz - az) * t1;
+      // A pulse of light runs down the chain toward the cube.
+      const pulse = this.reduce ? 0 : Math.max(0, Math.sin((i / n + this.game.renderTime * flow) * TAU * 2)) ** 6;
+      this.lines.push(sx, Math.max(this.surface(sx, sz) + 1, y0), sz, ex, Math.max(this.surface(ex, ez) + 1, y1), ez, c, alpha * (0.75 + pulse * 0.6), i % 2 ? 3 : 6, 2);
+    }
+  }
+
+  prepare(team: Team | -1, heightPx: number): void {
+    this.particles.begin(heightPx);
+    this.lines.begin();
+    this.trails.begin();
+    this.lines.material.uniforms.uViewportH.value = this.trails.material.uniforms.uViewportH.value = heightPx;
+    this.debris.count = 0;
+    if (!this.game.over) {
+      this.cubes();
+      for (const s of this.game.ships) if (s.tungsten && s.alive && !s.withdrawn) this.ship(s, s.tungsten, team);
+      for (const b of this.bursts) this.burst(b, team);
+    }
+    this.particles.end();
+    this.lines.end();
+    this.trails.end();
+    if (this.debris.count) {
+      this.debris.instanceMatrix.needsUpdate = true;
+      if (this.debris.instanceColor) this.debris.instanceColor.needsUpdate = true;
+    }
+  }
+
+  /** The free cubes: meshes, trails and the levitation field under parked ones. */
+  private cubes(): void {
+    const now = this.game.renderTime;
+    const anim = this.reduce ? 0 : now;
+    const alive = new Set<FreeCube>();
+    for (const [s, c] of this.free()) {
+      const v = this.views.get(this.key(s, c.id));
+      if (!v) continue;
+      alive.add(v);
+      const t = s.tungsten!;
+      const p = this.renderPos(c, this.v);
+      const parked = c.state === 'hover' || c.state === 'guard' || c.state === 'orbit';
+      const bob = parked && !this.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
+      const lift = slamLift(t, c.id);
+      v.mesh.visible = true;
+      v.mesh.position.set(p.x, p.y + bob + lift, p.z);
+      v.mesh.scale.setScalar(CUBE.edge * c.scale);
+      this.q.setFromAxisAngle(this.up, c.yaw + (parked && !this.reduce ? Math.sin(anim * 0.4 + c.id) * 0.05 : 0));
+      this.v2.set(v.axisX, 0, v.axisZ);
+      this.q2.setFromAxisAngle(this.v2, v.tumble);
+      v.mesh.quaternion.copy(this.q2).multiply(this.q);
+      v.sweep.apply(v.u, c.mode, now, this.reduce);
+      const flash = clamp01(1 - (this.game.time - v.struck) / 0.25);
+      v.u.uTime.value = anim;
+      v.u.uPower.value = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + flash * 1.5;
+      v.u.uFlicker.value = c.hp < c.maxHp * 0.3 ? 1 - c.hp / (c.maxHp * 0.3) : 0;
+      v.u.uAssemble.value = 1;
+      v.u.uHeat.value = 0;
+      const color = modeColor(c.mode);
+      // Trail: a wide coloured wake with a white-hot core.
+      for (let i = 4; i < v.trail.length; i += 4) {
+        const age = now - v.trail[i + 3],
+          k = 1 - age / TRAIL;
+        if (k <= 0) continue;
+        const w = CUBE.edge * c.scale * 0.7;
+        this.trails.push(v.trail[i - 4], v.trail[i - 3], v.trail[i - 2], v.trail[i], v.trail[i + 1], v.trail[i + 2], hot(color, 1.6), 0.55 * k, w, 2);
+        this.trails.push(v.trail[i - 4], v.trail[i - 3], v.trail[i - 2], v.trail[i], v.trail[i + 1], v.trail[i + 2], hot(WHITE, 1.4), 0.5 * k, w * 0.25, 1);
+        // The pressure wave behind a low, fast cube throws up a rooster tail.
+        const sx = v.trail[i],
+          sz = v.trail[i + 2];
+        if (c.state === 'flying' && v.trail[i + 1] < 120 && hash01(c.id * 131 + Math.round(v.trail[i + 3] * 60), 1) < 0.6 * this.detail) {
+          const base = this.surface(sx, sz),
+            h = drift(age, 110, 2.5, 120);
+          if (h > 0) this.particles.push(BK.Spray, sx, base + h, sz, 22 + age * 160, SPRAY, 0.55 * k, hash01(i, c.id) * TAU, hash01(c.id, i));
+        }
+      }
+      if (parked || c.state === 'flying') {
+        // The levitation field pressing a dish into the sea under the cube.
+        const base = this.surface(p.x, p.z);
+        const height = p.y - base;
+        const k = clamp01(1 - height / 200);
+        if (k > 0) {
+          this.ring(p.x, p.z, CUBE.edge * c.scale * (0.85 + 0.08 * Math.sin(anim * 3 + c.id)), hot(color, 1.3), 0.45 * k);
+          this.ring(p.x, p.z, CUBE.edge * c.scale * 0.95, FOAM, 0.4 * k, BK.Foam, anim * 0.5 + c.id);
+          this.particles.push(BK.Glow, p.x, base + 2, p.z, CUBE.edge * c.scale * 2.2, hot(color, 0.7), 0.3 * k);
+          if (parked && !this.reduce)
+            for (let i = 0; i < Math.round(6 * this.detail); i++) {
+              const life = 1.4,
+                phase = (anim / life + hash01(c.id, i)) % 1,
+                a = hash01(c.id * 7, i) * TAU + anim * 0.3,
+                r = CUBE.edge * c.scale * (0.6 + phase * 0.6);
+              this.particles.push(BK.Spray, p.x + Math.cos(a) * r, base + phase * 14, p.z + Math.sin(a) * r, 10 + phase * 18, SPRAY, 0.3 * (1 - phase), a, i);
+            }
+        }
+      }
+    }
+    // Cubes that left: dissolving where they were last drawn.
+    for (const v of this.views.values()) {
+      if (alive.has(v)) continue;
+      if (v.gone < 0) {
+        v.mesh.visible = false;
+        continue;
+      }
+      const k = (now - v.gone) / 0.6;
+      v.mesh.visible = k < 1;
+      v.u.uAssemble.value = Math.max(0.001, 1 - k);
+      v.u.uTime.value = anim;
+    }
+  }
+
+  /** Effects tied to a Tungsten's own state: Shield arcs, tethers, reels and slams, the Lunge and the idle magnet. */
+  private ship(s: Ship, t: TungstenState, team: Team | -1): void {
+    const now = this.game.renderTime;
+    const seen = this.shipVisible(s, team);
+    const tip = this.anchor(s, 0, MAGNET.poleTip, 0, new Vector3());
+    const lead = t.cubes[0];
+    const mode = modeColor(t.mode);
+    // Idle crackle between the crown pole and a cradled cube; livelier as the Shield store fills.
+    if (seen && lead?.state === 'docked') {
+      const top = tip.y - (MAGNET.poleTip - (s.spec.freeboard + 6 + CUBE.edge));
+      const charge = t.charge / CUBE.chargeCap;
+      const arcs = 1 + Math.round(charge * 3);
+      for (let i = 0; i < arcs; i++) {
+        const on = this.reduce || hash01(s.id * 17 + i, Math.floor(now * 9)) < 0.55 + charge * 0.4;
+        if (!on) continue;
+        const ox = (hash01(s.id + i, Math.floor(now * 20)) - 0.5) * CUBE.edge * 0.7,
+          oz = (hash01(s.id + i * 5, Math.floor(now * 20)) - 0.5) * CUBE.edge * 0.7;
+        const foot = this.anchor(s, ox, top - s.renderPos.y + 0.5, oz, this.v2);
+        this.arc(tip.x, tip.y, tip.z, foot.x, foot.y, foot.z, s.id * 97 + i, hot(mode, 2.2), 0.8, 1.6, 3.5, 6);
+      }
+    }
+    // Shield: field lines from the crown to each guarding cube, and the capture shimmer around it.
+    for (const c of t.cubes) {
+      if (c.state !== 'guard') continue;
+      const p = this.renderPos(c, this.v);
+      const color = modeColor(c.mode);
+      const radius = c.mode === modeOf('repel') ? CUBE.guard.repelRadius : CUBE.guard.radius;
+      if (seen)
+        for (let i = 0; i < 3; i++) this.arc(tip.x, tip.y, tip.z, p.x, p.y + CUBE.edge * 0.45, p.z, c.id * 13 + i, hot(color, 2), 0.7 - i * 0.15, 2.4 - i * 0.6, 16 + i * 8, 12);
+      const pulse = this.reduce ? 0.5 : 0.5 + 0.5 * Math.sin(now * 5 + c.id);
+      this.field(p.x, p.y, p.z, radius * 1.15, hot(color, 1.8), 0.55 + pulse * 0.2, this.reduce ? 0 : now * 0.35 + c.id);
+      this.ring(p.x, p.z, radius, hot(color, 1.2), 0.35, BK.Hex, now * 0.2);
+    }
+    // Tether chains to every hull the cubes hold.
+    for (const x of t.tethers) {
+      const c = t.cubes.find((k) => k.id === x.cube);
+      const o = this.game.ships.find((k) => k.id === x.target);
+      if (!c || !o?.alive) continue;
+      const p = this.renderPos(c, this.v);
+      const color = modeColor(TETHER);
+      const d = Math.hypot(o.renderPos.x - p.x, o.renderPos.z - p.z);
+      const fade = clamp01((x.until - this.game.time) / 0.4);
+      this.chain(p.x, p.y, p.z, o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, hot(color, 1.8), 0.85 * fade, Math.min(70, d * 0.12), 1.2);
+      this.loop(o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, o.spec.beam * 0.9, hot(color, 1.6), 0.45 * fade);
+      this.ring(o.renderPos.x, o.renderPos.z, o.spec.length * 0.55, hot(color, 1), 0.25 * fade);
+    }
+    for (const a of t.acts) {
+      const c = t.cubes.find((k) => k.id === a.cube);
+      const color = modeColor(c?.mode ?? t.mode);
+      const k = a.elapsed / a.time;
+      if (a.kind === 'reel' && c) {
+        // Taut chains that haul every caught hull to the cube.
+        const p = this.renderPos(c, this.v);
+        for (const id of a.targets) {
+          const o = this.game.ships.find((x) => x.id === id);
+          if (!o?.alive) continue;
+          this.chain(p.x, p.y, p.z, o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, hot(color, 2.2), 0.95, 0, 3);
+        }
+        this.ring(a.x, a.z, a.radius * (1 - ease(k)), hot(color, 1.5), 0.6 * (1 - k));
+      } else if (a.kind === 'slam') {
+        // The footprint the falling cube will hit, tightening as it drops.
+        this.ring(a.x, a.z, a.radius, hot(color, 1.4), 0.25 + 0.5 * k);
+        this.ring(a.x, a.z, a.radius * (1 - 0.6 * k), hot(color, 1.1), 0.35 * k);
+      }
+    }
+    // Lunge: the hull drawn down a magnetic rail toward the cube, field lines leading it in.
+    const L = t.lunge;
+    if (L && seen) {
+      const c = t.cubes.find((k) => k.id === L.cube);
+      const h = s.renderHeading,
+        fx = Math.sin(h),
+        fz = -Math.cos(h),
+        rx = Math.cos(h),
+        rz = Math.sin(h);
+      const half = s.spec.length / 2;
+      for (const side of [-1, 1]) {
+        const ox = rx * side * (s.spec.beam / 2 + 6),
+          oz = rz * side * (s.spec.beam / 2 + 6);
+        this.trails.push(L.x0 + ox, 14, L.z0 + oz, s.renderPos.x + ox + fx * half * 0.6, 14, s.renderPos.z + oz + fz * half * 0.6, hot(mode, 2), 0.7, 10, 2);
+        this.trails.push(L.x0 + ox, 30, L.z0 + oz, s.renderPos.x + ox, 30, s.renderPos.z + oz, hot(WHITE, 1.5), 0.45, 3, 1);
+      }
+      if (c) {
+        const p = this.renderPos(c, this.v2);
+        for (let i = 0; i < 3; i++) this.arc(tip.x, tip.y, tip.z, p.x, p.y, p.z, s.id * 7 + i, hot(mode, 2.4), 0.85, 3 - i * 0.8, 30 + i * 20, 16);
+      }
+      // Bow wave thrown by the dragged hull.
+      for (const side of [-1, 1]) this.ring(s.renderPos.x + fx * half * 0.8 + rx * side * 40, s.renderPos.z + fz * half * 0.8 + rz * side * 40, 70, FOAM, 0.5, BK.Foam, side);
+    }
+  }
+
+  private burst(b: Burst, team: Team | -1): void {
+    const e = b.e,
+      s = e.ship;
+    const age = this.game.renderTime - b.at;
+    if (age < 0) return;
+    const f = age / b.life;
+    if (f >= 1) return;
+    const color = modeColor(e.mode);
+    const p = this.particles;
+    const n = (count: number) => Math.max(1, Math.round(count * this.detail * (this.reduce ? 0.5 : 1)));
+    const R = (i: number, j: number) => hash01(b.id * 977 + i, j);
+    const seen = this.shipVisible(s, team);
+    switch (e.kind) {
+      case 'throw': {
+        if (!seen) return;
+        if (age < 0.15) p.push(BK.Flare, e.x, e.y, e.z, 160 * (1 - age / 0.15) + 40, hot(WHITE, 1.5), 1 - age / 0.15);
+        this.loop(e.x, e.y, e.z, 30 + 130 * ease(age / 0.4), hot(color, 1.8), 0.8 * (1 - f));
+        for (let i = 0; i < n(18); i++) {
+          const side = i % 2 ? 1 : -1,
+            a = R(i, 0) * TAU,
+            v = 60 + 90 * R(i, 1);
+          const o = this.anchor(s, (R(i, 2) - 0.5) * 30, s.spec.freeboard + 20 + R(i, 3) * 40, side * (CUBE.edge / 2 + 5), this.v);
+          p.push(BK.Spark, o.x + Math.cos(a) * drift(age, v, 3), o.y + drift(age, v * 0.4, 3, 30), o.z + Math.sin(a) * drift(age, v, 3), 1.2, hot(color, 2.4), 1 - f, 0, 0, Math.cos(a) * 4, 2, Math.sin(a) * 4, 1.4);
+        }
+        return;
+      }
+      case 'hit':
+      case 'contact': {
+        const x = e.kind === 'hit' ? b.tx : e.x,
+          z = e.kind === 'hit' ? b.tz : e.z,
+          y = Math.max(20, e.y);
+        if (age < 0.18) p.push(BK.Flare, x, y, z, 120, hot(WHITE, 1.8), 1 - age / 0.18, R(0, 0));
+        p.push(BK.Glow, x, y, z, 260 * (0.5 + ease(age / 0.3) * 0.5), hot(color, 1.2), 0.45 * (1 - f));
+        this.loop(x, y, z, 40 + 180 * ease(age / 0.45), hot(color, 1.6), 0.7 * (1 - clamp01(age / 0.5)));
+        for (let i = 0; i < n(28); i++) {
+          const a = R(i, 1) * TAU,
+            up = 40 + 160 * R(i, 2),
+            v = 90 + 220 * R(i, 3);
+          const pl = 0.4 + 0.5 * R(i, 4);
+          if (age > pl) continue;
+          p.push(BK.Spark, x + Math.cos(a) * drift(age, v, 2.4), y + drift(age, up, 2.4, 140), z + Math.sin(a) * drift(age, v, 2.4), 1.6, tint2.copy(WHITE).lerp(color, age / pl).multiplyScalar(2.4), 1 - age / pl, 0, 0, Math.cos(a) * 5, 2, Math.sin(a) * 5, 1.6);
+        }
+        const base = this.surface(x, z);
+        for (let i = 0; i < n(10); i++) {
+          const a = R(i, 6) * TAU,
+            r = 20 + 50 * R(i, 7),
+            h = drift(age, 70 + 90 * R(i, 8), 1.4, 90);
+          if (h > 0) p.push(BK.Spray, x + Math.cos(a) * r, base + h, z + Math.sin(a) * r, 24 + age * 60, SPRAY, 0.6 * (1 - f), a, R(i, 9));
+        }
+        this.modeHit(b, x, y, z, age, f, color);
+        return;
+      }
+      case 'land':
+      case 'arrive': {
+        if (e.kind === 'arrive' && !seen) return;
+        const base = this.surface(e.x, e.z);
+        const r = e.kind === 'arrive' ? s.spec.length * 0.5 : CUBE.edge * 1.4;
+        if (e.kind === 'arrive') this.foamRing(e.x, e.z, r * (0.5 + ease(age / 0.6)), 0.6 * (1 - f), b.id);
+        else this.ring(e.x, e.z, r * (0.5 + ease(age / 0.6)), FOAM, 0.6 * (1 - f), BK.Foam, b.id);
+        this.ring(e.x, e.z, r * 1.4 * ease(age / 0.5), hot(color, 1.4), 0.6 * (1 - clamp01(age / 0.6)));
+        for (let i = 0; i < n(16); i++) {
+          const a = (i / 16) * TAU + R(i, 0) * 0.3,
+            out = r * (0.6 + 0.4 * R(i, 1)) + drift(age, 60, 2),
+            h = drift(age, 50 + 70 * R(i, 2), 1.6, 80);
+          if (h > 0) p.push(BK.Spray, e.x + Math.cos(a) * out, base + h, e.z + Math.sin(a) * out, 20 + age * 40, SPRAY, 0.55 * (1 - f), a, R(i, 3));
+        }
+        return;
+      }
+      case 'dock': {
+        if (!seen) return;
+        const top = this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge, 0, this.v);
+        if (age < 0.12) p.push(BK.Flare, top.x, top.y, top.z, 200, hot(WHITE, 1.6), 1 - age / 0.12);
+        this.loop(top.x, top.y - CUBE.edge / 2, top.z, CUBE.edge * (0.8 + ease(age / 0.3)), hot(color, 2), 0.8 * (1 - f));
+        for (let i = 0; i < n(20); i++) {
+          const a = R(i, 0) * TAU,
+            v = 80 + 120 * R(i, 1);
+          p.push(BK.Spark, top.x + Math.cos(a) * drift(age, v, 4), top.y + drift(age, 40, 4, 60), top.z + Math.sin(a) * drift(age, v, 4), 1.2, hot(color, 2.6), 1 - f, 0, 0, Math.cos(a) * 3, 1, Math.sin(a) * 3, 1.2);
+        }
+        return;
+      }
+      case 'break':
+        this.shatter(b, age, f, color);
+        return;
+      case 'reform': {
+        if (!seen) return;
+        const o = this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge / 2, 0, this.v);
+        p.push(BK.Glow, o.x, o.y, o.z, 200 * (1 - f * 0.5), hot(color, 1.4), 0.6 * (1 - f));
+        // Motes drawn in from all round onto the cradle.
+        for (let i = 0; i < n(30); i++) {
+          const a = R(i, 0) * TAU,
+            el = (R(i, 1) - 0.3) * 1.4,
+            k = ease(clamp01(age / (0.5 + 0.4 * R(i, 2))));
+          const r = 220 * (1 - k) + 10;
+          p.push(BK.Spark, o.x + Math.cos(a) * Math.cos(el) * r, o.y + Math.sin(el) * r, o.z + Math.sin(a) * Math.cos(el) * r, 1.4, hot(color, 2.4), 1 - f, 0, 0, -Math.cos(a) * 3, -Math.sin(el) * 3, -Math.sin(a) * 3, 1.4);
+        }
+        return;
+      }
+      case 'switch': {
+        const c = s.tungsten?.cubes.find((k) => k.id === e.cube);
+        if (c?.state === 'docked' && !seen) return;
+        const o = c?.state === 'docked' ? this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge / 2, 0, this.v) : this.v.set(e.x, e.y, e.z);
+        this.loop(o.x, o.y, o.z, CUBE.edge * (0.7 + 1.2 * ease(age / 0.4)), hot(color, 2.2), 0.8 * (1 - f));
+        if (age < 0.1) p.push(BK.Flare, o.x, o.y, o.z, 140, hot(color, 1.6), 1 - age / 0.1);
+        return;
+      }
+      case 'signature':
+        this.signature(b, age, f, color);
+        return;
+      case 'slam': {
+        const base = this.surface(e.x, e.z);
+        if (age < 0.2) p.push(BK.Flare, e.x, base + 30, e.z, 420, hot(WHITE, 1.4), 1 - age / 0.2);
+        p.push(BK.Glow, e.x, base + 20, e.z, e.radius * 1.6, hot(color, 1.1), 0.5 * (1 - clamp01(age / 0.5)));
+        this.ring(e.x, e.z, e.radius * ease(age / 0.45), hot(color, 1.8), 0.9 * (1 - clamp01(age / 0.7)));
+        this.ring(e.x, e.z, e.radius * 0.9 * ease(age / 0.3), hot(WHITE, 1.2), 0.5 * (1 - clamp01(age / 0.4)));
+        this.ring(e.x, e.z, CUBE.edge * 2.2, FOAM, 0.7 * (1 - f), BK.Foam, b.id);
+        this.foamRing(e.x, e.z, e.radius * (0.5 + 0.5 * ease(age / 0.8)), 0.65 * (1 - f), b.id);
+        // A wall of water thrown up all round the impact.
+        for (let i = 0; i < n(44); i++) {
+          const a = (i / 44) * TAU + R(i, 0) * 0.2,
+            r = CUBE.edge + drift(age, e.radius * (1.2 + 0.6 * R(i, 1)), 2.2),
+            h = drift(age, 160 + 200 * R(i, 2), 1.3, 260);
+          if (h > 0) p.push(BK.Spray, e.x + Math.cos(a) * r, base + h, e.z + Math.sin(a) * r, (24 + 20 * R(i, 3)) * (1 + f * 1.5), SPRAY, 0.7 * (1 - f), a, R(i, 4));
+        }
+        for (let i = 0; i < n(30); i++) {
+          const a = R(i, 5) * TAU,
+            v = 200 + 300 * R(i, 6);
+          if (age > 0.6) break;
+          p.push(BK.Spark, e.x + Math.cos(a) * drift(age, v, 2), base + 10 + drift(age, 120, 2, 200), e.z + Math.sin(a) * drift(age, v, 2), 1.8, hot(color, 2.4), 1 - age / 0.6, 0, 0, Math.cos(a) * 6, 1, Math.sin(a) * 6, 1.6);
+        }
+        return;
+      }
+      case 'reel': {
+        if (age < 0.15) p.push(BK.Flare, e.x, 40, e.z, 260, hot(WHITE, 1.5), 1 - age / 0.15);
+        this.loop(e.x, 40, e.z, 80 + 260 * ease(age / 0.5), hot(color, 2), 0.8 * (1 - f));
+        return;
+      }
+      case 'lunge': {
+        if (!seen) return;
+        if (age < 0.2) p.push(BK.Flare, e.x, 40, e.z, 300, hot(color, 1.4), 1 - age / 0.2);
+        this.ring(e.x, e.z, s.spec.length * 0.6 * (0.5 + ease(age / 0.5)), hot(color, 1.4), 0.6 * (1 - f));
+        return;
+      }
+      case 'capture': {
+        const c = s.tungsten?.cubes.find((k) => k.id === e.cube);
+        const to = c ? this.renderPos(c, this.v) : this.v.set(e.x, e.y, e.z);
+        // Sparks wrenched off course into the cube.
+        for (let i = 0; i < n(8); i++) {
+          const k = ease(clamp01(age / (0.25 + 0.15 * R(i, 0))));
+          const ox = (R(i, 1) - 0.5) * 40,
+            oy = (R(i, 2) - 0.5) * 40,
+            oz = (R(i, 3) - 0.5) * 40;
+          p.push(BK.Spark, e.x + ox + (to.x - e.x - ox) * k, e.y + oy + (to.y - e.y - oy) * k, e.z + oz + (to.z - e.z - oz) * k, 1.2, hot(color, 2.6), 1 - f, 0, 0, (to.x - e.x) * 0.02, (to.y - e.y) * 0.02, (to.z - e.z) * 0.02, 1.4);
+        }
+        this.loop(to.x, to.y, to.z, CUBE.edge * (0.7 + 0.5 * ease(age / 0.3)), hot(color, 1.8), 0.5 * (1 - f));
+        return;
+      }
+      case 'block': {
+        if (age < 0.08) p.push(BK.Flare, e.x, e.y, e.z, 50, hot(WHITE, 1.6), 1 - age / 0.08);
+        for (let i = 0; i < n(10); i++) {
+          const a = R(i, 0) * TAU,
+            v = 60 + 120 * R(i, 1);
+          p.push(BK.Spark, e.x + Math.cos(a) * drift(age, v, 3), e.y + drift(age, 60 * R(i, 2), 3, 80), e.z + Math.sin(a) * drift(age, v, 3), 1, hot(WHITE, 2), 1 - f, 0, 0, Math.cos(a) * 3, 1, Math.sin(a) * 3, 1.2);
+        }
+        return;
+      }
+      case 'shield': {
+        const radius = e.radius;
+        this.ring(e.x, e.z, s.spec.length * 0.5 + radius * ease(age / 0.6), hot(color, 1.5), 0.6 * (1 - f));
+        if (seen) this.loop(e.x, 50, e.z, s.spec.length * 0.3 + 120 * ease(age / 0.4), hot(color, 1.6), 0.5 * (1 - f));
+        return;
+      }
+      case 'overdrive':
+      case 'overdriveEnd': {
+        if (!seen) return;
+        const start = e.kind === 'overdrive';
+        const o = this.anchor(s, 0, MAGNET.poleTip, 0, this.v);
+        if (start && age < 0.25) p.push(BK.Flare, o.x, o.y + 30, o.z, 520, hot(WHITE, 1.6), 1 - age / 0.25);
+        // One expanding ring per mode, staggered, in the six colours.
+        for (let m = 0; m < 6; m++) {
+          const a = age - m * 0.07;
+          if (a < 0) continue;
+          const k = ease(a / 0.9);
+          this.ring(e.x, e.z, (start ? 140 + 520 * k : 600 - 400 * k), hot(modeColor(m), 1.7), 0.6 * (1 - f));
+        }
+        if (start) {
+          p.push(BK.Glow, o.x, o.y, o.z, 600 * (1 - f * 0.5), hot(color, 1), 0.5 * (1 - f));
+          for (let i = 0; i < n(40); i++) {
+            const m = i % 6,
+              a = R(i, 0) * TAU,
+              v = 100 + 260 * R(i, 1);
+            p.push(BK.Spark, o.x + Math.cos(a) * drift(age, v, 1.8), o.y + drift(age, 120 * R(i, 2), 1.8, 60), o.z + Math.sin(a) * drift(age, v, 1.8), 1.8, hot(modeColor(m), 2.6), 1 - f, 0, 0, Math.cos(a) * 5, 1, Math.sin(a) * 5, 1.6);
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  /** Each mode marks its hits its own way. */
+  private modeHit(b: Burst, x: number, y: number, z: number, age: number, f: number, color: Color): void {
+    const p = this.particles;
+    const id = TUNGSTEN_MODES[b.e.mode].id;
+    const R = (i: number, j: number) => hash01(b.id * 613 + i, j);
+    const n = (count: number) => Math.max(1, Math.round(count * this.detail));
+    if (id === 'crush') {
+      // A dull amber shock ring at the waterline and a stun crown over the hull.
+      this.ring(x, z, 60 + 200 * ease(age / 0.5), hot(color, 1.6), 0.8 * (1 - f));
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * TAU + this.game.renderTime * 3;
+        if (age < HIT.crush.stun) p.push(BK.Flare, x + Math.cos(a) * 40, y + 40, z + Math.sin(a) * 40, 22, hot(color, 2), 0.9 * (1 - f));
+      }
+    } else if (id === 'shard') {
+      // Shrapnel thrown across the splash radius.
+      for (let i = 0; i < n(30); i++) {
+        const a = R(i, 0) * TAU,
+          v = HIT.shard.radius * (1.2 + R(i, 1)),
+          pl = 0.45 + 0.3 * R(i, 2);
+        if (age > pl) continue;
+        p.push(BK.Spark, x + Math.cos(a) * drift(age, v, 2), y + drift(age, 90 * R(i, 3), 2, 160), z + Math.sin(a) * drift(age, v, 2), 1.4, hot(color, 2.6), 1 - age / pl, 0, 0, Math.cos(a) * 8, 0.5, Math.sin(a) * 8, 1.4);
+      }
+      this.ring(x, z, HIT.shard.radius * ease(age / 0.4), hot(color, 1.2), 0.4 * (1 - f));
+    } else if (id === 'repel') {
+      this.ring(x, z, 80 + HIT.repel.knock * ease(age / 0.5), hot(color, 1.8), 0.85 * (1 - f));
+      this.foamRing(x, z, 60 + HIT.repel.knock * 0.8 * ease(age / 0.6), 0.5 * (1 - f), b.id);
+    } else if (id === 'tether') {
+      this.loop(x, y, z, 70 + 40 * Math.sin(age * 20), hot(color, 2), 0.6 * (1 - f));
+    } else if (id === 'mend') {
+      // Green motes drift from the wound back to the Tungsten.
+      const s = b.e.ship;
+      for (let i = 0; i < n(14); i++) {
+        const k = ease(clamp01((age - R(i, 0) * 0.3) / 0.6));
+        if (k <= 0) continue;
+        const ox = (R(i, 1) - 0.5) * 80,
+          oz = (R(i, 2) - 0.5) * 80;
+        const lift = Math.sin(Math.PI * k) * 120;
+        p.push(BK.Glow, x + ox + (s.renderPos.x - x - ox) * k, y + lift + (40 - y) * k, z + oz + (s.renderPos.z - z - oz) * k, 18, hot(color, 2), 0.9 * (1 - k * 0.5));
+      }
+    } else if (id === 'kinetic') {
+      this.loop(x, y, z, 30 + 320 * ease(age / 0.3), hot(WHITE, 1.4), 0.6 * (1 - clamp01(age / 0.35)));
+    }
+  }
+
+  private signature(b: Burst, age: number, f: number, color: Color): void {
+    const e = b.e,
+      p = this.particles;
+    const sig = TUNGSTEN_MODES[e.mode].signature.id;
+    const R = (i: number, j: number) => hash01(b.id * 389 + i, j);
+    const n = (count: number) => Math.max(1, Math.round(count * this.detail * (this.reduce ? 0.5 : 1)));
+    const base = this.surface(e.x, e.z);
+    if (age < 0.12) p.push(BK.Flare, e.x, e.y, e.z, 200, hot(color, 1.8), 1 - age / 0.12);
+    if (sig === 'ricochet') {
+      this.loop(e.x, e.y, e.z, 40 + 160 * ease(age / 0.3), hot(color, 2), 0.8 * (1 - clamp01(age / 0.5)));
+    } else if (sig === 'storm') {
+      // Fragment Storm: the cube's skin shears off in a sphere of red-hot shards.
+      p.push(BK.Glow, e.x, e.y, e.z, e.radius * 1.2 * (0.4 + 0.6 * ease(age / 0.3)), hot(color, 1.1), 0.5 * (1 - clamp01(age / 0.6)));
+      for (let i = 0; i < n(90); i++) {
+        const a = R(i, 0) * TAU,
+          el = (R(i, 1) - 0.25) * 1.3,
+          v = e.radius * (1.3 + 0.7 * R(i, 2)),
+          pl = 0.6 + 0.6 * R(i, 3);
+        if (age > pl) continue;
+        const d = drift(age, v, 2.2);
+        p.push(BK.Spark, e.x + Math.cos(a) * Math.cos(el) * d, Math.max(base + 2, e.y + Math.sin(el) * d - 30 * age * age), e.z + Math.sin(a) * Math.cos(el) * d, 2, tint2.copy(WHITE).lerp(color, age / pl).multiplyScalar(2.6), 1 - age / pl, 0, 0, Math.cos(a) * 9, Math.sin(el) * 9, Math.sin(a) * 9, 1.8);
+      }
+      this.ring(e.x, e.z, e.radius * ease(age / 0.5), hot(color, 1.6), 0.7 * (1 - f));
+      for (let i = 0; i < n(24); i++) {
+        const a = R(i, 7) * TAU,
+          r = e.radius * (0.3 + 0.7 * R(i, 8)),
+          t0 = 0.2 + 0.5 * R(i, 9),
+          la = age - t0;
+        if (la < 0 || la > 0.8) continue;
+        const h = drift(la, 60 + 60 * R(i, 10), 1.5, 80);
+        if (h > 0) p.push(BK.Spray, e.x + Math.cos(a) * r, base + h, e.z + Math.sin(a) * r, 14 + la * 40, SPRAY, 0.5 * (1 - la / 0.8), a, i);
+      }
+    } else if (sig === 'repulse') {
+      // Repulse: a hard blue wave that flattens the sea and throws a lip of spray.
+      const front = e.radius * ease(age / 0.55);
+      this.ring(e.x, e.z, front, hot(color, 2), 0.95 * (1 - f));
+      this.ring(e.x, e.z, front * 0.92, hot(WHITE, 1.2), 0.5 * (1 - f));
+      this.foamRing(e.x, e.z, front, 0.5 * (1 - f), b.id);
+      this.loop(e.x, e.y, e.z, 60 + front * 0.6, hot(color, 1.5), 0.5 * (1 - clamp01(age / 0.5)));
+      if (age < 0.7)
+        for (let i = 0; i < n(48); i++) {
+          const a = (i / 48) * TAU + R(i, 0) * 0.1;
+          p.push(BK.Spray, e.x + Math.cos(a) * front, base + 8 + 30 * R(i, 1) * (1 - age), e.z + Math.sin(a) * front, 30 + 20 * R(i, 2), SPRAY, 0.6 * (1 - age / 0.7), a, R(i, 3));
+        }
+    } else if (sig === 'reel') {
+      this.ring(e.x, e.z, e.radius * (1 - ease(age / SIGNATURE.reel.time)), hot(color, 1.8), 0.8 * (1 - f));
+    } else if (sig === 'restore') {
+      // Restore: a green tide out to every ally in reach, motes rising off the water.
+      this.ring(e.x, e.z, e.radius * ease(age / 0.8), hot(color, 1.8), 0.85 * (1 - f));
+      this.ring(e.x, e.z, e.radius * 0.95 * ease(age / 1), hot(color, 1), 0.4 * (1 - f), BK.Hex, b.id);
+      for (let i = 0; i < n(50); i++) {
+        const a = R(i, 0) * TAU,
+          r = e.radius * Math.sqrt(R(i, 1)) * ease(age / 0.8),
+          rise = drift(age, 40 + 60 * R(i, 2), 0.6);
+        p.push(BK.Glow, e.x + Math.cos(a) * r, base + 5 + rise, e.z + Math.sin(a) * r, 10 + 10 * R(i, 3), hot(color, 2.2), 0.8 * (1 - f));
+      }
+      const s = e.ship;
+      this.loop(s.renderPos.x, 40, s.renderPos.z, s.spec.length * 0.4 * (0.6 + 0.4 * ease(age / 0.5)), hot(color, 1.6), 0.6 * (1 - f));
+    }
+  }
+
+  /** A shattered cube: chunks of tungsten tumble out and splash down, the etching guttering out in sparks. */
+  private shatter(b: Burst, age: number, f: number, color: Color): void {
+    const e = b.e,
+      p = this.particles;
+    const R = (i: number, j: number) => hash01(b.id * 211 + i, j);
+    if (age < 0.2) p.push(BK.Flare, e.x, e.y, e.z, 380, hot(WHITE, 1.8), 1 - age / 0.2);
+    p.push(BK.Glow, e.x, e.y, e.z, 300 * (0.6 + 0.4 * ease(age / 0.3)), hot(color, 1.2), 0.6 * (1 - clamp01(age / 0.7)));
+    this.loop(e.x, e.y, e.z, 60 + 340 * ease(age / 0.5), hot(color, 1.8), 0.8 * (1 - clamp01(age / 0.6)));
+    for (let i = 0; i < Math.round(16 * this.detail); i++) {
+      const a = R(i, 0) * TAU,
+        v = 40 + 60 * R(i, 1);
+      p.push(BK.Smoke, e.x + Math.cos(a) * drift(age, v, 1), e.y + drift(age, 30 * R(i, 2), 1), e.z + Math.sin(a) * drift(age, v, 1), 40 + age * 50, tint2.setHex(0x3a3d42), 0.6 * (1 - f), a, R(i, 3));
+    }
+    for (let i = 0; i < Math.round(50 * this.detail); i++) {
+      const a = R(i, 4) * TAU,
+        el = (R(i, 5) - 0.2) * 1.5,
+        v = 150 + 250 * R(i, 6),
+        pl = 0.6 + 0.8 * R(i, 7);
+      if (age > pl) continue;
+      const d = drift(age, v, 1.8);
+      p.push(BK.Spark, e.x + Math.cos(a) * Math.cos(el) * d, e.y + drift(age, Math.sin(el) * v, 1.8, 120), e.z + Math.sin(a) * Math.cos(el) * d, 1.6, hot(color, 2.6), 1 - age / pl, 0, 0, Math.cos(a) * 5, 2, Math.sin(a) * 5, 1.4);
+    }
+    // Real chunks of metal, each with its own arc, spin and splash.
+    const chunks = Math.round(18 * this.detail);
+    for (let i = 0; i < chunks && this.debris.count < DEBRIS_CAP; i++) {
+      const a = R(i, 10) * TAU,
+        v = 60 + 140 * R(i, 11),
+        up = 40 + 120 * R(i, 12),
+        size = 8 + 14 * R(i, 13);
+      const x = e.x + Math.cos(a) * drift(age, v, 0.5),
+        z = e.z + Math.sin(a) * drift(age, v, 0.5);
+      const y = e.y + drift(age, up, 0.5, 60);
+      const water = this.surface(x, z);
+      if (y < water - size) {
+        // Gone in: foam marks where it went.
+        p.push(BK.Spray, x, water + 6, z, size * 2.5, SPRAY, 0.35 * (1 - f), a, i);
+        continue;
+      }
+      this.q.setFromAxisAngle(this.v.set(R(i, 14) - 0.5, R(i, 15) - 0.5, R(i, 16) - 0.5).normalize(), age * (3 + 6 * R(i, 17)));
+      this.scale.set(size, size * (0.5 + 0.6 * R(i, 18)), size * (0.6 + 0.5 * R(i, 19)));
+      this.m4.compose(this.v2.set(x, y, z), this.q, this.scale);
+      const k = this.debris.count++;
+      this.debris.setMatrixAt(k, this.m4);
+      this.debris.setColorAt(k, tint2.copy(color).multiplyScalar(Math.max(0, 1 - age / 1.6)));
+    }
+    this.foamRing(e.x, e.z, 80 + 260 * ease(age / 1.2), 0.4 * (1 - f), b.id);
+  }
+
+  dispose(): void {
+    for (const f of this.off) f();
+    this.off = [];
+    for (const v of this.views.values()) this.release(v);
+    this.views.clear();
+    this.particles.dispose();
+    this.lines.dispose();
+    this.trails.dispose();
+    this.scene.remove(this.lines.mesh, this.trails.mesh, this.debris);
+    this.debris.geometry.dispose();
+    (this.debris.material as MeshStandardMaterial).dispose();
+  }
+}

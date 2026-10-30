@@ -2,6 +2,7 @@ import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import { addFleetDetails, FLEET_DETAILS } from './FleetDetails';
 import { ArchitectModel, architectTurretGeometry, elementalTurretGeometry, architectGlowMaterial } from './ArchitectModel';
 import { StepperModel } from './StepperModel';
+import { TungstenModel } from './TungstenModel';
 import { stepperHullGeometry, stepperTurretGeometry } from './StepperGeometry';
 import {
   AdditiveBlending,
@@ -1061,6 +1062,8 @@ export class ShipView {
   /** Presentation-only yaw added to the hull, used by Stepper's turn-to-face on Flicker strikes. */
   stepYaw=0;
   private stepModel: StepperModel | null = null;
+  /** The Tungsten's electromagnet and its docked cubes. */
+  tungstenModel: TungstenModel | null = null;
 
   constructor(readonly spec: ShipSpec, shadows = true) {
     const geo = geometriesFor(spec);
@@ -1093,6 +1096,10 @@ export class ShipView {
     this.body.add(hull);
     if(spec.id==='architect'||spec.id==='architectPlatform'){this.architectModel=new ArchitectModel((g,m)=>this.mesh(g,shadows,m),spec);this.body.add(this.architectModel.root);}
     if(spec.id==='stepper'){this.stepModel=new StepperModel((g,m)=>this.mesh(g,shadows,m));this.body.add(this.stepModel.root);}
+    if (spec.id === 'tungsten') {
+      this.tungstenModel = new TungstenModel((g, m) => this.mesh(g, shadows, m));
+      this.body.add(this.tungstenModel.root);
+    }
 
     const top = spec.sub ? null : mastTop(spec);
     if (top) {
@@ -1439,6 +1446,7 @@ export class ShipView {
   pose(time: number): void {
     this.architectModel?.pose(time);
     this.stepModel?.pose(time);
+    this.tungstenModel?.pose(time);
     this.root.position.y = waveHeight(0, 0, time) * 0.3;
     this.root.rotation.z = Math.sin(time * 0.6) * 0.01;
     this.root.rotation.x = Math.sin(time * 0.45) * 0.015;
@@ -1450,6 +1458,7 @@ export class ShipView {
   update(ship: Ship, time: number): void {
     this.architectModel?.pose(time,ship);
     this.stepModel?.pose(time,ship,this.stepFold);
+    this.tungstenModel?.pose(time, ship);
     if(this.stepModel) {
       this.material.transparent=!!ship.stepper?.copy;
       this.material.opacity=ship.stepper?.copy?0.48:1;
@@ -1647,6 +1656,7 @@ export class ShipView {
   dispose(): void {
     this.architectModel?.dispose();
     this.stepModel?.dispose();
+    this.tungstenModel?.dispose();
     this.aura.material.dispose();
     this.formShell?.material.dispose();
     this.material.dispose();

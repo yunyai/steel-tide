@@ -5,6 +5,7 @@ import { FleetFx } from './FleetFx';
 import { ArchitectFx } from './ArchitectFx';
 import { StepperFx } from './StepperFx';
 import { CrossStepFx } from './CrossStepFx';
+import { TungstenCubeFx } from './TungstenCubeFx';
 import { TorpedoAim, type TorpedoAimSource } from './TorpedoAim';
 import { contactVisible } from '../core/Targeting';
 import { type Color, type Object3D, type PerspectiveCamera, Scene } from 'three';
@@ -37,6 +38,7 @@ export class NavalScene implements BattleScene {
   readonly dashFx: ArchitectDashFx;
   readonly crossFx: CrossStepFx;
   readonly stepperFx: StepperFx;
+  readonly tungstenFx: TungstenCubeFx;
   readonly aiming = new Map<PerspectiveCamera, TorpedoAimSource>();
   readonly scene = new Scene();
   readonly env: Environment;
@@ -64,6 +66,7 @@ export class NavalScene implements BattleScene {
     this.fleetFx = new FleetFx(this.scene, game);
     this.crossFx = new CrossStepFx(this.scene, game);
     this.stepperFx = new StepperFx(this.scene, game);
+    this.tungstenFx = new TungstenCubeFx(this.scene, game, (s) => this.views.get(s)?.tungstenModel ?? null);
     this.elementFx = new ArchitectElementFx(this.scene,game);
     this.architectFx = new ArchitectFx(this.scene, game);
     this.batteryFx = new ArchitectBatteryFx(this.scene, game);
@@ -130,6 +133,7 @@ export class NavalScene implements BattleScene {
     this.batteryFx.setFog(color, density);
     this.dashFx.setFog(color, density);
     this.elementFx.setFog(color, density);
+    this.tungstenFx.setFog(color, density);
   }
 
   dispose(): void {
@@ -143,6 +147,7 @@ export class NavalScene implements BattleScene {
     this.crossFx.dispose();
     this.fleetFx.dispose();
     this.stepperFx.dispose();
+    this.tungstenFx.dispose();
     this.torpedoAim.dispose();
     this.aiming.clear();
     this.effects.dispose();
@@ -226,6 +231,7 @@ export class NavalScene implements BattleScene {
     this.fleetFx.update(dt);
     this.crossFx.update(dt, this.skillFx.locals);
     this.stepperFx.update(dt, this.skillFx.locals);
+    this.tungstenFx.update(dt, this.skillFx.locals);
     this.architectFx.update(dt, this.skillFx.locals);
     this.batteryFx.update(dt);
     this.dashFx.update(dt, this.skillFx.locals);
@@ -263,6 +269,7 @@ export class NavalScene implements BattleScene {
     this.elementFx.prepare(vp.team, heightPx);
     this.crossFx.prepare(vp.team, heightPx);
     this.stepperFx.prepare(vp.team, heightPx);
+    this.tungstenFx.prepare(vp.team, heightPx);
     this.torpedoAim.update(this.aiming.get(vp.camera), heightPx);
     this.visibility(vp.team);
     if (vp.hide) this.views.get(vp.hide as Ship)?.setMode('hidden');
