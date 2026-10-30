@@ -28,6 +28,7 @@ import {
   type Side,
 } from 'three';
 import { DEG, clamp, wrapAngle } from '../core/math';
+import { DASH_TIME } from '../skills/misc/ArchitectRuntime';
 import type { PlaneLook, ShipSpec, SkillSpec } from '../core/types';
 import { deckHeight, hullHalfWidth } from '../ships/HullShape';
 import type { Ship } from '../ships/Ship';
@@ -1531,6 +1532,13 @@ export class ShipView {
       for (const e of this.emitters) e.mesh.material.color.copy(e.color).multiplyScalar(k);
     }
     pitch += clamp(ship.speed * 0.0006, -0.01, 0.02);
+    // Hull Dash: bow up on the lift, bow down into the landing, banked while it swings onto the dash line.
+    const drive = ship.architect?.drive;
+    if (drive && ship.alive) {
+      const f = clamp(drive.elapsed / DASH_TIME, 0, 1);
+      pitch += 0.09 * Math.sin(f * Math.PI * 2);
+      roll -= clamp(wrapAngle(Math.atan2(drive.dx, -drive.dz) - drive.from), -1, 1) * 0.22 * Math.sin(Math.min(1, f * 2) * Math.PI);
+    }
     if (this.radar && ship.alive && this.mastFall <= 0) this.radar.rotation.y += dt * 1.6;
     if (this.orrery && ship.alive) this.orrery.rotation.y += dt * (active ? 1.2 : 0.3);
     if (this.radar && this.mastFall > 0) {

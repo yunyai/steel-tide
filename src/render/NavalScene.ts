@@ -1,4 +1,5 @@
 import { ArchitectBatteryFx } from './ArchitectBatteryFx';
+import { ArchitectDashFx } from './ArchitectDashFx';
 import { ArchitectElementFx } from './ArchitectElementFx';
 import { FleetFx } from './FleetFx';
 import { ArchitectFx } from './ArchitectFx';
@@ -33,6 +34,7 @@ export class NavalScene implements BattleScene {
   readonly elementFx:ArchitectElementFx;
   readonly architectFx: ArchitectFx;
   readonly batteryFx: ArchitectBatteryFx;
+  readonly dashFx: ArchitectDashFx;
   readonly crossFx: CrossStepFx;
   readonly stepperFx: StepperFx;
   readonly aiming = new Map<PerspectiveCamera, TorpedoAimSource>();
@@ -65,6 +67,7 @@ export class NavalScene implements BattleScene {
     this.elementFx = new ArchitectElementFx(this.scene,game);
     this.architectFx = new ArchitectFx(this.scene, game);
     this.batteryFx = new ArchitectBatteryFx(this.scene, game);
+    this.dashFx = new ArchitectDashFx(this.scene, game);
     const q = quality();
     const gl = renderer.gl;
     gl.shadowMap.enabled = q.shadowMap > 0;
@@ -124,6 +127,8 @@ export class NavalScene implements BattleScene {
     this.ocean.material.uniforms.uFogDensity.value = density;
     this.projectiles.setFog(color, density);
     this.skillFx.setFog(color, density);
+    this.batteryFx.setFog(color, density);
+    this.dashFx.setFog(color, density);
   }
 
   dispose(): void {
@@ -132,6 +137,7 @@ export class NavalScene implements BattleScene {
     this.warm = [];
     this.architectFx.dispose();
     this.batteryFx.dispose();
+    this.dashFx.dispose();
     this.elementFx.dispose();
     this.crossFx.dispose();
     this.fleetFx.dispose();
@@ -221,6 +227,7 @@ export class NavalScene implements BattleScene {
     this.stepperFx.update(dt, this.skillFx.locals);
     this.architectFx.update(dt, this.skillFx.locals);
     this.batteryFx.update(dt);
+    this.dashFx.update(dt, this.skillFx.locals);
     this.elementFx.update(dt,this.skillFx.locals);
     this.projectiles.update(g);
   }
@@ -251,6 +258,7 @@ export class NavalScene implements BattleScene {
     this.fleetFx.prepare(vp.team);
     this.architectFx.prepare(vp.team, heightPx);
     this.batteryFx.prepare(vp.team, heightPx);
+    this.dashFx.prepare(vp.team, heightPx);
     this.elementFx.prepare(vp.team);
     this.crossFx.prepare(vp.team, heightPx);
     this.stepperFx.prepare(vp.team, heightPx);

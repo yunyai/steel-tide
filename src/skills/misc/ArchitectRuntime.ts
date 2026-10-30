@@ -50,7 +50,8 @@ export interface VectorMobilityState {
   /** Charges ready now, and the time each spent charge comes back (ascending); spent charges recharge in parallel. */
   dashCharges:number;dashRecharge:number[];mobileReadyAt:number;mobileUntil:number;mobileDuration:number;
 }
-const DASH_TIME=.55,DASH_RECHARGE=10,MOBILE_COOLDOWN=14,HOVER_SPEED=1200,HOVER_CLEARANCE=80,HOVER_LANDING=1.2;
+export const DASH_TIME=.55;
+const DASH_RECHARGE=10,MOBILE_COOLDOWN=14,HOVER_SPEED=1200,HOVER_CLEARANCE=80,HOVER_LANDING=1.2;
 /** Hull Dash pose: the bow swings onto the dash bearing, the hull lifts clear of the water and sets back down. */
 const DASH_TURN=.15,DASH_RISE=.12,DASH_LIFT=50;
 /** Per living Vector, with no cap: the arsenal is meant to stack into something ridiculous. */

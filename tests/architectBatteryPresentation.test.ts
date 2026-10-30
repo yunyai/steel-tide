@@ -84,7 +84,8 @@ it('uses authored deployment and receiver-only recoil, with reduced motion retai
 });
 
 import { BufferAttribute, InstancedMesh, Matrix4, Scene, Vector3 } from 'three';
-import { ArchitectBatteryFx, BATTERY_FX_CAPS } from '../src/render/ArchitectBatteryFx';
+import { ArchitectBatteryFx } from '../src/render/ArchitectBatteryFx';
+import { BK } from '../src/render/BurstParticles';
 import { siegeBatchGeometry } from '../src/render/ArchitectSiege';
 import { ShipView } from '../src/render/ShipModel';
 import { emptyGame, place, run } from './helpers';
@@ -128,61 +129,59 @@ it('instances all twelve hardware identities within the batch and low detail geo
 it('keeps launched world paths after platform loss or concealment, clears hard owner generations, and is hash pure',()=>{
  const {g,owner,fx}=fixture();let first:ArchitectBatteryLaunch|undefined;g.events.on('architectBatteryLaunch',e=>{first??=e;});run(g,1.55);g.interpolate();
  expect(first).toBeDefined();owner.architect!.slots[first!.slot].entity!.takeDamage(1e9,null,null,false,true);owner.mods.untargetable=true;
- const before=stateHash(g);fx.prepare(1);expect(fx.pools.shells.count).toBeGreaterThan(0);expect(fx.stats.machinery.heads).toBe(18);expect(stateHash(g)).toBe(before);
- g.battery.cancelOwner(owner);fx.prepare(1);expect(fx.count).toBe(0);expect(fx.stats.machinery.heads).toBe(0);expect(fx.hazard.count).toBe(0);fx.dispose();
+ const before=stateHash(g);fx.prepare(1);expect(fx.heads.length).toBeGreaterThan(0);expect(fx.stats.machinery.heads).toBe(18);expect(stateHash(g)).toBe(before);
+ g.battery.cancelOwner(owner);fx.prepare(1);expect(fx.count).toBe(0);expect(fx.heads).toHaveLength(0);expect(fx.stats.machinery.heads).toBe(0);expect(fx.hazard.count).toBe(0);fx.dispose();
 });
+/** Particles drawn within `r` of a world point, across every batch. */
+function near(fx:ArchitectBatteryFx,x:number,z:number,r:number){
+ let n=0;for(const b of Object.values(fx.particles.batches))for(let i=0;i<b.count;i++)if(Math.hypot(b.pos.getX(i)-x,b.pos.getZ(i)-z)<r)n++;return n;
+}
 
-it('reserves opaque damage-timed contacts, merges coincident hit feedback, and conceals victim-attached details per viewport',()=>{
+it('reserves damage-timed contacts, merges coincident hit feedback, and conceals victim-attached details per viewport',()=>{
  const {g,fx}=fixture(),victim=place(g,'leviathan',1,8000,8000);victim.mods.untargetable=true;
  let launch:ArchitectBatteryLaunch|undefined;g.events.on('architectBatteryLaunch',e=>{launch??=e;});run(g,1.55);victim.mods.untargetable=true;
  for(let i=0;i<5;i++)g.events.emit('architectBatteryImpact',{launch:launch!,resolvedAt:g.time-.1,recipients:[{target:victim,x:8000,y:40,z:8000,damage:50000}]});
- fx.prepare(0);const concealed=fx.pools.lobes.count;fx.prepare(1);expect(fx.pools.lobes.count-concealed).toBe(2);expect(fx.stats.mergedContacts).toBe(4);
- expect((fx.pools.lobes.mesh.material as any).transparent).toBe(false);expect((fx.pools.lobes.mesh.material as any).depthWrite).toBe(true);fx.dispose();
+ fx.prepare(0);expect(fx.stats.drawn.contacts).toBe(0);expect(near(fx,8000,8000,400)).toBe(0);
+ fx.prepare(1);expect(fx.stats.drawn.contacts).toBe(1);expect(near(fx,8000,8000,400)).toBeGreaterThan(3);expect(fx.stats.mergedContacts).toBe(4);fx.dispose();
 });
-
 it('renders the exact committed shell position and no source anchor rays, then yields recovery to a new command',()=>{
  const {g,owner,fx}=fixture();let launch:ArchitectBatteryLaunch|undefined;g.events.on('architectBatteryLaunch',e=>{launch??=e;});run(g,1.6);fx.prepare(0);
- const matrix=new Matrix4(),point=new Vector3();fx.pools.shells.mesh.getMatrixAt(0,matrix);point.setFromMatrixPosition(matrix);
- const expected=sampleArchitectBatteryArc(launch!.paths[0],(g.time-launch!.launchTime)/.42);
- expect(point.x).toBeCloseTo(expected.x,3);expect(point.y).toBeCloseTo(expected.y,3);expect(point.z).toBeCloseTo(expected.z,3);
+ const expected=sampleArchitectBatteryArc(launch!.paths[0],(g.time-launch!.launchTime)/.42),head=fx.heads[0],drawn=fx.particles.batches.additive;
+ expect(head.x).toBeCloseTo(expected.x,3);expect(head.y).toBeCloseTo(expected.y,3);expect(head.z).toBeCloseTo(expected.z,3);
+ expect(drawn.kindAt(0)).toBe(BK.Flare);expect(drawn.pos.getX(0)).toBeCloseTo(expected.x,3);expect(drawn.pos.getY(0)).toBeCloseTo(expected.y,3);expect(drawn.pos.getZ(0)).toBeCloseTo(expected.z,3);
  run(g,6);fx.prepare(0);expect(owner.architect!.ultimate).toBeNull();expect(fx.stats.machinery.heads).toBe(20);expect(fx.hazard.count).toBeGreaterThan(0);
- owner.activateSkill(4);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);expect(fx.pools.shells.count).toBeGreaterThan(0);run(g,.31);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(0);
+ owner.activateSkill(4);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);expect(fx.heads.length).toBeGreaterThan(0);run(g,.31);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(0);
  run(g,2);fx.prepare(0);expect(fx.count).toBe(0);expect(fx.hazard.count).toBe(0);fx.dispose();
 });
-
 it('bounds synchronous three-owner finales, prioritizes semantic feedback and cleans every render instance',()=>{
  const {g,owner,fx,scene}=fixture();let launch:ArchitectBatteryLaunch|undefined;g.events.on('architectBatteryLaunch',e=>{launch??=e;});run(g,1.55);
  const victims=Array.from({length:20},(_,i)=>place(g,'yamato',1,100+i*60,0));
  for(let i=0;i<30;i++)g.events.emit('architectBatteryImpact',{launch:{...launch!,id:100+i,castId:i%3,slot:i%10,stage:3},resolvedAt:g.time-.22,recipients:victims.map(target=>({target,x:target.pos.x,y:30,z:target.pos.z,damage:90000}))});
- const before=stateHash(g);fx.prepare(-1);expect(fx.stats.batches).toBeLessThanOrEqual(10);expect(fx.pools.lobes.count).toBeGreaterThanOrEqual(40);
- for(const name of Object.keys(BATTERY_FX_CAPS) as (keyof typeof BATTERY_FX_CAPS)[])expect(fx.pools[name].count).toBeLessThanOrEqual(BATTERY_FX_CAPS[name]);
- expect(fx.pools.skirts.count+fx.pools.pressure.count).toBeLessThanOrEqual(96);
+ const before=stateHash(g);fx.prepare(-1);expect(fx.stats.batches).toBeLessThanOrEqual(5);expect(fx.stats.drawn.contacts).toBe(20);expect(fx.stats.drawn.bursts).toBe(60);
+ for(const b of Object.values(fx.particles.batches)){expect(b.count).toBeLessThanOrEqual(b.capacity);for(const a of [b.pos,b.color,b.misc,b.streak])expect(Array.from(a.array.slice(0,b.count*a.itemSize)).every(Number.isFinite)).toBe(true);}
  for(const mesh of scene.children.filter(x=>x instanceof InstancedMesh) as InstancedMesh[])expect(Array.from(mesh.instanceMatrix.array).every(Number.isFinite)).toBe(true);
  expect(stateHash(g)).toBe(before);g.finish(-1,'test');fx.prepare(-1);expect(fx.count).toBe(0);expect(fx.stats.machinery.heads).toBe(0);fx.dispose();expect(scene.children).toHaveLength(0);
  expect(owner.architect).toBeTruthy();
 });
-
 import { banish } from '../src/skills/kit';
 
 it('keeps public committed flight and visible platforms when only the owner is banished',()=>{
  const {g,owner,fx}=fixture(),victim=place(g,'leviathan',1,0,0);victim.hp=victim.maxHp=1e9;
- run(g,1.5);g.interpolate();fx.prepare(0);expect(fx.pools.shells.count).toBeGreaterThan(0);
+ run(g,1.5);g.interpolate();fx.prepare(0);expect(fx.heads.length).toBeGreaterThan(0);
  const generation=g.battery.generation(owner),pending=g.battery.pending.length;
  banish(owner,3);run(g,1/60);expect(owner.mods.banished).toBe(true);fx.prepare(0);
  expect(g.battery.generation(owner)).toBe(generation);expect(g.battery.pending.length).toBe(pending);
- expect(fx.stats.machinery.heads).toBe(20);expect(fx.pools.shells.count).toBeGreaterThan(0);expect(fx.hazard.count).toBeGreaterThan(0);
- run(g,.5);fx.prepare(0);expect(fx.stats.committedImpacts).toBeGreaterThan(0);expect(fx.pools.lobes.count).toBeGreaterThan(0);fx.dispose();
+ expect(fx.stats.machinery.heads).toBe(20);expect(fx.heads.length).toBeGreaterThan(0);expect(fx.hazard.count).toBeGreaterThan(0);
+ run(g,.5);fx.prepare(0);expect(fx.stats.committedImpacts).toBeGreaterThan(0);expect(fx.stats.drawn.bursts).toBeGreaterThan(0);fx.dispose();
 });
-
 it.each([true,false])('permanently retires a Battery after Reconfigure, including sparse renders=%s',sparse=>{
  const {g,owner,fx}=fixture();run(g,1.6);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);
  run(g,5.9);const paths=g.battery.pending.map(r=>JSON.stringify(r.paths));expect(paths.length).toBeGreaterThan(0);
  expect(owner.activateSkill(3)).toBe(true);
- if(!sparse){run(g,1/60);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);expect(fx.pools.shells.count).toBeGreaterThan(0);expect(g.battery.pending.map(r=>JSON.stringify(r.paths))).toEqual(paths);}
+ if(!sparse){run(g,1/60);fx.prepare(0);expect(fx.stats.machinery.heads).toBe(20);expect(fx.heads.length).toBeGreaterThan(0);expect(g.battery.pending.map(r=>JSON.stringify(r.paths))).toEqual(paths);}
  run(g,.65);expect(owner.architect!.slots.every(a=>a.state==='deployed')).toBe(true);fx.prepare(0);
  expect(fx.stats.machinery.heads).toBe(0);expect(fx.stats.committedImpacts).toBe(40);fx.dispose();
 });
-
 it('gives a folded shoreline pair two tall vertical launch sockets while retaining the original hub footprint',()=>{
  for(const type of ['prism','resonance'] as const)for(const head of [0,1] as const){
   const args={...input,type,layout:'folded' as const,head,elapsed:1.5},pose=getArchitectBatteryHeadPose(args),path=buildArchitectBatteryPaths(args)[head];
@@ -236,59 +235,74 @@ it('uploads only live Battery instance data and submits no empty machinery or ef
    expect(uploaded).toBe(mesh.count*attribute!.itemSize);
   }
  }
+ const batches=Object.values(fx.particles.batches);expect(batches.some(b=>b.count>0)).toBe(true);
+ for(const b of batches){
+  expect(b.mesh.visible).toBe(b.count>0);expect(b.geo.instanceCount).toBe(b.count);if(!b.count)continue;
+  for(const attribute of [b.pos,b.color,b.misc,b.streak])expect(attribute.updateRanges.reduce((n,r)=>n+r.count,0)).toBe(b.count*attribute.itemSize);
+ }
  expect(stateHash(g)).toBe(before);
  g.finish(-1,'test');fx.prepare(-1);
  for(const mesh of meshes)expect(mesh.visible).toBe(false);
- const versions=meshes.map(mesh=>mesh.instanceMatrix.version);fx.prepare(-1);
- expect(meshes.map(mesh=>mesh.instanceMatrix.version)).toEqual(versions);fx.dispose();
+ for(const b of batches)expect(b.mesh.visible).toBe(false);
+ const versions=meshes.map(mesh=>mesh.instanceMatrix.version),particleVersions=batches.map(b=>b.pos.version);fx.prepare(-1);
+ expect(meshes.map(mesh=>mesh.instanceMatrix.version)).toEqual(versions);expect(batches.map(b=>b.pos.version)).toEqual(particleVersions);fx.dispose();
 });
 
-it('retains volumetric neon trails briefly after impact and cleans them on hard owner reset',()=>{
+it('retains neon trails briefly after impact and cleans them on hard owner reset',()=>{
  const {g,owner,fx}=fixture();run(g,1.96);fx.prepare(0);
- expect(fx.pools.trails.count).toBeGreaterThan(0);expect(fx.pools.trails.mesh.material).toHaveProperty('transparent',true);
- g.battery.cancelOwner(owner);fx.prepare(0);expect(fx.pools.trails.count).toBe(0);fx.dispose();
+ expect(fx.stats.drawn.trail).toBeGreaterThan(0);expect(fx.streaks.count).toBeGreaterThan(0);expect(fx.streaks.material).toHaveProperty('transparent',true);
+ g.battery.cancelOwner(owner);fx.prepare(0);expect(fx.streaks.count).toBe(0);expect(fx.count).toBe(0);fx.dispose();
 });
 
-it('gives five elemental impacts distinct volumetric silhouettes larger than the artillery footprint',()=>{
+/** Instances per particle kind plus lightning segments: a coarse silhouette fingerprint. */
+function signature(fx:ArchitectBatteryFx){
+ const kinds=Array(9).fill(0);for(const b of Object.values(fx.particles.batches))for(let i=0;i<b.count;i++)kinds[b.kindAt(i)]++;return [...kinds,fx.streaks.count].join(',');
+}
+
+it('gives five elemental impacts distinct particle signatures larger than the artillery footprint',()=>{
  const signatures=[];
  for(const type of ['furnace','cryo','storm','gravity','prism'] as const){
   const {g,fx}=fixture();run(g,1.55);const launch=g.battery.pending[0];
   g.events.emit('architectBatteryImpact',{launch:{...launch,type,element:type},resolvedAt:g.time-.3,recipients:[]});fx.prepare(0);
-  signatures.push(Object.values(fx.pools).map(p=>p.count).join(','));
-  const matrix=new Matrix4(),scale=new Vector3();let largest=0;
-  for(const name of ['lobes','fragments','skirts','arcs'] as const){const p=fx.pools[name];for(let i=0;i<p.count;i++){p.mesh.getMatrixAt(i,matrix);scale.setFromMatrixScale(matrix);largest=Math.max(largest,scale.length());}}
+  signatures.push(signature(fx));
+  let largest=0;for(const b of Object.values(fx.particles.batches))for(let i=0;i<b.count;i++)largest=Math.max(largest,b.misc.getX(i));
   expect(largest).toBeGreaterThan(220);fx.dispose();
  }
  expect(new Set(signatures).size).toBe(5);
 });
 
-it.each(['ultralow','low','medium','high'] as const)('retains saturated impact volumes and thick flight cores on %s',preset=>{
+it.each(['ultralow','low','medium','high'] as const)('keeps impact particles, translucent batches and thick flight cores on %s',preset=>{
  setQuality(preset);
- const {g,fx,scene}=fixture();run(g,1.55);const launch=g.battery.pending[0];
- g.events.emit('architectBatteryImpact',{launch,resolvedAt:g.time-.3,recipients:[]});fx.prepare(0);
- const volume=scene.getObjectByName('architect-battery-fx-corona') as InstancedMesh;
- expect(volume?.count??0).toBeGreaterThan(0);expect(volume.material).toHaveProperty('transparent',true);
- const matrix=new Matrix4(),scale=new Vector3();fx.pools.shells.mesh.getMatrixAt(0,matrix);scale.setFromMatrixScale(matrix);
- expect(Math.min(scale.x,scale.y,scale.z)).toBeGreaterThan(14.99);
- expect(fx.hazard.count).toBeGreaterThan(0);fx.dispose();setQuality('high');
+ try{
+  const {g,fx}=fixture();run(g,1.55);const launch=g.battery.pending[0];
+  g.events.emit('architectBatteryImpact',{launch,resolvedAt:g.time-.3,recipients:[]});fx.prepare(0);
+  const glow=fx.particles.batches.additive;expect(fx.stats.drawn.bursts).toBeGreaterThan(0);expect(glow.count).toBeGreaterThan(40);
+  for(const b of Object.values(fx.particles.batches)){expect(b.material.transparent).toBe(true);expect(b.material.depthWrite).toBe(false);}
+  expect(fx.heads.length).toBeGreaterThan(0);expect(glow.kindAt(0)).toBe(BK.Flare);expect(glow.misc.getX(0)).toBeGreaterThanOrEqual(26);expect(glow.misc.getW(0)).toBeGreaterThanOrEqual(4);
+  expect(fx.hazard.count).toBeGreaterThan(0);fx.dispose();
+ }finally{setQuality('high');}
+});
+
+it('scales impact particle counts with the quality preset',()=>{
+ const count=(preset:'ultralow'|'high')=>{
+  setQuality(preset);
+  try{const {g,fx}=fixture();run(g,1.55);g.events.emit('architectBatteryImpact',{launch:g.battery.pending[0],resolvedAt:g.time-.3,recipients:[]});fx.prepare(0);const n=fx.particles.count;fx.dispose();return n;}
+  finally{setQuality('high');}
+ };
+ expect(count('ultralow')).toBeLessThan(count('high')*.75);
 });
 
 it('keeps reduced-motion elemental volume without a transient white impact flash',()=>{
  vi.stubGlobal('matchMedia',()=>({matches:true}));
  try{
-  const {g,fx,scene}=fixture();run(g,1.95);
-  fx.prepare(0);
-  expect((scene.getObjectByName('architect-battery-fx-corona') as InstancedMesh)?.count??0).toBeGreaterThan(0);
-  // The .42s first flight is already resolved; no charge or muzzle pulse should remain.
-  const matrix=new Matrix4(),point=new Vector3();
-  for(let n=0;n<fx.pools.hot.count;n++){
-   fx.pools.hot.mesh.getMatrixAt(n,matrix);point.setFromMatrixPosition(matrix);
-   expect(point.y).toBeGreaterThan(100);
-  }
+  const {g,fx}=fixture();run(g,1.95);
+  fx.prepare(0);expect(fx.stats.drawn.bursts).toBeGreaterThan(0);expect(fx.particles.count).toBeGreaterThan(0);
+  // The .42s first flight is already resolved; only shell heads high on their arcs may flare.
+  const glow=fx.particles.batches.additive;
+  for(let n=0;n<glow.count;n++)if(glow.kindAt(n)===BK.Flare)expect(glow.pos.getY(n)).toBeGreaterThan(100);
   fx.dispose();
  }finally{vi.unstubAllGlobals();}
 });
-
 it.each([false,true])('bounds gravity distortion to public impact cells and suppresses it for reduced motion=%s',reduced=>{
  vi.stubGlobal('matchMedia',()=>({matches:reduced}));
  try{

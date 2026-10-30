@@ -124,6 +124,10 @@ export class NavalBattle implements ActiveBattle {
         if (k > 0) pc.shake(s.amount * k * k);
       }
     };
+    // Hull Dash kicks only its own captain's camera.
+    this.scene.dashFx.onShake = (ship, amount) => {
+      for (const pc of this.pcs) if (pc.ship === ship) pc.shake(amount);
+    };
     this.off.push(
       game.events.on('gameOver', (g) => {
         audio.stopBattle();
