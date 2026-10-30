@@ -342,8 +342,13 @@ export class TungstenCubeFx {
       const p = this.renderPos(c, this.v);
       const moved = Math.hypot(p.x - v.lastX, p.z - v.lastZ);
       if (moved > 0.5) {
-        v.axisX = (p.z - v.lastZ) / moved;
-        v.axisZ = -(p.x - v.lastX) / moved;
+        // The roll axis in the cube's own frame, so it comes to rest on a face however it turns afterwards.
+        const ax = (p.z - v.lastZ) / moved,
+          az = -(p.x - v.lastX) / moved;
+        const cy = Math.cos(c.yaw),
+          sy = Math.sin(c.yaw);
+        v.axisX = ax * cy - az * sy;
+        v.axisZ = ax * sy + az * cy;
       }
       // Rolling while it flies; settling onto a face once it stops.
       if (!this.paint.reduce && c.state === 'flying') v.tumble += moved / 260;
@@ -424,7 +429,6 @@ export class TungstenCubeFx {
       const t = s.tungsten!;
       const p = this.renderPos(c, this.v);
       const parked = c.state === 'hover' || c.state === 'guard' || c.state === 'orbit';
-      const driven = c.state === 'driven';
       // A spent cube sits low and dark in the water until it docks or recharges.
       const spent = t.spent && c === t.cubes[0];
       const bob = parked && !spent && !this.paint.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
@@ -437,13 +441,13 @@ export class TungstenCubeFx {
       this.q.setFromAxisAngle(this.up, c.yaw + (parked && !this.paint.reduce ? Math.sin(anim * 0.4 + c.id) * 0.05 : 0));
       this.v2.set(v.axisX, 0, v.axisZ);
       this.q2.setFromAxisAngle(this.v2, v.tumble);
-      v.mesh.quaternion.copy(this.q2).multiply(this.q);
+      v.mesh.quaternion.copy(this.q).multiply(this.q2);
       v.sweep.apply(v.u, c.mode, now, this.paint.reduce);
       const flash = clamp01(1 - (this.game.time - v.struck) / 0.25);
       // Magnet Surge: a bright pulse through the etching as it fires, then a stronger glow while it runs.
       const surge = t.surgeUntil ? clamp01(1 - (this.game.time - (t.surgeUntil - CUBE.surge.time)) / 0.6) : 0;
       const sputter = this.paint.reduce ? 0.2 : hash01(c.id, Math.floor(now * 12)) < 0.18 ? 0.3 : 0.12;
-      const power = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + (driven ? 0.3 : 0) + (t.surgeUntil > this.game.time ? 0.5 : 0) + flash * 1.5 + surge * 2.5;
+      const power = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + (t.surgeUntil > this.game.time ? 0.5 : 0) + flash * 1.5 + surge * 2.5;
       v.u.uTime.value = anim;
       v.u.uPower.value = ult ? ult.power : spent ? sputter : power;
       v.u.uFlicker.value = Math.max(c.hp < c.maxHp * 0.3 ? 1 - c.hp / (c.maxHp * 0.3) : 0, spent ? 0.5 : 0);
@@ -462,7 +466,7 @@ export class TungstenCubeFx {
         // The pressure wave behind a low, fast cube throws up a rooster tail.
         const sx = v.trail[i],
           sz = v.trail[i + 2];
-        if ((c.state === 'flying' || c.state === 'driven') && v.trail[i + 1] < 120 && hash01(c.id * 131 + Math.round(v.trail[i + 3] * 60), 1) < 0.6 * this.paint.detail) {
+        if (c.state === 'flying' && v.trail[i + 1] < 120 && hash01(c.id * 131 + Math.round(v.trail[i + 3] * 60), 1) < 0.6 * this.paint.detail) {
           const base = this.paint.surface(sx, sz),
             h = drift(age, 110, 2.5, 120);
           if (h > 0) this.particles.push(BK.Spray, sx, base + h, sz, 22 + age * 160, SPRAY, 0.55 * k, hash01(i, c.id) * TAU, hash01(c.id, i));
@@ -472,7 +476,7 @@ export class TungstenCubeFx {
         // Settled in the sea: a slack ring of foam and a dying glow.
         this.paint.ring(p.x, p.z, H * c.scale * 1.15, FOAM, 0.35, BK.Foam, anim * 0.2 + c.id);
         this.paint.ring(p.x, p.z, H * c.scale * 1.3, hot(color, 0.5), 0.12 + 0.1 * sputter);
-      } else if (parked || driven || c.state === 'flying') {
+      } else if (parked || c.state === 'flying') {
         // The levitation field pressing a dish into the sea under the cube.
         const base = this.paint.surface(p.x, p.z);
         const height = p.y - base;
@@ -490,7 +494,7 @@ export class TungstenCubeFx {
               this.particles.push(BK.Spray, p.x + Math.cos(a) * r, base + phase * 14, p.z + Math.sin(a) * r, 10 + phase * 18, SPRAY, 0.3 * (1 - phase), a, i);
             }
         }
-        if (driven) this.wake(c, p.x, p.z, color, anim);
+        if (c.path?.kind === 'shot') this.wake(c, c.path.tx, c.path.tz, p.x, p.z, color, anim);
       }
     }
     // Cubes that left: dissolving where they were last drawn.
@@ -507,14 +511,14 @@ export class TungstenCubeFx {
     }
   }
 
-  /** A steered cube's bow wave: foam piled ahead of its leading face and spray peeling off both sides. */
-  private wake(c: Cube, x: number, z: number, color: Color, anim: number): void {
-    const speed = Math.hypot(c.vx, c.vz);
-    const k = clamp01((speed - CUBE.drive.minSpeed) / 360);
-    if (k <= 0) return;
-    const ux = c.vx / speed,
-      uz = c.vz / speed,
-      h = H * c.scale;
+  /** A thrown cube's bow wave toward (tx, tz): foam piled ahead of its leading face and spray peeling off both sides. */
+  private wake(c: Cube, tx: number, tz: number, x: number, z: number, color: Color, anim: number): void {
+    const d = Math.hypot(tx - x, tz - z);
+    if (d < 1) return;
+    const ux = (tx - x) / d,
+      uz = (tz - z) / d,
+      h = H * c.scale,
+      k = 1;
     const base = this.paint.surface(x, z);
     this.paint.ring(x + ux * h, z + uz * h, h * (0.55 + 0.35 * k), FOAM, 0.6 * k, BK.Foam, anim + c.id);
     this.paint.ring(x + ux * h * 0.8, z + uz * h * 0.8, h * (0.8 + 0.4 * k), hot(color, 1.2), 0.3 * k);

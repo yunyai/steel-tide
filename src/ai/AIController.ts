@@ -8,8 +8,8 @@ import { canActivate } from '../ships/Consumables';
 import { ESCORT_LEASH } from '../modes/Convoy';
 import type { Ship } from '../ships/Ship';
 import { aiWantsSkill } from '../skills/registry';
-import { CUBE } from '../skills/misc/TungstenModes';
-import { aiSteers } from '../skills/misc/TungstenRuntime';
+import { CUBE, TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
+import { aiThrows } from '../skills/misc/TungstenRuntime';
 import { solve } from '../weapons/Ballistics';
 import { avoid, evasion, rudderFor, separate } from './Navigation';
 
@@ -366,7 +366,7 @@ export class AIController {
     this.wantTorps = false;
     if (ship.tungsten) {
       c.slot = ship.slots.findIndex((s) => s.kind === 'cube');
-      c.fire = aiSteers(ship, t);
+      c.fire = aiThrows(ship, t);
       return;
     }
     // Cells loaded and the target inside missile range: ripple a salvo off first.
@@ -527,7 +527,7 @@ export class AIController {
       time = 0;
     } else if (slot?.kind === 'cube') {
       const cube = ship.tungsten!.cubes[0];
-      time = dist2D(cube.x, cube.z, t.pos.x, t.pos.z) / CUBE.drive.speed;
+      time = dist2D(cube.x, cube.z, t.pos.x, t.pos.z) / (CUBE.shot.speed * TUNGSTEN_MODES[cube.mode].speed);
     } else {
       const table = ship.tableFor(ship.ammo);
       if (table) time = solve(table, d).time;
@@ -535,7 +535,7 @@ export class AIController {
     const lead = this.game.difficulty.lead;
     c.aimX = t.pos.x + forwardX(t.heading) * t.speed * time * lead + this.errX;
     c.aimZ = t.pos.z + forwardZ(t.heading) * t.speed * time * lead + this.errZ;
-    // Steer the cube through the target, not onto it, so it rams at speed and comes round again; skills
+    // Throw the cube through the target, not onto it, so it ploughs the hull and hovers clear beyond; skills
     // take the target itself.
     if (slot?.kind === 'cube' && c.skill < 0) {
       const cube = ship.tungsten!.cubes[0];

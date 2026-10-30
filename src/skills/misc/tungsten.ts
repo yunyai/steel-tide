@@ -46,7 +46,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       activate: (s, _g, st) => lungeToCube(s, st.index),
       aiShouldUse(s, _g, t) {
         const c = cube(s);
-        if (c.state !== 'hover' && c.state !== 'driven') return false;
+        if (c.state !== 'hover') return false;
         const d = Math.hypot(c.x - s.pos.x, c.z - s.pos.z);
         return d > 1800 && d < CUBE.lunge.range && (foesNearCube(s, c, 1500).length > 0 || (hpFrac(s) < 0.4 && !t));
       },
@@ -69,18 +69,18 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       return foesNearCube(s, c, sig.id === 'ricochet' ? SIGNATURE.ricochet.reach : sig.radius).length > 0;
     },
   }),
-  def(spec('tungstenSurge', 'Magnet Surge', 'SURGE', 18, 0, 'magnet', 'Refill the cube’s energy wherever it is, waking a spent cube. For 6 s it steers 40% faster, strikes 40% harder and spends nothing.'), {
+  def(spec('tungstenSurge', 'Magnet Surge', 'SURGE', 18, 0, 'magnet', 'Refill the cube’s energy wherever it is, waking a spent cube. For 6 s throws fly 40% faster, strike 40% harder and cost nothing.'), {
     activate: (s) => surge(s),
     aiShouldUse(s, _g, t) {
       const st = s.tungsten!;
-      return free(s) && (st.spent || st.energy < 0.3) && (foesNearCube(s, cube(s), 1500).length > 0 || (!!t && range(s, t) < CUBE.drive.leash));
+      return free(s) && (st.spent || st.energy < 0.3) && (foesNearCube(s, cube(s), 1500).length > 0 || (!!t && range(s, t) < CUBE.shot.range));
     },
   }),
   def(spec('tungstenDock', 'Dock', 'DOCK', 12, 0, 'heal', 'Call the cube home through anything in the way (50k). On docking the ship repairs 6% plus 20% of the damage dealt and the cube 15%, and a spent cube wakes.'), {
     activate: (s, _g, st) => dockCubes(s, st.index),
     aiShouldUse(s) {
       const c = cube(s);
-      return (c.state === 'hover' || c.state === 'driven') && (s.tungsten!.spent || Math.hypot(c.x - s.pos.x, c.z - s.pos.z) > 2500 || hpFrac(s) < 0.5);
+      return c.state === 'hover' && (s.tungsten!.spent || Math.hypot(c.x - s.pos.x, c.z - s.pos.z) > 2500 || hpFrac(s) < 0.5);
     },
   }),
   def(spec('tungstenShield', 'Tungsten Shield', 'SHIELD', 18, CUBE.guard.time, 'shield', 'The cube guards the reticle side for 8 s and captures every shell, missile, beam and torpedo nearby. Stored damage (up to 600k) rides the next cube hit. In Overdrive all six orbit for 10 s, each capturing fire, battering hulls for 80k, cutting damage to the ship by 30% and storing up to 1.2M.'), {
@@ -106,7 +106,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       return !!t && range(s, t) < CUBE.meteor.range;
     },
   }),
-  def(spec('tungstenOverdrive', 'Overdrive', 'OVERDRIVE', 130, CUBE.overdrive.time, 'fleet', 'For 20 s five more cubes leave the magnet, one in each other mode. Steering is free and drives all six in formation, every cube skill drives all six and every passive is live.', true, true), {
+  def(spec('tungstenOverdrive', 'Overdrive', 'OVERDRIVE', 130, CUBE.overdrive.time, 'fleet', 'For 20 s five more cubes leave the magnet, one in each other mode. Throws are free and hurl all six abreast, every cube skill drives all six and every passive is live.', true, true), {
     activate: (s) => overdrive(s),
     aiShouldUse(s, _g, t) {
       return !!t && range(s, t) < 5000;

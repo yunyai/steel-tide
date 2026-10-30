@@ -76,9 +76,9 @@ export function stateHash(g: Game): number {
     }
     if (s.tungsten) {
       const a=s.tungsten;
-      for(const n of [a.mode,a.nextCube,a.charge,a.guardUntil,a.orbitAngle,a.overdriveUntil,a.auraTick,a.energy,a.spent?1:0,a.surgeUntil,a.cubes.length,a.tethers.length,a.acts.length])h=mix(h,n);
+      for(const n of [a.mode,a.nextCube,a.charge,a.guardUntil,a.orbitAngle,a.overdriveUntil,a.auraTick,a.energy,a.spent?1:0,a.surgeUntil,a.reload,a.cubes.length,a.tethers.length,a.acts.length])h=mix(h,n);
       for(const c of a.cubes){
-        for(const n of [c.id,c.mode,c.extra?1:0,c.slot,CUBE_STATES.indexOf(c.state),c.x,c.y,c.z,c.vx,c.vz,c.yaw,c.scale,c.hp,c.flown,c.reform,c.gone?1:0])h=mix(h,n);
+        for(const n of [c.id,c.mode,c.extra?1:0,c.slot,CUBE_STATES.indexOf(c.state),c.x,c.y,c.z,c.yaw,c.scale,c.hp,c.flown,c.reform,c.gone?1:0])h=mix(h,n);
         for(const k of c.contacts){h=mix(h,k.id);h=mix(h,k.at);}
         const p=c.path;h=mix(h,p?1:0);
         if(p)for(const n of [PATH_KINDS.indexOf(p.kind),p.skill,p.tx,p.ty,p.tz,p.speed,p.dealt,p.target,p.bounces,p.hit.length,...p.hit,p.healed.length,...p.healed])h=mix(h,n);

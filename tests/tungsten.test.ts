@@ -98,15 +98,18 @@ describe('Tungsten roster', () => {
   });
 });
 
-const steer = (me: Ship, x: number, z: number) => {
+/** One click of the fire button at (x, z). */
+function hurl(g: Game, me: Ship, x: number, z: number) {
   aim(me, x, z);
   me.control.fire = true;
-};
-const speedOf = (c: Cube) => Math.hypot(c.vx, c.vz);
+  g.step(1 / 60);
+  me.control.fire = false;
+}
 /** Steps until `done` or `limit` seconds pass. */
 function until(g: Game, done: () => boolean, limit = 10) {
   for (let k = 0; k < limit * 60 && !done(); k++) g.step(1 / 60);
 }
+const landed = (c: Cube) => () => c.state === 'hover';
 
 describe('cube size', () => {
   it('is a 128 m cube floating clear of the dais', () => {
@@ -147,80 +150,94 @@ describe('cube size', () => {
   });
 });
 
-describe('steering', () => {
-  it('follows the reticle while fire is held, gathering speed like a heavy weight', () => {
+describe('throwing', () => {
+  it('hurls the cube tumbling at the reticle on a click, fast, and it hovers there', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 3000;
     const c = t.cubes[0];
-    steer(me, 0, -2000);
-    run(g, 0.5);
-    expect(c.state).toBe('driven');
-    // Kinetic flies 1.5x; the magnet takes time to bring that mass up to speed.
-    expect(speedOf(c)).toBeCloseTo(CUBE.drive.accel * 0.5, -1);
-    run(g, 5);
-    expect(gap(c, { x: 0, z: -2000 })).toBeLessThan(40);
+    let thrown = 0;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'throw') thrown++;
+    });
+    hurl(g, me, 0, -2000);
+    expect(c.state).toBe('flying');
+    expect(c.path?.kind).toBe('shot');
+    expect(thrown).toBe(1);
+    // Kinetic flies 1.5x: 2 km in about three quarters of a second.
+    const t0 = g.time;
+    until(g, landed(c));
+    expect(g.time - t0).toBeLessThan(2000 / (CUBE.shot.speed * TUNGSTEN_MODES[0].speed) + 0.1);
+    expect(gap(c, { x: 0, z: -2000 })).toBeLessThan(5);
     expect(c.y).toBeCloseTo(CUBE.hoverY);
-    aim(me, 1500, -2000);
-    run(g, 4);
-    expect(gap(c, { x: 1500, z: -2000 })).toBeLessThan(40);
   });
-  it('holds the cube within the magnet leash', () => {
-    const { g, me, foe, t } = duel();
-    foe.pos.x = 3000;
-    // Diagonally, so the 9 km map's edge does not stop it first.
-    park(t.cubes[0], -2800, -2800);
-    steer(me, -10000, -10000);
-    run(g, 2);
-    expect(gap(t.cubes[0], me.pos)).toBeCloseTo(CUBE.drive.leash, -1);
-  });
-  it('glides to a stop and hovers when fire is released', () => {
+  it('reaches at most 4 km from where it was thrown', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 3000;
     const c = t.cubes[0];
-    steer(me, 0, -4000);
-    run(g, 2);
-    me.control.fire = false;
-    const z = c.z;
-    run(g, 0.05);
-    expect(c.state).toBe('hover');
-    run(g, 3);
-    expect(c.z).toBeLessThan(z - 100);
-    expect(speedOf(c)).toBe(0);
-    expect(c.y).toBeCloseTo(CUBE.hoverY);
+    // Diagonally, so the 9 km map's edge does not stop it first, and clear of the island to the north-west.
+    hurl(g, me, 4000, -4000);
+    until(g, landed(c));
+    expect(gap(c, me.pos)).toBeCloseTo(CUBE.shot.range, -1);
   });
-  it('drains energy while steered and recharges slowly when not', () => {
+  it('throws again while fire is held, once per reload, from wherever the cube is', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 3000;
+    const c = t.cubes[0];
+    let thrown = 0;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'throw') thrown++;
+    });
+    aim(me, 0, -1500);
+    me.control.fire = true;
+    until(g, landed(c));
+    // It lands well inside the reload, and a new aim waits for it.
+    aim(me, 1500, -1500);
+    run(g, 0.3);
+    expect(thrown).toBe(1);
+    run(g, CUBE.shot.reload);
+    expect(thrown).toBe(2);
+    until(g, landed(c));
+    expect(gap(c, { x: 1500, z: -1500 })).toBeLessThan(5);
+    // Held on the spot it already hovers over, nothing more is thrown.
+    run(g, CUBE.shot.reload + 0.5);
+    expect(thrown).toBe(2);
+  });
+  it('spends a quarter of its energy per throw, recharging slowly out and fast on the magnet', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 3000;
     expect(t.energy).toBe(1);
-    steer(me, 0, -3000);
+    hurl(g, me, 0, -2000);
+    expect(t.energy).toBeCloseTo(1 - CUBE.shot.cost, 3);
+    until(g, landed(t.cubes[0]));
+    const e = t.energy;
     run(g, 2);
-    expect(t.energy).toBeCloseTo(1 - 2 * CUBE.drive.drain, 2);
-    me.control.fire = false;
-    run(g, 2);
-    expect(t.energy).toBeCloseTo(1 - 2 * CUBE.drive.drain + 2 * CUBE.drive.regen, 2);
+    expect(t.energy - e).toBeCloseTo(2 * CUBE.energy.regen, 3);
+    me.activateSkill(C);
+    until(g, () => t.cubes[0].state === 'docked');
+    t.energy = 0.2;
+    run(g, 1);
+    expect(t.energy - 0.2).toBeCloseTo(CUBE.energy.dockRegen, 2);
   });
-  it('goes dead when its energy runs out, sinking low until it docks', () => {
+  it('goes dead after its last throw, sinking where it lands until it docks', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 3000;
     const c = t.cubes[0];
-    t.energy = 0.1;
-    steer(me, 0, -3000);
-    run(g, 1);
+    t.energy = CUBE.shot.cost;
+    hurl(g, me, 0, -2000);
     expect(t.spent).toBe(true);
-    expect(c.state).toBe('hover');
-    run(g, 3);
-    const at = { x: c.x, z: c.z };
+    until(g, landed(c));
+    run(g, 4);
+    expect(c.y).toBeCloseTo(CUBE.edge / 2 - CUBE.energy.sink);
+    // A spent cube does not answer the fire button.
+    aim(me, 1500, -2000);
+    me.control.fire = true;
     run(g, 2);
-    // Fire is still held, but a spent cube does not answer.
-    expect(gap(c, at)).toBeLessThan(1);
-    expect(c.y).toBeCloseTo(CUBE.edge / 2 - CUBE.drive.sink);
+    expect(c.state).toBe('hover');
+    expect(gap(c, { x: 0, z: -2000 })).toBeLessThan(5);
     me.control.fire = false;
     expect(me.activateSkill(C)).toBe(true);
     until(g, () => c.state === 'docked');
     expect(t.spent).toBe(false);
-    const e = t.energy;
-    run(g, 1);
-    expect(t.energy - e).toBeCloseTo(CUBE.drive.dockRegen, 2);
   });
   it('wakes a spent cube once its slow recharge is full', () => {
     const { g, me, foe, t } = duel();
@@ -228,58 +245,44 @@ describe('steering', () => {
     park(t.cubes[0], 0, -2000);
     t.energy = 0;
     t.spent = true;
-    run(g, 1 / CUBE.drive.regen - 1);
+    run(g, 1 / CUBE.energy.regen - 1);
     expect(t.spent).toBe(true);
     run(g, 1.5);
     expect(t.spent).toBe(false);
-    steer(me, 0, -3000);
-    run(g, 0.5);
-    expect(t.cubes[0].state).toBe('driven');
+    hurl(g, me, 0, -3000);
+    expect(t.cubes[0].state).toBe('flying');
   });
-  it('cannot be steered by a stunned ship', () => {
+  it('cannot be thrown by a stunned ship', () => {
     const { g, me, t } = duel();
     stun(me, 5); // 2 s on a titan
-    steer(me, 0, -3000);
-    run(g, 1);
+    hurl(g, me, 0, -3000);
+    run(g, 0.5);
     expect(t.cubes[0].state).toBe('docked');
   });
 });
 
-describe('cube contact', () => {
-  it('rams hulls harder the faster it moves', () => {
-    const ram = (from: number) => {
-      const { g, me, foe, t } = duel();
-      park(t.cubes[0], 0, from);
-      steer(me, 0, -3000);
-      run(g, 3);
-      return foe.stats.received;
-    };
-    const slow = ram(-1300),
-      fast = ram(-200);
-    expect(slow).toBeGreaterThanOrEqual(CUBE.drive.damage * 0.3 - 1);
-    expect(fast).toBeGreaterThan(slow * 2);
-    expect(fast).toBeLessThanOrEqual(CUBE.drive.damage * 1.6 + 1);
-  });
-  it('strikes each hull at most once per interval', () => {
+describe('thrown cube hits', () => {
+  it('ploughs through every hull in its path once, for 80k with the mode effect', () => {
     const { g, me, foe, t } = duel();
-    let hits = 0;
-    g.events.on('tungsten', (e) => {
-      if (e.kind === 'hit' && e.target === foe) hits++;
-    });
-    park(t.cubes[0], 0, -900);
-    for (let k = 0; k < 8; k++) {
-      steer(me, 0, k % 2 ? -900 : -2100);
-      run(g, 0.75);
+    const behind = extra(g, 'leviathan', 1, 0, -2600);
+    hurl(g, me, 0, -3200);
+    until(g, landed(t.cubes[0]));
+    // Kinetic gains with the distance flown.
+    for (const o of [foe, behind]) {
+      expect(o.stats.received).toBeGreaterThanOrEqual(CUBE.shot.damage);
+      expect(o.stats.received).toBeLessThanOrEqual(CUBE.shot.damage * (1 + HIT.kinetic.bonus) + 1);
     }
-    expect(hits).toBeGreaterThanOrEqual(2);
-    expect(hits).toBeLessThanOrEqual(Math.ceil(6 / CUBE.drive.every) + 1);
+    expect(gap(t.cubes[0], { x: 0, z: -3200 })).toBeLessThan(5);
   });
-  it('stops a Crush cube dead on the hull it strikes, stunning it', () => {
+  it('stops a Crush cube on the first hull it strikes, stunning it', () => {
     const { g, me, foe, t } = duel();
+    const behind = extra(g, 'leviathan', 1, 0, -2600);
     setMode(me, 'crush');
-    steer(me, 0, -3000);
-    until(g, () => foe.stats.received > 0);
-    expect(speedOf(t.cubes[0])).toBe(0);
+    hurl(g, me, 0, -3200);
+    until(g, landed(t.cubes[0]));
+    expect(foe.stats.received).toBeCloseTo(CUBE.shot.damage * TUNGSTEN_MODES[modeIndex('crush')].damage, -2);
+    expect(behind.stats.received).toBe(0);
+    expect(gap(t.cubes[0], foe.pos)).toBeLessThan(400);
     expect(foe.mods.stunned).toBe(true);
     expect(foe.mods.marked).toBe(true);
   });
@@ -295,31 +298,24 @@ describe('Magnet Surge', () => {
     expect(me.activateSkill(X)).toBe(true);
     expect(t.energy).toBe(1);
     expect(t.spent).toBe(false);
-    steer(me, 0, -3000);
-    run(g, 0.5);
-    expect(t.cubes[0].state).toBe('driven');
+    hurl(g, me, 0, -3000);
+    expect(t.cubes[0].state).toBe('flying');
   });
-  it('overcharges steering: faster, harder and free while it lasts', () => {
-    const ram = (surge: boolean) => {
+  it('overcharges throws: faster, harder and free while it lasts', () => {
+    const fling = (surge: boolean) => {
       const { g, me, foe, t } = duel();
-      park(t.cubes[0], 0, 0);
       if (surge) me.activateSkill(X);
-      steer(me, 0, -3000);
-      let top = 0;
-      for (let k = 0; k < 180; k++) {
-        g.step(1 / 60);
-        top = Math.max(top, speedOf(t.cubes[0]));
-      }
-      return { top, dealt: foe.stats.received, energy: t.energy };
+      hurl(g, me, 0, -3000);
+      const t0 = g.time;
+      until(g, landed(t.cubes[0]));
+      return { time: g.time - t0, dealt: foe.stats.received, energy: t.energy };
     };
-    const plain = ram(false),
-      surged = ram(true);
-    const top = CUBE.drive.speed * TUNGSTEN_MODES[0].speed;
-    expect(plain.top).toBeCloseTo(top, 0);
-    expect(surged.top).toBeCloseTo(top * CUBE.surge.speed, 0);
+    const plain = fling(false),
+      surged = fling(true);
+    expect(surged.time).toBeLessThan(plain.time / CUBE.surge.speed + 0.05);
+    expect(surged.dealt).toBeCloseTo(plain.dealt * CUBE.surge.damage, -3);
     expect(surged.energy).toBe(1);
     expect(plain.energy).toBeLessThan(1);
-    expect(surged.dealt).toBeGreaterThan(plain.dealt * 1.3);
   });
   it('fails while the cube is re-forming', () => {
     const { me, t } = duel();
@@ -351,9 +347,8 @@ describe('Dock', () => {
     const { g, me, foe, t } = duel();
     setMode(me, 'tether');
     park(t.cubes[0], 0, -900);
-    steer(me, 0, -3000);
+    hurl(g, me, 0, -3000);
     run(g, 2);
-    me.control.fire = false;
     expect(foe.effects.some((e) => e.id === 'debuff:tungstenChain')).toBe(true);
     const z0 = foe.pos.z;
     me.activateSkill(C);
@@ -491,7 +486,7 @@ describe('mode hits', () => {
     const { g, me, foe } = duel();
     const side = extra(g, 'leviathan', 1, 300, -1500);
     setMode(me, 'shard');
-    steer(me, 0, -3000);
+    hurl(g, me, 0, -3000);
     until(g, () => foe.stats.received > 0);
     expect(foe.stats.received).toBeGreaterThan(0);
     expect(side.stats.received).toBeCloseTo(foe.stats.received * HIT.shard.splash, -2);
@@ -501,7 +496,7 @@ describe('mode hits', () => {
   it('Repel knocks hulls aside', () => {
     const { g, me, foe } = duel();
     setMode(me, 'repel');
-    steer(me, 0, -3000);
+    hurl(g, me, 0, -3000);
     run(g, 5);
     expect(foe.stats.received).toBeGreaterThan(0);
     expect(gap(foe.pos, { x: 0, z: -1500 })).toBeGreaterThan(60);
@@ -510,7 +505,7 @@ describe('mode hits', () => {
     const { g, me, foe, t } = duel();
     setMode(me, 'tether');
     park(t.cubes[0], 0, -900);
-    steer(me, 0, -3000);
+    hurl(g, me, 0, -3000);
     until(g, () => foe.stats.received > 0);
     run(g, 0.05);
     const hit = foe.stats.received;
@@ -524,7 +519,7 @@ describe('mode hits', () => {
     ally.hp = ally.maxHp * 0.5;
     setMode(me, 'mend');
     me.hp = me.maxHp * 0.5;
-    steer(me, 0, -3000);
+    hurl(g, me, 0, -3000);
     // Per-step jumps, so the titans' own slow repair doesn't blur the cube's heals.
     let healed = 0;
     const passes: number[] = [];
@@ -639,9 +634,9 @@ describe('Tungsten Shield', () => {
   it('spends the store on the next cube hit', () => {
     const { g, me, foe, t } = duel();
     t.charge = 300000;
-    steer(me, 0, -3000);
+    hurl(g, me, 0, -3000);
     run(g, 5);
-    expect(foe.stats.received).toBeGreaterThan(300000 + CUBE.drive.damage * 0.3);
+    expect(foe.stats.received).toBeGreaterThan(300000 + CUBE.shot.damage);
     expect(t.charge).toBe(0);
   });
   it('refills ultimate meters with the released store', () => {
@@ -649,7 +644,7 @@ describe('Tungsten Shield', () => {
       const { g, me, foe, t } = duel();
       me.meter = 0;
       t.charge = charge;
-      steer(me, 0, -3000);
+      hurl(g, me, 0, -3000);
       until(g, () => foe.stats.received > 0);
       return me.skills[R].meter;
     };
@@ -720,21 +715,23 @@ describe('Overdrive', () => {
     expect(me.mods.damageTakenMul).toBeCloseTo(0.88);
     expect(me.activateSkill(E)).toBe(false);
   });
-  it('steers every cube in formation for free, and sends the extras home when it ends', () => {
+  it('throws every cube abreast for free, and sends the extras home when it ends', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 4000;
     me.meter = 1;
     t.energy = 0.5;
     me.activateSkill(B);
     expect(t.energy).toBe(1);
-    steer(me, 0, -2500);
-    run(g, 10);
-    expect(t.cubes.every((c) => c.state === 'driven')).toBe(true);
-    expect(gap(t.cubes[0], { x: 0, z: -2500 })).toBeLessThan(40);
-    for (const c of t.cubes.slice(1)) expect(gap(c, { x: 0, z: -2500 })).toBeCloseTo(CUBE.drive.formation, -1);
+    hurl(g, me, 0, -2500);
+    expect(t.cubes.every((c) => c.state === 'flying')).toBe(true);
+    until(g, () => t.cubes.every((c) => c.state === 'hover'));
+    // A line across the throw, one spread apart, centred on the reticle.
+    const xs = t.cubes.map((c) => c.x).sort((a, b) => a - b);
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeCloseTo(CUBE.shot.spread, 0);
+    expect((xs[0] + xs[5]) / 2).toBeCloseTo(0, 0);
+    for (const c of t.cubes) expect(c.z).toBeCloseTo(-2500, 0);
     expect(t.energy).toBe(1);
-    me.control.fire = false;
-    run(g, 20);
+    run(g, CUBE.overdrive.time + 5);
     expect(t.cubes).toHaveLength(1);
   });
   it('cannot be renewed while it runs, and charges again only once it ends', () => {
@@ -888,13 +885,11 @@ describe('Tungsten sync', () => {
     expect(stateHash(g)).not.toBe(h);
     setMode(me, 'kinetic');
     expect(stateHash(g)).toBe(h);
-    const c = t.cubes[0];
     const fields: [() => void, () => void][] = [
       [() => (t.energy = 0.5), () => (t.energy = 1)],
       [() => (t.spent = true), () => (t.spent = false)],
       [() => (t.surgeUntil = 5), () => (t.surgeUntil = 0)],
-      [() => (c.vx = 3), () => (c.vx = 0)],
-      [() => (c.vz = 3), () => (c.vz = 0)],
+      [() => (t.reload = 1), () => (t.reload = 0)],
     ];
     for (const [set, reset] of fields) {
       set();
@@ -951,7 +946,7 @@ describe('Tungsten sync', () => {
 });
 
 describe('Tungsten AI', () => {
-  it('steers its cube through the target and lets go before the cube is spent', () => {
+  it('throws its cube through the target, keeping a throw in reserve', () => {
     const g = emptyGame();
     const me = place(g, 'tungsten', 0, 0, 0, 0, true);
     const foe = place(g, 'leviathan', 1, 0, -2000, Math.PI);
@@ -960,15 +955,17 @@ describe('Tungsten AI', () => {
       st.meter = 0;
     }
     const t = me.tungsten!;
-    let drove = false,
+    let thrown = 0,
       spent = false;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'throw' && e.ship === me) thrown++;
+    });
     for (let k = 0; k < 20 * 60; k++) {
       g.step(1 / 60);
-      drove ||= t.cubes[0].state === 'driven';
       spent ||= t.spent;
     }
-    expect(drove).toBe(true);
-    expect(foe.stats.received).toBeGreaterThanOrEqual(CUBE.drive.damage);
+    expect(thrown).toBeGreaterThanOrEqual(2);
+    expect(foe.stats.received).toBeGreaterThanOrEqual(CUBE.shot.damage);
     expect(spent).toBe(false);
   });
   it('docks a spent cube', () => {

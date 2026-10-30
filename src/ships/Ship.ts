@@ -119,7 +119,7 @@ export type WeaponSlot =
   | { kind: 'torp'; label: string }
   | { kind: 'air'; sq: SquadronType; label: string }
   | { kind: 'vls'; label: string }
-  /** The Tungsten steers its cube with the fire button. */
+  /** The Tungsten throws its cube with the fire button. */
   | { kind: 'cube'; label: string };
 
 export interface TurretState {

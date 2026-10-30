@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Box3, InstancedBufferAttribute, Mesh, Scene, type Object3D, type ShaderMaterial } from 'three';
+import { Box3, InstancedBufferAttribute, Mesh, Scene, Vector3, type Object3D, type ShaderMaterial } from 'three';
 import { ShipView } from '../src/render/ShipModel';
 import { DAIS, HORN_TIPS, TungstenModel } from '../src/render/TungstenModel';
 import { TungstenCubeFx } from '../src/render/TungstenCubeFx';
@@ -320,7 +320,7 @@ describe('Tungsten cube effects', () => {
   });
 });
 
-describe('Tungsten steering effects', () => {
+describe('Tungsten throw effects', () => {
   it('dims a spent cube to a sputter where it sank', () => {
     const g = emptyGame('open', 7, 'freeplay');
     const s = place(g, 'tungsten', 0, 0, 0);
@@ -340,29 +340,49 @@ describe('Tungsten steering effects', () => {
     fx.dispose();
   });
 
-  it('throws a bow wave off a steered cube', () => {
-    const flat = (driven: boolean) => {
+  it('throws a bow wave off a thrown cube', () => {
+    const flat = (thrown: boolean) => {
       const g = emptyGame('open', 7, 'freeplay');
       const s = place(g, 'tungsten', 0, 0, 0);
       const fx = new TungstenCubeFx(new Scene(), g);
       s.control.aimX = 0;
       s.control.aimZ = -3000;
       s.control.fire = true;
-      play(g, fx, 2, [s]);
+      play(g, fx, 1 / 60, [s]);
+      s.control.fire = false;
+      play(g, fx, 0.3, [s]);
       const c = s.tungsten!.cubes[0];
-      expect(c.state).toBe('driven');
-      expect(Math.hypot(c.vx, c.vz)).toBeGreaterThan(300);
-      if (!driven) {
-        s.control.fire = false;
-        c.state = 'hover';
-        c.vx = c.vz = 0;
-      }
+      expect(c.path?.kind).toBe('shot');
+      // The same flight home instead: trail and rooster tail alike, no bow wave.
+      if (!thrown) c.path!.kind = 'dock';
       fx.prepare(0, 720);
       const n = fx.particles.stats.flat.count;
       fx.dispose();
       return n;
     };
     expect(flat(true)).toBeGreaterThan(flat(false));
+  });
+
+  it('settles a thrown cube flat on a face, and keeps it flat as it turns', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    const c = s.tungsten!.cubes[0];
+    // Off the cube's axes and about 2 km, so it comes to rest five quarter-turns over, on a side face.
+    s.control.aimX = 900;
+    s.control.aimZ = -1830;
+    s.control.fire = true;
+    play(g, fx, 1 / 60, [s]);
+    s.control.fire = false;
+    play(g, fx, 3, [s]);
+    expect(c.state).toBe('hover');
+    fx.prepare(0, 720);
+    const mesh = scene.getObjectByName(`tungsten-free-cube-${s.id}:${c.id}`)!;
+    // One of the cube's own axes stands straight up.
+    const up = Math.max(...[new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)].map((e) => Math.abs(e.applyQuaternion(mesh.quaternion).y)));
+    expect(up).toBeGreaterThan(0.999);
+    fx.dispose();
   });
 
   it('flares the docked cube when Magnet Surge fires', () => {
