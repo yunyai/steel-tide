@@ -4,6 +4,7 @@ import { ShipView } from '../src/render/ShipModel';
 import { TungstenModel } from '../src/render/TungstenModel';
 import { TungstenCubeFx } from '../src/render/TungstenCubeFx';
 import { modeColor } from '../src/render/TungstenLook';
+import { CUBE } from '../src/skills/misc/TungstenModes';
 import { SHIP_BY_ID } from '../src/data/ships';
 import { stateHash } from '../src/net/hash';
 import type { Ship } from '../src/ships/Ship';
@@ -14,6 +15,8 @@ import { emptyGame, place, run } from './helpers';
 const SWITCH = 1;
 const SHOT = 3;
 const DOCK = 4;
+const COLLAPSE = 6;
+const METEOR = 7;
 const OVERDRIVE = 8;
 
 afterEach(() => vi.unstubAllGlobals());
@@ -211,6 +214,105 @@ describe('Tungsten cube effects', () => {
     s.mods.untargetable = true;
     fx.prepare(0, 720);
     expect(fx.trails.count).toBeGreaterThan(0);
+    fx.dispose();
+  });
+});
+
+describe('Tungsten ultimate effects', () => {
+  const lenses = (fx: TungstenCubeFx) => fx.distortions.filter((d) => d.kind === 'lens');
+  const hole = (scene: Scene) => scene.getObjectByName('tungsten-singularity');
+
+  function collapsing(): { g: Game; s: Ship; scene: Scene; fx: TungstenCubeFx } {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    place(g, 'yamato', 1, 300, -2000);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    s.control.aimX = 0;
+    s.control.aimZ = -2000;
+    cast(s, COLLAPSE);
+    return { g, s, scene, fx };
+  }
+
+  it('opens a lensing black hole while Collapse holds, without touching game state', () => {
+    const { g, s, scene, fx } = collapsing();
+    play(g, fx, CUBE.collapse.travel / 2, [s]);
+    fx.prepare(0, 720);
+    expect(fx.singularities.count).toBe(0);
+
+    play(g, fx, CUBE.collapse.travel / 2 + 1, [s]);
+    const before = stateHash(g);
+    fx.prepare(0, 720);
+    expect(s.tungsten!.ult?.kind).toBe('collapse');
+    expect(fx.singularities.count).toBe(1);
+    expect(hole(scene)).toBeTruthy();
+    expect(lenses(fx)).toHaveLength(1);
+    expectFiniteFx(fx, scene);
+    expect(stateHash(g)).toBe(before);
+    fx.dispose();
+  });
+
+  it('closes the hole after the burst and when the battle ends', () => {
+    const { g, s, scene, fx } = collapsing();
+    play(g, fx, CUBE.collapse.travel + CUBE.collapse.pull + 0.6, [s]);
+    fx.prepare(0, 720);
+    expect(s.tungsten!.ult).toBeNull();
+    expect(fx.singularities.count).toBe(0);
+    expect(hole(scene)).toBeUndefined();
+    expect(lenses(fx)).toHaveLength(0);
+    fx.dispose();
+
+    const again = collapsing();
+    play(again.g, again.fx, CUBE.collapse.travel + 1, [again.s]);
+    again.fx.prepare(0, 720);
+    expect(again.fx.singularities.count).toBe(1);
+    again.g.finish(-1, 'test');
+    again.fx.update(0.016, [again.s]);
+    again.fx.prepare(0, 720);
+    expect(again.fx.singularities.count).toBe(0);
+    expect(hole(again.scene)).toBeUndefined();
+    again.fx.dispose();
+    expect(again.scene.children).toHaveLength(0);
+  });
+
+  it('keeps the hole but drops its lens under reduced motion', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const { g, s, fx } = collapsing();
+    play(g, fx, CUBE.collapse.travel + 1, [s]);
+    fx.prepare(0, 720);
+    expect(fx.singularities.count).toBe(1);
+    expect(lenses(fx)).toHaveLength(0);
+    fx.dispose();
+  });
+
+  it('heats the meteor through its fall and draws its strike within bounds', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    place(g, 'yamato', 1, 0, -2000);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    s.tungsten!.mode = 1;
+    s.tungsten!.cubes[0].mode = 1;
+    s.control.aimX = 0;
+    s.control.aimZ = -2000;
+    cast(s, METEOR);
+    const M = CUBE.meteor;
+    const heat = () => fx.ult.cubeLook(s, s.tungsten!.cubes[0])!.heat;
+
+    play(g, fx, M.rise + M.grow - 0.1, [s]);
+    expect(heat()).toBe(0);
+    play(g, fx, 0.3, [s]);
+    const early = heat();
+    play(g, fx, 0.4, [s]);
+    expect(early).toBeGreaterThan(0);
+    expect(heat()).toBeGreaterThan(early);
+
+    play(g, fx, 0.3, [s]);
+    const before = stateHash(g);
+    fx.prepare(0, 720);
+    expect(fx.particles.count).toBeGreaterThan(0);
+    expectFiniteFx(fx, scene);
+    expect(stateHash(g)).toBe(before);
     fx.dispose();
   });
 });

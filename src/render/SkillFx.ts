@@ -220,7 +220,7 @@ export class SkillFx {
   }
 
   /** Flash the screen, fading with the distance from the nearest camera. */
-  private flash(x: number, z: number, amount: number, color: number): void {
+  flash(x: number, z: number, amount: number, color: number): void {
     let d = Infinity;
     for (const c of this.views) d = Math.min(d, Math.hypot(c.x - x, c.z - z));
     const k = d === Infinity ? 1 : Math.max(0, 1 - d / 9000);

@@ -15,3 +15,7 @@ it('bounds the viewport field budget and does not retain previous viewport data'
   const fields=Array.from({length:100},(_,i)=>({...field((i%10-5)*100),y:(Math.floor(i/10)-5)*80,radius:12}));
   expect(projectDistortions(fields,camera())).toHaveLength(MAX_DISTORTIONS);expect(projectDistortions([],camera())).toHaveLength(0);
 });
+it('marks gravitational lenses apart from ring bends',()=>{
+  const [ring,lens]=projectDistortions([field(-300),{...field(300),kind:'lens'}],camera()).sort((a,b)=>a.shape.x-b.shape.x);
+  expect(ring.depth.z).toBe(0);expect(lens.depth.z).toBe(1);
+});

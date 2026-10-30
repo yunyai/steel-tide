@@ -7,13 +7,15 @@ import type { Ship } from '../ships/Ship';
 import { CUBE, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf } from '../skills/misc/TungstenModes';
 import type { Cube, TungstenState } from '../skills/misc/TungstenRuntime';
 import { audio } from '../fx/Audio';
-import { waveHeight } from '../world/Waves';
-import { reducedMotion } from './ArchitectPose';
-import { BK, BurstParticles, drift, hash01 } from './BurstParticles';
-import { Ribbons } from './Projectiles';
+import { BK, drift, hash01, type BurstParticles } from './BurstParticles';
+import type { Ribbons } from './Projectiles';
 import { quality } from './Quality';
+import { FOAM, SPRAY, TAU, TungstenPaint, WHITE, clamp01, ease, hot } from './TungstenPaint';
 import { ModeSweep, cubeGeometry, cubeSkin, modeColor, slamLift, type CubeSkinUniforms } from './TungstenLook';
 import { MAGNET, type TungstenModel } from './TungstenModel';
+import { INFALL, TungstenSingularities } from './TungstenSingularity';
+import { TungstenUltFx, ULT_LIFE } from './TungstenUltFx';
+import type { SpatialDistortion } from './SpatialDistortion';
 
 type TungstenEvent = GameEventMap['tungsten'];
 interface Burst {
@@ -46,10 +48,6 @@ interface FreeCube {
   mode: number;
 }
 
-const TAU = Math.PI * 2;
-const WHITE = new Color(0xffffff);
-const SPRAY = new Color(0xdfeef3);
-const FOAM = new Color(0xe9f4f7);
 const DEBRIS_CAP = 96;
 const TRAIL = 0.32;
 const LIFE: Partial<Record<TungstenEvent['kind'], number>> = {
@@ -73,11 +71,7 @@ const LIFE: Partial<Record<TungstenEvent['kind'], number>> = {
   overdriveEnd: 1.1,
 };
 const TETHER = modeOf('tether');
-const tint = new Color();
 const tint2 = new Color();
-const hot = (c: Color, k: number) => tint.copy(c).multiplyScalar(k);
-const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-const ease = (v: number) => 1 - (1 - clamp01(v)) ** 3;
 
 /**
  * Everything the Tungsten's cubes do away from the magnet: the cubes themselves once undocked, their trails,
@@ -85,20 +79,23 @@ const ease = (v: number) => 1 - (1 - clamp01(v)) ** 3;
  * Rebuilt from game state and timed event snapshots each prepare; it never writes game state.
  */
 export class TungstenCubeFx {
+  readonly paint: TungstenPaint;
   readonly particles: BurstParticles;
-  /** Arcs, chains and rings that keep an even width. */
-  readonly lines = new Ribbons(2400, true, false);
-  /** Motion trails that fade toward their tails. */
-  readonly trails = new Ribbons(600, true, true);
+  readonly lines: Ribbons;
+  readonly trails: Ribbons;
   readonly debris: InstancedMesh;
+  /** Collapse's black holes. */
+  readonly singularities: TungstenSingularities;
+  /** Telegraphs, entries, impacts and bursts for Collapse and Meteor. */
+  readonly ult: TungstenUltFx;
+  /** Screen flash for a strike at (x, z), faded by the distance to the nearest camera. */
+  onFlash: ((x: number, z: number, amount: number, color: number) => void) | null = null;
   private views = new Map<string, FreeCube>();
   private bursts: Burst[] = [];
   private off: (() => void)[] = [];
   private locals: Ship[] = [];
   private serial = 0;
   private heard = new Map<string, number>();
-  private reduce = reducedMotion();
-  private detail = quality().particles;
   private shadows = quality().shadowMap > 0;
   private m4 = new Matrix4();
   private q = new Quaternion();
@@ -114,10 +111,10 @@ export class TungstenCubeFx {
     /** The ship's magnet model, when it has a view, for anchoring arcs to the moving hull. */
     private model: (s: Ship) => TungstenModel | null = () => null,
   ) {
-    this.particles = new BurstParticles(scene, { additive: 3200, alpha: 900, flat: 400 }, 'tungsten-cube-fx');
-    this.lines.mesh.name = 'tungsten-arcs';
-    this.trails.mesh.name = 'tungsten-trails';
-    scene.add(this.lines.mesh, this.trails.mesh);
+    this.paint = new TungstenPaint(scene, game);
+    ({ particles: this.particles, lines: this.lines, trails: this.trails } = this.paint);
+    this.singularities = new TungstenSingularities(scene, game, Math.max(160, Math.round(INFALL * this.paint.detail)), this.paint.reduce);
+    this.ult = new TungstenUltFx(this.paint, game);
     const chunk = new MeshStandardMaterial({ color: 0x3a3f46, metalness: 0.9, roughness: 0.42 });
     chunk.onBeforeCompile = (shader) => {
       // Torn etching: each chunk glows in its instance colour, which is the cube's mode colour.
@@ -142,7 +139,9 @@ export class TungstenCubeFx {
 
   private event(e: TungstenEvent): void {
     if (this.game.over) return;
-    const life = LIFE[e.kind];
+    const life = LIFE[e.kind] ?? ULT_LIFE[e.kind];
+    if (e.kind === 'meteorImpact') this.onFlash?.(e.x, e.z, 0.5, 0xfff0dc);
+    else if (e.kind === 'collapseBurst') this.onFlash?.(e.x, e.z, 0.6, 0xffffff);
     if (life !== undefined) {
       this.bursts.push({ e, at: this.game.time, id: this.serial++, life, tx: e.target?.pos.x ?? e.x, tz: e.target?.pos.z ?? e.z });
       if (this.bursts.length > 160) this.bursts.splice(0, this.bursts.length - 160);
@@ -230,6 +229,28 @@ export class TungstenCubeFx {
       case 'reel':
         play('hit', 'mechanical-hit', 0.9, 0.65, 2);
         break;
+      case 'collapse':
+        play('charge', 'arcane-charge', 0.8, 0.7);
+        break;
+      case 'collapseHold':
+        play('charge', 'collapse', 1, 1, 3);
+        break;
+      case 'collapseBurst':
+        play('explosion', 'blast-heavy', 1, 0.6, 3);
+        play('explosion', 'thunder', 0.6, 0.8, 3);
+        break;
+      case 'meteorRise':
+        play('charge', 'energy-charge', 0.8, 0.6);
+        break;
+      case 'meteorFall':
+        play('charge', 'jet-release', 0.9, 0.5, 3);
+        break;
+      case 'meteorImpact':
+        play('explosion', 'nuke', 1, 0.9, 3);
+        break;
+      case 'fragment':
+        if (throttle('fragment', 0.08)) play('explosion', 'sonniss-explosion', 0.35, 1.3, 2);
+        break;
     }
   }
 
@@ -247,12 +268,10 @@ export class TungstenCubeFx {
     for (const v of this.views.values()) this.release(v);
     this.views.clear();
     this.debris.count = 0;
-    this.particles.begin();
-    this.particles.end();
-    this.lines.begin();
-    this.lines.end();
-    this.trails.begin();
-    this.trails.end();
+    this.paint.begin();
+    this.paint.end();
+    this.singularities.clear();
+    this.ult.begin();
   }
 
   private release(v: FreeCube): void {
@@ -307,7 +326,7 @@ export class TungstenCubeFx {
         v.axisZ = -(p.x - v.lastX) / moved;
       }
       // Rolling while it flies; settling onto a face once it stops.
-      if (!this.reduce && c.state === 'flying') v.tumble += moved / 260;
+      if (!this.paint.reduce && c.state === 'flying') v.tumble += moved / 260;
       else {
         const rest = Math.round(v.tumble / (Math.PI / 2)) * (Math.PI / 2);
         v.tumble += (rest - v.tumble) * (1 - Math.exp(-dt * 6));
@@ -328,17 +347,17 @@ export class TungstenCubeFx {
   }
 
   get count(): number {
-    return this.particles.count + this.lines.count + this.trails.count;
+    return this.paint.count;
+  }
+
+  /** Post-chain fields: the holes' lenses and the shock fronts of bursts and strikes. */
+  get distortions(): SpatialDistortion[] {
+    return [...this.singularities.distortions, ...this.ult.distortions];
   }
 
   setFog(color: Color, density: number): void {
-    this.particles.setFog(color, density);
-    this.lines.setFog(color, density);
-    this.trails.setFog(color, density);
-  }
-
-  private surface(x: number, z: number): number {
-    return Math.max(waveHeight(x, z, this.game.renderTime), this.game.map.heightAt(x, z)) + 0.6;
+    this.paint.setFog(color, density);
+    this.singularities.setFog(color, density);
   }
 
   private shipVisible(s: Ship, team: Team | -1): boolean {
@@ -356,138 +375,17 @@ export class TungstenCubeFx {
     return out.set(s.renderPos.x + Math.sin(h) * lx + Math.cos(h) * lz, s.renderPos.y + ly, s.renderPos.z - Math.cos(h) * lx + Math.sin(h) * lz);
   }
 
-  /** A crackling arc from a to b, re-struck about twenty times a second. */
-  private arc(ax: number, ay: number, az: number, bx: number, by: number, bz: number, seed: number, color: Color, alpha: number, width: number, jitter: number, segs = 8): void {
-    const strike = this.reduce ? 0 : Math.floor(this.game.renderTime * 20);
-    let px = ax,
-      py = ay,
-      pz = az;
-    for (let i = 1; i <= segs; i++) {
-      const t = i / segs,
-        bend = i === segs ? 0 : Math.sin(Math.PI * t) * jitter;
-      const x = ax + (bx - ax) * t + (hash01(seed + strike * 31, i * 3) - 0.5) * 2 * bend;
-      const y = ay + (by - ay) * t + (hash01(seed + strike * 31, i * 3 + 1) - 0.5) * 2 * bend;
-      const z = az + (bz - az) * t + (hash01(seed + strike * 31, i * 3 + 2) - 0.5) * 2 * bend;
-      this.lines.push(px, py, pz, x, y, z, color, alpha, width, 1.2);
-      px = x;
-      py = y;
-      pz = z;
-    }
-  }
-
-  /** A level ring of light at height y. */
-  private loop(x: number, y: number, z: number, r: number, c: Color, alpha: number, width = Math.max(1.5, r * 0.025)): void {
-    if (alpha < 0.01 || r < 1) return;
-    const n = Math.max(16, Math.min(48, Math.round(r / 10)));
-    for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * TAU,
-        a1 = ((i + 1) / n) * TAU;
-      this.lines.push(x + Math.cos(a0) * r, y, z + Math.sin(a0) * r, x + Math.cos(a1) * r, y, z + Math.sin(a1) * r, c, alpha, width, 1.5);
-    }
-  }
-
-  /** Dipole field lines looping out of the cube's top and back into its base: the Shield's capture zone. */
-  private field(x: number, y: number, z: number, reach: number, c: Color, alpha: number, spin: number, count = 8): void {
-    const steps = 18,
-      floor = this.surface(x, z) + 2;
-    for (let k = 0; k < count; k++) {
-      const phi = (k / count) * TAU + spin;
-      let px = 0,
-        py = 0,
-        pz = 0;
-      for (let i = 0; i <= steps; i++) {
-        const th = 0.22 + (i / steps) * (Math.PI - 0.44);
-        const r = reach * Math.sin(th) ** 2;
-        const nx = x + r * Math.sin(th) * Math.cos(phi),
-          ny = Math.max(floor, y + r * Math.cos(th) * 0.8),
-          nz = z + r * Math.sin(th) * Math.sin(phi);
-        if (i) {
-          // Charge runs along each line from the north pole to the south.
-          const run = this.reduce ? 0.5 : 0.5 + 0.5 * Math.sin(th * 5 - this.game.renderTime * 7 + k);
-          this.lines.push(px, py, pz, nx, ny, nz, c, alpha * (0.45 + 0.55 * run), 2, 1.2);
-        }
-        px = nx;
-        py = ny;
-        pz = nz;
-      }
-    }
-  }
-
-  /**
-   * A ring on the water. Plain rings are a crisp line riding the waves over a faint halo, so a
-   * kilometre-wide shock front stays a thin edge; other kinds are painted as one flat decal.
-   */
-  private ring(x: number, z: number, r: number, c: Color, alpha: number, kind: BK = BK.Ring, rot = 0): void {
-    if (alpha < 0.01 || r < 1) return;
-    if (kind !== BK.Ring) {
-      this.particles.push(kind, x, this.surface(x, z) + 0.4, z, r / 0.43, c, alpha, rot);
-      return;
-    }
-    this.particles.push(BK.Ring, x, this.surface(x, z) + 0.4, z, r / 0.43, c, alpha * 0.3, rot);
-    const n = Math.max(16, Math.min(64, Math.round(r / 12)));
-    const width = Math.max(2, Math.min(9, r * 0.012));
-    let px = x + r,
-      pz = z,
-      py = this.surface(px, pz) + 1.5;
-    for (let i = 1; i <= n; i++) {
-      const a = (i / n) * TAU;
-      const nx = x + Math.cos(a) * r,
-        nz = z + Math.sin(a) * r,
-        ny = this.surface(nx, nz) + 1.5;
-      this.lines.push(px, py, pz, nx, ny, nz, c, alpha, width, 1.5);
-      px = nx;
-      py = ny;
-      pz = nz;
-    }
-  }
-
-  /** Churned water along a circle: foam patches laid round the circumference, each on its own wave. */
-  private foamRing(x: number, z: number, r: number, alpha: number, seed: number): void {
-    if (alpha < 0.01 || r < 1) return;
-    const patch = Math.max(25, Math.min(70, r * 0.12));
-    const n = Math.max(6, Math.min(36, Math.round((r * TAU) / (patch * 1.4))));
-    for (let i = 0; i < n; i++) {
-      const a = ((i + hash01(seed, i) * 0.4) / n) * TAU,
-        d = r * (0.96 + 0.08 * hash01(seed, i + 50));
-      const px = x + Math.cos(a) * d,
-        pz = z + Math.sin(a) * d;
-      this.particles.push(BK.Foam, px, this.surface(px, pz) + 0.4, pz, patch * 2, FOAM, alpha, a, hash01(seed, i + 99));
-    }
-  }
-
-  /** A chain of links from a to b, sagging toward the water. */
-  private chain(ax: number, ay: number, az: number, bx: number, by: number, bz: number, c: Color, alpha: number, sag: number, flow: number): void {
-    const d = Math.hypot(bx - ax, bz - az);
-    const n = Math.max(6, Math.min(80, Math.round(d / 16)));
-    for (let i = 0; i < n; i++) {
-      const t0 = (i + 0.12) / n,
-        t1 = (i + 0.88) / n;
-      const y0 = ay + (by - ay) * t0 - sag * 4 * t0 * (1 - t0),
-        y1 = ay + (by - ay) * t1 - sag * 4 * t1 * (1 - t1);
-      const sx = ax + (bx - ax) * t0,
-        sz = az + (bz - az) * t0;
-      const ex = ax + (bx - ax) * t1,
-        ez = az + (bz - az) * t1;
-      // A pulse of light runs down the chain toward the cube.
-      const pulse = this.reduce ? 0 : Math.max(0, Math.sin((i / n + this.game.renderTime * flow) * TAU * 2)) ** 6;
-      this.lines.push(sx, Math.max(this.surface(sx, sz) + 1, y0), sz, ex, Math.max(this.surface(ex, ez) + 1, y1), ez, c, alpha * (0.75 + pulse * 0.6), i % 2 ? 3 : 6, 2);
-    }
-  }
-
   prepare(team: Team | -1, heightPx: number): void {
-    this.particles.begin(heightPx);
-    this.lines.begin();
-    this.trails.begin();
-    this.lines.material.uniforms.uViewportH.value = this.trails.material.uniforms.uViewportH.value = heightPx;
+    this.paint.begin(heightPx);
+    this.ult.begin();
+    this.singularities.update(heightPx);
     this.debris.count = 0;
     if (!this.game.over) {
       this.cubes();
       for (const s of this.game.ships) if (s.tungsten && s.alive && !s.withdrawn) this.ship(s, s.tungsten, team);
       for (const b of this.bursts) this.burst(b, team);
     }
-    this.particles.end();
-    this.lines.end();
-    this.trails.end();
+    this.paint.end();
     if (this.debris.count) {
       this.debris.instanceMatrix.needsUpdate = true;
       if (this.debris.instanceColor) this.debris.instanceColor.needsUpdate = true;
@@ -497,7 +395,7 @@ export class TungstenCubeFx {
   /** The free cubes: meshes, trails and the levitation field under parked ones. */
   private cubes(): void {
     const now = this.game.renderTime;
-    const anim = this.reduce ? 0 : now;
+    const anim = this.paint.reduce ? 0 : now;
     const alive = new Set<FreeCube>();
     for (const [s, c] of this.free()) {
       const v = this.views.get(this.key(s, c.id));
@@ -506,51 +404,54 @@ export class TungstenCubeFx {
       const t = s.tungsten!;
       const p = this.renderPos(c, this.v);
       const parked = c.state === 'hover' || c.state === 'guard' || c.state === 'orbit';
-      const bob = parked && !this.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
-      const lift = slamLift(t, c.id);
-      v.mesh.visible = true;
+      const bob = parked && !this.paint.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
+      const ult = this.ult.cubeLook(s, c);
+      const lift = slamLift(t, c.id) + (ult?.lift ?? 0);
+      const size = CUBE.edge * c.scale * (ult?.size ?? 1);
+      v.mesh.visible = size > 0.5;
       v.mesh.position.set(p.x, p.y + bob + lift, p.z);
-      v.mesh.scale.setScalar(CUBE.edge * c.scale);
-      this.q.setFromAxisAngle(this.up, c.yaw + (parked && !this.reduce ? Math.sin(anim * 0.4 + c.id) * 0.05 : 0));
+      v.mesh.scale.setScalar(Math.max(0.01, size));
+      this.q.setFromAxisAngle(this.up, c.yaw + (parked && !this.paint.reduce ? Math.sin(anim * 0.4 + c.id) * 0.05 : 0));
       this.v2.set(v.axisX, 0, v.axisZ);
       this.q2.setFromAxisAngle(this.v2, v.tumble);
       v.mesh.quaternion.copy(this.q2).multiply(this.q);
-      v.sweep.apply(v.u, c.mode, now, this.reduce);
+      v.sweep.apply(v.u, c.mode, now, this.paint.reduce);
       const flash = clamp01(1 - (this.game.time - v.struck) / 0.25);
       v.u.uTime.value = anim;
-      v.u.uPower.value = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + flash * 1.5;
+      v.u.uPower.value = ult ? ult.power : 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + flash * 1.5;
       v.u.uFlicker.value = c.hp < c.maxHp * 0.3 ? 1 - c.hp / (c.maxHp * 0.3) : 0;
       v.u.uAssemble.value = 1;
-      v.u.uHeat.value = 0;
+      v.u.uHeat.value = ult?.heat ?? 0;
       const color = modeColor(c.mode);
       // Trail: a wide coloured wake with a white-hot core.
       for (let i = 4; i < v.trail.length; i += 4) {
         const age = now - v.trail[i + 3],
           k = 1 - age / TRAIL;
         if (k <= 0) continue;
-        const w = CUBE.edge * c.scale * 0.7;
+        // A grown meteor keeps a cube-sized wake; its fire trail is drawn by the ult effects.
+        const w = CUBE.edge * Math.min(c.scale, 1.5) * 0.7;
         this.trails.push(v.trail[i - 4], v.trail[i - 3], v.trail[i - 2], v.trail[i], v.trail[i + 1], v.trail[i + 2], hot(color, 1.6), 0.55 * k, w, 2);
         this.trails.push(v.trail[i - 4], v.trail[i - 3], v.trail[i - 2], v.trail[i], v.trail[i + 1], v.trail[i + 2], hot(WHITE, 1.4), 0.5 * k, w * 0.25, 1);
         // The pressure wave behind a low, fast cube throws up a rooster tail.
         const sx = v.trail[i],
           sz = v.trail[i + 2];
-        if (c.state === 'flying' && v.trail[i + 1] < 120 && hash01(c.id * 131 + Math.round(v.trail[i + 3] * 60), 1) < 0.6 * this.detail) {
-          const base = this.surface(sx, sz),
+        if (c.state === 'flying' && v.trail[i + 1] < 120 && hash01(c.id * 131 + Math.round(v.trail[i + 3] * 60), 1) < 0.6 * this.paint.detail) {
+          const base = this.paint.surface(sx, sz),
             h = drift(age, 110, 2.5, 120);
           if (h > 0) this.particles.push(BK.Spray, sx, base + h, sz, 22 + age * 160, SPRAY, 0.55 * k, hash01(i, c.id) * TAU, hash01(c.id, i));
         }
       }
       if (parked || c.state === 'flying') {
         // The levitation field pressing a dish into the sea under the cube.
-        const base = this.surface(p.x, p.z);
+        const base = this.paint.surface(p.x, p.z);
         const height = p.y - base;
         const k = clamp01(1 - height / 200);
         if (k > 0) {
-          this.ring(p.x, p.z, CUBE.edge * c.scale * (0.85 + 0.08 * Math.sin(anim * 3 + c.id)), hot(color, 1.3), 0.45 * k);
-          this.ring(p.x, p.z, CUBE.edge * c.scale * 0.95, FOAM, 0.4 * k, BK.Foam, anim * 0.5 + c.id);
+          this.paint.ring(p.x, p.z, CUBE.edge * c.scale * (0.85 + 0.08 * Math.sin(anim * 3 + c.id)), hot(color, 1.3), 0.45 * k);
+          this.paint.ring(p.x, p.z, CUBE.edge * c.scale * 0.95, FOAM, 0.4 * k, BK.Foam, anim * 0.5 + c.id);
           this.particles.push(BK.Glow, p.x, base + 2, p.z, CUBE.edge * c.scale * 2.2, hot(color, 0.7), 0.3 * k);
-          if (parked && !this.reduce)
-            for (let i = 0; i < Math.round(6 * this.detail); i++) {
+          if (parked && !this.paint.reduce)
+            for (let i = 0; i < Math.round(6 * this.paint.detail); i++) {
               const life = 1.4,
                 phase = (anim / life + hash01(c.id, i)) % 1,
                 a = hash01(c.id * 7, i) * TAU + anim * 0.3,
@@ -578,6 +479,7 @@ export class TungstenCubeFx {
   private ship(s: Ship, t: TungstenState, team: Team | -1): void {
     const now = this.game.renderTime;
     const seen = this.shipVisible(s, team);
+    this.ult.state(s, t, team, this.paint.reduce);
     const tip = this.anchor(s, 0, MAGNET.poleTip, 0, new Vector3());
     const lead = t.cubes[0];
     const mode = modeColor(t.mode);
@@ -587,12 +489,12 @@ export class TungstenCubeFx {
       const charge = t.charge / CUBE.chargeCap;
       const arcs = 1 + Math.round(charge * 3);
       for (let i = 0; i < arcs; i++) {
-        const on = this.reduce || hash01(s.id * 17 + i, Math.floor(now * 9)) < 0.55 + charge * 0.4;
+        const on = this.paint.reduce || hash01(s.id * 17 + i, Math.floor(now * 9)) < 0.55 + charge * 0.4;
         if (!on) continue;
         const ox = (hash01(s.id + i, Math.floor(now * 20)) - 0.5) * CUBE.edge * 0.7,
           oz = (hash01(s.id + i * 5, Math.floor(now * 20)) - 0.5) * CUBE.edge * 0.7;
         const foot = this.anchor(s, ox, top - s.renderPos.y + 0.5, oz, this.v2);
-        this.arc(tip.x, tip.y, tip.z, foot.x, foot.y, foot.z, s.id * 97 + i, hot(mode, 2.2), 0.8, 1.6, 3.5, 6);
+        this.paint.arc(tip.x, tip.y, tip.z, foot.x, foot.y, foot.z, s.id * 97 + i, hot(mode, 2.2), 0.8, 1.6, 3.5, 6);
       }
     }
     // Shield: field lines from the crown to each guarding cube, and the capture shimmer around it.
@@ -602,10 +504,10 @@ export class TungstenCubeFx {
       const color = modeColor(c.mode);
       const radius = c.mode === modeOf('repel') ? CUBE.guard.repelRadius : CUBE.guard.radius;
       if (seen)
-        for (let i = 0; i < 3; i++) this.arc(tip.x, tip.y, tip.z, p.x, p.y + CUBE.edge * 0.45, p.z, c.id * 13 + i, hot(color, 2), 0.7 - i * 0.15, 2.4 - i * 0.6, 16 + i * 8, 12);
-      const pulse = this.reduce ? 0.5 : 0.5 + 0.5 * Math.sin(now * 5 + c.id);
-      this.field(p.x, p.y, p.z, radius * 1.15, hot(color, 1.8), 0.55 + pulse * 0.2, this.reduce ? 0 : now * 0.35 + c.id);
-      this.ring(p.x, p.z, radius, hot(color, 1.2), 0.35, BK.Hex, now * 0.2);
+        for (let i = 0; i < 3; i++) this.paint.arc(tip.x, tip.y, tip.z, p.x, p.y + CUBE.edge * 0.45, p.z, c.id * 13 + i, hot(color, 2), 0.7 - i * 0.15, 2.4 - i * 0.6, 16 + i * 8, 12);
+      const pulse = this.paint.reduce ? 0.5 : 0.5 + 0.5 * Math.sin(now * 5 + c.id);
+      this.paint.field(p.x, p.y, p.z, radius * 1.15, hot(color, 1.8), 0.55 + pulse * 0.2, this.paint.reduce ? 0 : now * 0.35 + c.id);
+      this.paint.ring(p.x, p.z, radius, hot(color, 1.2), 0.35, BK.Hex, now * 0.2);
     }
     // Tether chains to every hull the cubes hold.
     for (const x of t.tethers) {
@@ -616,9 +518,9 @@ export class TungstenCubeFx {
       const color = modeColor(TETHER);
       const d = Math.hypot(o.renderPos.x - p.x, o.renderPos.z - p.z);
       const fade = clamp01((x.until - this.game.time) / 0.4);
-      this.chain(p.x, p.y, p.z, o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, hot(color, 1.8), 0.85 * fade, Math.min(70, d * 0.12), 1.2);
-      this.loop(o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, o.spec.beam * 0.9, hot(color, 1.6), 0.45 * fade);
-      this.ring(o.renderPos.x, o.renderPos.z, o.spec.length * 0.55, hot(color, 1), 0.25 * fade);
+      this.paint.chain(p.x, p.y, p.z, o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, hot(color, 1.8), 0.85 * fade, Math.min(70, d * 0.12), 1.2);
+      this.paint.loop(o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, o.spec.beam * 0.9, hot(color, 1.6), 0.45 * fade);
+      this.paint.ring(o.renderPos.x, o.renderPos.z, o.spec.length * 0.55, hot(color, 1), 0.25 * fade);
     }
     for (const a of t.acts) {
       const c = t.cubes.find((k) => k.id === a.cube);
@@ -630,13 +532,13 @@ export class TungstenCubeFx {
         for (const id of a.targets) {
           const o = this.game.ships.find((x) => x.id === id);
           if (!o?.alive) continue;
-          this.chain(p.x, p.y, p.z, o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, hot(color, 2.2), 0.95, 0, 3);
+          this.paint.chain(p.x, p.y, p.z, o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, hot(color, 2.2), 0.95, 0, 3);
         }
-        this.ring(a.x, a.z, a.radius * (1 - ease(k)), hot(color, 1.5), 0.6 * (1 - k));
+        this.paint.ring(a.x, a.z, a.radius * (1 - ease(k)), hot(color, 1.5), 0.6 * (1 - k));
       } else if (a.kind === 'slam') {
         // The footprint the falling cube will hit, tightening as it drops.
-        this.ring(a.x, a.z, a.radius, hot(color, 1.4), 0.25 + 0.5 * k);
-        this.ring(a.x, a.z, a.radius * (1 - 0.6 * k), hot(color, 1.1), 0.35 * k);
+        this.paint.ring(a.x, a.z, a.radius, hot(color, 1.4), 0.25 + 0.5 * k);
+        this.paint.ring(a.x, a.z, a.radius * (1 - 0.6 * k), hot(color, 1.1), 0.35 * k);
       }
     }
     // Lunge: the hull drawn down a magnetic rail toward the cube, field lines leading it in.
@@ -657,10 +559,10 @@ export class TungstenCubeFx {
       }
       if (c) {
         const p = this.renderPos(c, this.v2);
-        for (let i = 0; i < 3; i++) this.arc(tip.x, tip.y, tip.z, p.x, p.y, p.z, s.id * 7 + i, hot(mode, 2.4), 0.85, 3 - i * 0.8, 30 + i * 20, 16);
+        for (let i = 0; i < 3; i++) this.paint.arc(tip.x, tip.y, tip.z, p.x, p.y, p.z, s.id * 7 + i, hot(mode, 2.4), 0.85, 3 - i * 0.8, 30 + i * 20, 16);
       }
       // Bow wave thrown by the dragged hull.
-      for (const side of [-1, 1]) this.ring(s.renderPos.x + fx * half * 0.8 + rx * side * 40, s.renderPos.z + fz * half * 0.8 + rz * side * 40, 70, FOAM, 0.5, BK.Foam, side);
+      for (const side of [-1, 1]) this.paint.ring(s.renderPos.x + fx * half * 0.8 + rx * side * 40, s.renderPos.z + fz * half * 0.8 + rz * side * 40, 70, FOAM, 0.5, BK.Foam, side);
     }
   }
 
@@ -673,14 +575,16 @@ export class TungstenCubeFx {
     if (f >= 1) return;
     const color = modeColor(e.mode);
     const p = this.particles;
-    const n = (count: number) => Math.max(1, Math.round(count * this.detail * (this.reduce ? 0.5 : 1)));
+    const n = (count: number) => this.paint.n(count);
     const R = (i: number, j: number) => hash01(b.id * 977 + i, j);
     const seen = this.shipVisible(s, team);
+    // The ults are overt: everyone sees them.
+    if (this.ult.burst(e, b.id, age, f, color)) return;
     switch (e.kind) {
       case 'throw': {
         if (!seen) return;
         if (age < 0.15) p.push(BK.Flare, e.x, e.y, e.z, 160 * (1 - age / 0.15) + 40, hot(WHITE, 1.5), 1 - age / 0.15);
-        this.loop(e.x, e.y, e.z, 30 + 130 * ease(age / 0.4), hot(color, 1.8), 0.8 * (1 - f));
+        this.paint.loop(e.x, e.y, e.z, 30 + 130 * ease(age / 0.4), hot(color, 1.8), 0.8 * (1 - f));
         for (let i = 0; i < n(18); i++) {
           const side = i % 2 ? 1 : -1,
             a = R(i, 0) * TAU,
@@ -697,7 +601,7 @@ export class TungstenCubeFx {
           y = Math.max(20, e.y);
         if (age < 0.18) p.push(BK.Flare, x, y, z, 120, hot(WHITE, 1.8), 1 - age / 0.18, R(0, 0));
         p.push(BK.Glow, x, y, z, 260 * (0.5 + ease(age / 0.3) * 0.5), hot(color, 1.2), 0.45 * (1 - f));
-        this.loop(x, y, z, 40 + 180 * ease(age / 0.45), hot(color, 1.6), 0.7 * (1 - clamp01(age / 0.5)));
+        this.paint.loop(x, y, z, 40 + 180 * ease(age / 0.45), hot(color, 1.6), 0.7 * (1 - clamp01(age / 0.5)));
         for (let i = 0; i < n(28); i++) {
           const a = R(i, 1) * TAU,
             up = 40 + 160 * R(i, 2),
@@ -706,7 +610,7 @@ export class TungstenCubeFx {
           if (age > pl) continue;
           p.push(BK.Spark, x + Math.cos(a) * drift(age, v, 2.4), y + drift(age, up, 2.4, 140), z + Math.sin(a) * drift(age, v, 2.4), 1.6, tint2.copy(WHITE).lerp(color, age / pl).multiplyScalar(2.4), 1 - age / pl, 0, 0, Math.cos(a) * 5, 2, Math.sin(a) * 5, 1.6);
         }
-        const base = this.surface(x, z);
+        const base = this.paint.surface(x, z);
         for (let i = 0; i < n(10); i++) {
           const a = R(i, 6) * TAU,
             r = 20 + 50 * R(i, 7),
@@ -719,11 +623,11 @@ export class TungstenCubeFx {
       case 'land':
       case 'arrive': {
         if (e.kind === 'arrive' && !seen) return;
-        const base = this.surface(e.x, e.z);
+        const base = this.paint.surface(e.x, e.z);
         const r = e.kind === 'arrive' ? s.spec.length * 0.5 : CUBE.edge * 1.4;
-        if (e.kind === 'arrive') this.foamRing(e.x, e.z, r * (0.5 + ease(age / 0.6)), 0.6 * (1 - f), b.id);
-        else this.ring(e.x, e.z, r * (0.5 + ease(age / 0.6)), FOAM, 0.6 * (1 - f), BK.Foam, b.id);
-        this.ring(e.x, e.z, r * 1.4 * ease(age / 0.5), hot(color, 1.4), 0.6 * (1 - clamp01(age / 0.6)));
+        if (e.kind === 'arrive') this.paint.foamRing(e.x, e.z, r * (0.5 + ease(age / 0.6)), 0.6 * (1 - f), b.id);
+        else this.paint.ring(e.x, e.z, r * (0.5 + ease(age / 0.6)), FOAM, 0.6 * (1 - f), BK.Foam, b.id);
+        this.paint.ring(e.x, e.z, r * 1.4 * ease(age / 0.5), hot(color, 1.4), 0.6 * (1 - clamp01(age / 0.6)));
         for (let i = 0; i < n(16); i++) {
           const a = (i / 16) * TAU + R(i, 0) * 0.3,
             out = r * (0.6 + 0.4 * R(i, 1)) + drift(age, 60, 2),
@@ -736,7 +640,7 @@ export class TungstenCubeFx {
         if (!seen) return;
         const top = this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge, 0, this.v);
         if (age < 0.12) p.push(BK.Flare, top.x, top.y, top.z, 200, hot(WHITE, 1.6), 1 - age / 0.12);
-        this.loop(top.x, top.y - CUBE.edge / 2, top.z, CUBE.edge * (0.8 + ease(age / 0.3)), hot(color, 2), 0.8 * (1 - f));
+        this.paint.loop(top.x, top.y - CUBE.edge / 2, top.z, CUBE.edge * (0.8 + ease(age / 0.3)), hot(color, 2), 0.8 * (1 - f));
         for (let i = 0; i < n(20); i++) {
           const a = R(i, 0) * TAU,
             v = 80 + 120 * R(i, 1);
@@ -765,7 +669,7 @@ export class TungstenCubeFx {
         const c = s.tungsten?.cubes.find((k) => k.id === e.cube);
         if (c?.state === 'docked' && !seen) return;
         const o = c?.state === 'docked' ? this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge / 2, 0, this.v) : this.v.set(e.x, e.y, e.z);
-        this.loop(o.x, o.y, o.z, CUBE.edge * (0.7 + 1.2 * ease(age / 0.4)), hot(color, 2.2), 0.8 * (1 - f));
+        this.paint.loop(o.x, o.y, o.z, CUBE.edge * (0.7 + 1.2 * ease(age / 0.4)), hot(color, 2.2), 0.8 * (1 - f));
         if (age < 0.1) p.push(BK.Flare, o.x, o.y, o.z, 140, hot(color, 1.6), 1 - age / 0.1);
         return;
       }
@@ -773,13 +677,13 @@ export class TungstenCubeFx {
         this.signature(b, age, f, color);
         return;
       case 'slam': {
-        const base = this.surface(e.x, e.z);
+        const base = this.paint.surface(e.x, e.z);
         if (age < 0.2) p.push(BK.Flare, e.x, base + 30, e.z, 420, hot(WHITE, 1.4), 1 - age / 0.2);
         p.push(BK.Glow, e.x, base + 20, e.z, e.radius * 1.6, hot(color, 1.1), 0.5 * (1 - clamp01(age / 0.5)));
-        this.ring(e.x, e.z, e.radius * ease(age / 0.45), hot(color, 1.8), 0.9 * (1 - clamp01(age / 0.7)));
-        this.ring(e.x, e.z, e.radius * 0.9 * ease(age / 0.3), hot(WHITE, 1.2), 0.5 * (1 - clamp01(age / 0.4)));
-        this.ring(e.x, e.z, CUBE.edge * 2.2, FOAM, 0.7 * (1 - f), BK.Foam, b.id);
-        this.foamRing(e.x, e.z, e.radius * (0.5 + 0.5 * ease(age / 0.8)), 0.65 * (1 - f), b.id);
+        this.paint.ring(e.x, e.z, e.radius * ease(age / 0.45), hot(color, 1.8), 0.9 * (1 - clamp01(age / 0.7)));
+        this.paint.ring(e.x, e.z, e.radius * 0.9 * ease(age / 0.3), hot(WHITE, 1.2), 0.5 * (1 - clamp01(age / 0.4)));
+        this.paint.ring(e.x, e.z, CUBE.edge * 2.2, FOAM, 0.7 * (1 - f), BK.Foam, b.id);
+        this.paint.foamRing(e.x, e.z, e.radius * (0.5 + 0.5 * ease(age / 0.8)), 0.65 * (1 - f), b.id);
         // A wall of water thrown up all round the impact.
         for (let i = 0; i < n(44); i++) {
           const a = (i / 44) * TAU + R(i, 0) * 0.2,
@@ -797,13 +701,13 @@ export class TungstenCubeFx {
       }
       case 'reel': {
         if (age < 0.15) p.push(BK.Flare, e.x, 40, e.z, 260, hot(WHITE, 1.5), 1 - age / 0.15);
-        this.loop(e.x, 40, e.z, 80 + 260 * ease(age / 0.5), hot(color, 2), 0.8 * (1 - f));
+        this.paint.loop(e.x, 40, e.z, 80 + 260 * ease(age / 0.5), hot(color, 2), 0.8 * (1 - f));
         return;
       }
       case 'lunge': {
         if (!seen) return;
         if (age < 0.2) p.push(BK.Flare, e.x, 40, e.z, 300, hot(color, 1.4), 1 - age / 0.2);
-        this.ring(e.x, e.z, s.spec.length * 0.6 * (0.5 + ease(age / 0.5)), hot(color, 1.4), 0.6 * (1 - f));
+        this.paint.ring(e.x, e.z, s.spec.length * 0.6 * (0.5 + ease(age / 0.5)), hot(color, 1.4), 0.6 * (1 - f));
         return;
       }
       case 'capture': {
@@ -817,7 +721,7 @@ export class TungstenCubeFx {
             oz = (R(i, 3) - 0.5) * 40;
           p.push(BK.Spark, e.x + ox + (to.x - e.x - ox) * k, e.y + oy + (to.y - e.y - oy) * k, e.z + oz + (to.z - e.z - oz) * k, 1.2, hot(color, 2.6), 1 - f, 0, 0, (to.x - e.x) * 0.02, (to.y - e.y) * 0.02, (to.z - e.z) * 0.02, 1.4);
         }
-        this.loop(to.x, to.y, to.z, CUBE.edge * (0.7 + 0.5 * ease(age / 0.3)), hot(color, 1.8), 0.5 * (1 - f));
+        this.paint.loop(to.x, to.y, to.z, CUBE.edge * (0.7 + 0.5 * ease(age / 0.3)), hot(color, 1.8), 0.5 * (1 - f));
         return;
       }
       case 'block': {
@@ -831,8 +735,8 @@ export class TungstenCubeFx {
       }
       case 'shield': {
         const radius = e.radius;
-        this.ring(e.x, e.z, s.spec.length * 0.5 + radius * ease(age / 0.6), hot(color, 1.5), 0.6 * (1 - f));
-        if (seen) this.loop(e.x, 50, e.z, s.spec.length * 0.3 + 120 * ease(age / 0.4), hot(color, 1.6), 0.5 * (1 - f));
+        this.paint.ring(e.x, e.z, s.spec.length * 0.5 + radius * ease(age / 0.6), hot(color, 1.5), 0.6 * (1 - f));
+        if (seen) this.paint.loop(e.x, 50, e.z, s.spec.length * 0.3 + 120 * ease(age / 0.4), hot(color, 1.6), 0.5 * (1 - f));
         return;
       }
       case 'overdrive':
@@ -846,7 +750,7 @@ export class TungstenCubeFx {
           const a = age - m * 0.07;
           if (a < 0) continue;
           const k = ease(a / 0.9);
-          this.ring(e.x, e.z, (start ? 140 + 520 * k : 600 - 400 * k), hot(modeColor(m), 1.7), 0.6 * (1 - f));
+          this.paint.ring(e.x, e.z, (start ? 140 + 520 * k : 600 - 400 * k), hot(modeColor(m), 1.7), 0.6 * (1 - f));
         }
         if (start) {
           p.push(BK.Glow, o.x, o.y, o.z, 600 * (1 - f * 0.5), hot(color, 1), 0.5 * (1 - f));
@@ -867,10 +771,10 @@ export class TungstenCubeFx {
     const p = this.particles;
     const id = TUNGSTEN_MODES[b.e.mode].id;
     const R = (i: number, j: number) => hash01(b.id * 613 + i, j);
-    const n = (count: number) => Math.max(1, Math.round(count * this.detail));
+    const n = (count: number) => this.paint.n(count);
     if (id === 'crush') {
       // A dull amber shock ring at the waterline and a stun crown over the hull.
-      this.ring(x, z, 60 + 200 * ease(age / 0.5), hot(color, 1.6), 0.8 * (1 - f));
+      this.paint.ring(x, z, 60 + 200 * ease(age / 0.5), hot(color, 1.6), 0.8 * (1 - f));
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * TAU + this.game.renderTime * 3;
         if (age < HIT.crush.stun) p.push(BK.Flare, x + Math.cos(a) * 40, y + 40, z + Math.sin(a) * 40, 22, hot(color, 2), 0.9 * (1 - f));
@@ -884,12 +788,12 @@ export class TungstenCubeFx {
         if (age > pl) continue;
         p.push(BK.Spark, x + Math.cos(a) * drift(age, v, 2), y + drift(age, 90 * R(i, 3), 2, 160), z + Math.sin(a) * drift(age, v, 2), 1.4, hot(color, 2.6), 1 - age / pl, 0, 0, Math.cos(a) * 8, 0.5, Math.sin(a) * 8, 1.4);
       }
-      this.ring(x, z, HIT.shard.radius * ease(age / 0.4), hot(color, 1.2), 0.4 * (1 - f));
+      this.paint.ring(x, z, HIT.shard.radius * ease(age / 0.4), hot(color, 1.2), 0.4 * (1 - f));
     } else if (id === 'repel') {
-      this.ring(x, z, 80 + HIT.repel.knock * ease(age / 0.5), hot(color, 1.8), 0.85 * (1 - f));
-      this.foamRing(x, z, 60 + HIT.repel.knock * 0.8 * ease(age / 0.6), 0.5 * (1 - f), b.id);
+      this.paint.ring(x, z, 80 + HIT.repel.knock * ease(age / 0.5), hot(color, 1.8), 0.85 * (1 - f));
+      this.paint.foamRing(x, z, 60 + HIT.repel.knock * 0.8 * ease(age / 0.6), 0.5 * (1 - f), b.id);
     } else if (id === 'tether') {
-      this.loop(x, y, z, 70 + 40 * Math.sin(age * 20), hot(color, 2), 0.6 * (1 - f));
+      this.paint.loop(x, y, z, 70 + 40 * Math.sin(age * 20), hot(color, 2), 0.6 * (1 - f));
     } else if (id === 'mend') {
       // Green motes drift from the wound back to the Tungsten.
       const s = b.e.ship;
@@ -902,7 +806,7 @@ export class TungstenCubeFx {
         p.push(BK.Glow, x + ox + (s.renderPos.x - x - ox) * k, y + lift + (40 - y) * k, z + oz + (s.renderPos.z - z - oz) * k, 18, hot(color, 2), 0.9 * (1 - k * 0.5));
       }
     } else if (id === 'kinetic') {
-      this.loop(x, y, z, 30 + 320 * ease(age / 0.3), hot(WHITE, 1.4), 0.6 * (1 - clamp01(age / 0.35)));
+      this.paint.loop(x, y, z, 30 + 320 * ease(age / 0.3), hot(WHITE, 1.4), 0.6 * (1 - clamp01(age / 0.35)));
     }
   }
 
@@ -911,11 +815,11 @@ export class TungstenCubeFx {
       p = this.particles;
     const sig = TUNGSTEN_MODES[e.mode].signature.id;
     const R = (i: number, j: number) => hash01(b.id * 389 + i, j);
-    const n = (count: number) => Math.max(1, Math.round(count * this.detail * (this.reduce ? 0.5 : 1)));
-    const base = this.surface(e.x, e.z);
+    const n = (count: number) => this.paint.n(count);
+    const base = this.paint.surface(e.x, e.z);
     if (age < 0.12) p.push(BK.Flare, e.x, e.y, e.z, 200, hot(color, 1.8), 1 - age / 0.12);
     if (sig === 'ricochet') {
-      this.loop(e.x, e.y, e.z, 40 + 160 * ease(age / 0.3), hot(color, 2), 0.8 * (1 - clamp01(age / 0.5)));
+      this.paint.loop(e.x, e.y, e.z, 40 + 160 * ease(age / 0.3), hot(color, 2), 0.8 * (1 - clamp01(age / 0.5)));
     } else if (sig === 'storm') {
       // Fragment Storm: the cube's skin shears off in a sphere of red-hot shards.
       p.push(BK.Glow, e.x, e.y, e.z, e.radius * 1.2 * (0.4 + 0.6 * ease(age / 0.3)), hot(color, 1.1), 0.5 * (1 - clamp01(age / 0.6)));
@@ -928,7 +832,7 @@ export class TungstenCubeFx {
         const d = drift(age, v, 2.2);
         p.push(BK.Spark, e.x + Math.cos(a) * Math.cos(el) * d, Math.max(base + 2, e.y + Math.sin(el) * d - 30 * age * age), e.z + Math.sin(a) * Math.cos(el) * d, 2, tint2.copy(WHITE).lerp(color, age / pl).multiplyScalar(2.6), 1 - age / pl, 0, 0, Math.cos(a) * 9, Math.sin(el) * 9, Math.sin(a) * 9, 1.8);
       }
-      this.ring(e.x, e.z, e.radius * ease(age / 0.5), hot(color, 1.6), 0.7 * (1 - f));
+      this.paint.ring(e.x, e.z, e.radius * ease(age / 0.5), hot(color, 1.6), 0.7 * (1 - f));
       for (let i = 0; i < n(24); i++) {
         const a = R(i, 7) * TAU,
           r = e.radius * (0.3 + 0.7 * R(i, 8)),
@@ -941,21 +845,21 @@ export class TungstenCubeFx {
     } else if (sig === 'repulse') {
       // Repulse: a hard blue wave that flattens the sea and throws a lip of spray.
       const front = e.radius * ease(age / 0.55);
-      this.ring(e.x, e.z, front, hot(color, 2), 0.95 * (1 - f));
-      this.ring(e.x, e.z, front * 0.92, hot(WHITE, 1.2), 0.5 * (1 - f));
-      this.foamRing(e.x, e.z, front, 0.5 * (1 - f), b.id);
-      this.loop(e.x, e.y, e.z, 60 + front * 0.6, hot(color, 1.5), 0.5 * (1 - clamp01(age / 0.5)));
+      this.paint.ring(e.x, e.z, front, hot(color, 2), 0.95 * (1 - f));
+      this.paint.ring(e.x, e.z, front * 0.92, hot(WHITE, 1.2), 0.5 * (1 - f));
+      this.paint.foamRing(e.x, e.z, front, 0.5 * (1 - f), b.id);
+      this.paint.loop(e.x, e.y, e.z, 60 + front * 0.6, hot(color, 1.5), 0.5 * (1 - clamp01(age / 0.5)));
       if (age < 0.7)
         for (let i = 0; i < n(48); i++) {
           const a = (i / 48) * TAU + R(i, 0) * 0.1;
           p.push(BK.Spray, e.x + Math.cos(a) * front, base + 8 + 30 * R(i, 1) * (1 - age), e.z + Math.sin(a) * front, 30 + 20 * R(i, 2), SPRAY, 0.6 * (1 - age / 0.7), a, R(i, 3));
         }
     } else if (sig === 'reel') {
-      this.ring(e.x, e.z, e.radius * (1 - ease(age / SIGNATURE.reel.time)), hot(color, 1.8), 0.8 * (1 - f));
+      this.paint.ring(e.x, e.z, e.radius * (1 - ease(age / SIGNATURE.reel.time)), hot(color, 1.8), 0.8 * (1 - f));
     } else if (sig === 'restore') {
       // Restore: a green tide out to every ally in reach, motes rising off the water.
-      this.ring(e.x, e.z, e.radius * ease(age / 0.8), hot(color, 1.8), 0.85 * (1 - f));
-      this.ring(e.x, e.z, e.radius * 0.95 * ease(age / 1), hot(color, 1), 0.4 * (1 - f), BK.Hex, b.id);
+      this.paint.ring(e.x, e.z, e.radius * ease(age / 0.8), hot(color, 1.8), 0.85 * (1 - f));
+      this.paint.ring(e.x, e.z, e.radius * 0.95 * ease(age / 1), hot(color, 1), 0.4 * (1 - f), BK.Hex, b.id);
       for (let i = 0; i < n(50); i++) {
         const a = R(i, 0) * TAU,
           r = e.radius * Math.sqrt(R(i, 1)) * ease(age / 0.8),
@@ -963,7 +867,7 @@ export class TungstenCubeFx {
         p.push(BK.Glow, e.x + Math.cos(a) * r, base + 5 + rise, e.z + Math.sin(a) * r, 10 + 10 * R(i, 3), hot(color, 2.2), 0.8 * (1 - f));
       }
       const s = e.ship;
-      this.loop(s.renderPos.x, 40, s.renderPos.z, s.spec.length * 0.4 * (0.6 + 0.4 * ease(age / 0.5)), hot(color, 1.6), 0.6 * (1 - f));
+      this.paint.loop(s.renderPos.x, 40, s.renderPos.z, s.spec.length * 0.4 * (0.6 + 0.4 * ease(age / 0.5)), hot(color, 1.6), 0.6 * (1 - f));
     }
   }
 
@@ -974,13 +878,13 @@ export class TungstenCubeFx {
     const R = (i: number, j: number) => hash01(b.id * 211 + i, j);
     if (age < 0.2) p.push(BK.Flare, e.x, e.y, e.z, 380, hot(WHITE, 1.8), 1 - age / 0.2);
     p.push(BK.Glow, e.x, e.y, e.z, 300 * (0.6 + 0.4 * ease(age / 0.3)), hot(color, 1.2), 0.6 * (1 - clamp01(age / 0.7)));
-    this.loop(e.x, e.y, e.z, 60 + 340 * ease(age / 0.5), hot(color, 1.8), 0.8 * (1 - clamp01(age / 0.6)));
-    for (let i = 0; i < Math.round(16 * this.detail); i++) {
+    this.paint.loop(e.x, e.y, e.z, 60 + 340 * ease(age / 0.5), hot(color, 1.8), 0.8 * (1 - clamp01(age / 0.6)));
+    for (let i = 0; i < Math.round(16 * this.paint.detail); i++) {
       const a = R(i, 0) * TAU,
         v = 40 + 60 * R(i, 1);
       p.push(BK.Smoke, e.x + Math.cos(a) * drift(age, v, 1), e.y + drift(age, 30 * R(i, 2), 1), e.z + Math.sin(a) * drift(age, v, 1), 40 + age * 50, tint2.setHex(0x3a3d42), 0.6 * (1 - f), a, R(i, 3));
     }
-    for (let i = 0; i < Math.round(50 * this.detail); i++) {
+    for (let i = 0; i < Math.round(50 * this.paint.detail); i++) {
       const a = R(i, 4) * TAU,
         el = (R(i, 5) - 0.2) * 1.5,
         v = 150 + 250 * R(i, 6),
@@ -990,7 +894,7 @@ export class TungstenCubeFx {
       p.push(BK.Spark, e.x + Math.cos(a) * Math.cos(el) * d, e.y + drift(age, Math.sin(el) * v, 1.8, 120), e.z + Math.sin(a) * Math.cos(el) * d, 1.6, hot(color, 2.6), 1 - age / pl, 0, 0, Math.cos(a) * 5, 2, Math.sin(a) * 5, 1.4);
     }
     // Real chunks of metal, each with its own arc, spin and splash.
-    const chunks = Math.round(18 * this.detail);
+    const chunks = Math.round(18 * this.paint.detail);
     for (let i = 0; i < chunks && this.debris.count < DEBRIS_CAP; i++) {
       const a = R(i, 10) * TAU,
         v = 60 + 140 * R(i, 11),
@@ -999,7 +903,7 @@ export class TungstenCubeFx {
       const x = e.x + Math.cos(a) * drift(age, v, 0.5),
         z = e.z + Math.sin(a) * drift(age, v, 0.5);
       const y = e.y + drift(age, up, 0.5, 60);
-      const water = this.surface(x, z);
+      const water = this.paint.surface(x, z);
       if (y < water - size) {
         // Gone in: foam marks where it went.
         p.push(BK.Spray, x, water + 6, z, size * 2.5, SPRAY, 0.35 * (1 - f), a, i);
@@ -1012,7 +916,7 @@ export class TungstenCubeFx {
       this.debris.setMatrixAt(k, this.m4);
       this.debris.setColorAt(k, tint2.copy(color).multiplyScalar(Math.max(0, 1 - age / 1.6)));
     }
-    this.foamRing(e.x, e.z, 80 + 260 * ease(age / 1.2), 0.4 * (1 - f), b.id);
+    this.paint.foamRing(e.x, e.z, 80 + 260 * ease(age / 1.2), 0.4 * (1 - f), b.id);
   }
 
   dispose(): void {
@@ -1020,10 +924,9 @@ export class TungstenCubeFx {
     this.off = [];
     for (const v of this.views.values()) this.release(v);
     this.views.clear();
-    this.particles.dispose();
-    this.lines.dispose();
-    this.trails.dispose();
-    this.scene.remove(this.lines.mesh, this.trails.mesh, this.debris);
+    this.paint.dispose();
+    this.singularities.dispose();
+    this.scene.remove(this.debris);
     this.debris.geometry.dispose();
     (this.debris.material as MeshStandardMaterial).dispose();
   }
