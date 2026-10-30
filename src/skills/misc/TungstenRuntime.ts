@@ -249,7 +249,7 @@ export function hoverY(s: Ship, x: number, z: number, scale = 1): number {
 export function dockPoint(s: Ship, slot: number, out = tmp): Vector3 {
   const lift = dockLift(s.spec);
   if (slot === 0) return s.localToWorld(0, lift, 0, out);
-  const a = ((slot - 1) / 5) * Math.PI * 2;
+  const a = ((slot - 1) / 5) * Math.PI * 2 + s.game.time * CUBE.ringSpin;
   return s.localToWorld(Math.cos(a) * CUBE.ringRadius, lift + CUBE.ringLift, Math.sin(a) * CUBE.ringRadius, out);
 }
 /** A cube settles on the magnet; the cradle cube's arrival wakes a spent magnet. */
@@ -264,7 +264,8 @@ function dockPose(s: Ship, c: Cube): void {
   c.x = p.x;
   c.y = p.y;
   c.z = p.z;
-  c.yaw = -s.heading;
+  // Turning on the sim's clock, so a cube leaves the dais at the angle it was drawn at.
+  c.yaw = -s.heading + s.game.time * CUBE.spin;
 }
 
 /** Modes whose passives run: the cube's while it holds together; every living cube's in Overdrive. */

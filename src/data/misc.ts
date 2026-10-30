@@ -45,7 +45,7 @@ export const MISC: ShipSpec[] = [
     id: 'tungsten', name: 'Tungsten', nation: 'lodestone', cls: 'TT', year: 2091,
     description: 'A magnet that learned to sail: a levitation dais set into the hull floats a 128-metre cube of tungsten etched with neon circuitry, turning slowly over the deck. She carries no guns. The cube is the weapon, the armour and the anchor.',
     specialty: 'Cube titan, no guns. Hold fire to steer a 2.5M-HP tungsten cube into hulls on the magnet’s energy; it blocks fire in six switchable modes. Singularity, meteor and a six-cube Overdrive.',
-    hp: 1600000, length: 400, beam: 64, draft: 15, freeboard: 14,
+    hp: 1600000, length: 400, beam: 80, draft: 15, freeboard: 14,
     maxSpeed: 30, accelTime: 42, turnRadius: 900, rudderTime: 13,
     armor: { belt: 300, deck: 180, bow: 70, stern: 70, superstructure: 70, turret: 380, citadelInner: 70, torpedoProtection: 0.55 },
     citadel: { length: 0.55, top: 2, width: 0.7 },
@@ -53,11 +53,14 @@ export const MISC: ShipSpec[] = [
     skills: kitOf(TUNGSTEN_SKILLS,'tungstenLunge','tungstenSwitch','tungstenSignature','tungstenSurge','tungstenDock','tungstenShield','tungstenCollapse','tungstenMeteor','tungstenOverdrive'),
     model: {
       palette: { hull: 0x3b4149, upper: 0x59616b, deck: 0x464c54, accent: 0x3ff0ff, boot: 0x15181c },
-      bow: 'straight', stern: 'transom', sheer: 0.35,
-      blocks: [{x: 84,len:44,w:30,h:9},{x:-84,len:40,w:28,h:7}],
-      tower: {x:92,h:20,w:14,len:18,style:'block'}, funnels: [], masts: [],
+      bow: 'straight', stern: 'transom', sheer: 0.15,
+      // A low angular bridge forward and the reactor aft, clear of the cube turning over the dais amidships.
+      blocks: [{x:118,len:48,w:30,h:8},{x:122,len:26,w:20,h:7},{x:-122,len:54,w:36,h:10}],
+      funnels: [], masts: [],
+      domes: [{x:126,r:6}],
+      panels: [{x:116,y:3,w:16}],
+      fins: [{x:-122,h:12,len:22,z:-10},{x:-122,h:12,len:22,z:10}],
       lightStrip: 0x3ff0ff,
-      turretStyle: 'rail',
     },
   },
   {

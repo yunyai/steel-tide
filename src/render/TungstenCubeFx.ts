@@ -4,7 +4,7 @@ import type { GameEventMap } from '../core/Events';
 import type { Team } from '../core/types';
 import { contactVisible } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
-import { CUBE, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf } from '../skills/misc/TungstenModes';
+import { CUBE, HIT, SIGNATURE, TUNGSTEN_MODES, dockLift, modeOf } from '../skills/misc/TungstenModes';
 import type { Cube, TungstenState } from '../skills/misc/TungstenRuntime';
 import { audio } from '../fx/Audio';
 import { BK, drift, hash01, type BurstParticles } from './BurstParticles';
@@ -12,7 +12,7 @@ import type { Ribbons } from './Projectiles';
 import { quality } from './Quality';
 import { FOAM, SPRAY, TAU, TungstenPaint, WHITE, clamp01, ease, hot } from './TungstenPaint';
 import { ModeSweep, cubeGeometry, cubeSkin, modeColor, slamLift, type CubeSkinUniforms } from './TungstenLook';
-import { MAGNET, type TungstenModel } from './TungstenModel';
+import { HORN_TIPS, type TungstenModel } from './TungstenModel';
 import { INFALL, TungstenSingularities } from './TungstenSingularity';
 import { TungstenUltFx, ULT_LIFE } from './TungstenUltFx';
 import type { SpatialDistortion } from './SpatialDistortion';
@@ -69,7 +69,11 @@ const LIFE: Partial<Record<TungstenEvent['kind'], number>> = {
   contact: 0.7,
   overdrive: 1.8,
   overdriveEnd: 1.1,
+  spent: 1.4,
+  charged: 0.7,
+  surge: 0.9,
 };
+const H = CUBE.edge / 2;
 const TETHER = modeOf('tether');
 const tint2 = new Color();
 
@@ -104,6 +108,8 @@ export class TungstenCubeFx {
   private v2 = new Vector3();
   private scale = new Vector3();
   private up = new Vector3(0, 1, 0);
+  /** The horn tips of the ship being drawn, in world space. */
+  private tips = HORN_TIPS.map(() => new Vector3());
 
   constructor(
     private scene: Scene,
@@ -213,6 +219,15 @@ export class TungstenCubeFx {
       case 'overdriveEnd':
         play('charge', 'ward-rise', 0.5, 0.7);
         break;
+      case 'spent':
+        play('splash', 'sonniss-splash', 0.55, 0.8, 2);
+        break;
+      case 'charged':
+        play('charge', 'ward-rise', 0.45, 1.3);
+        break;
+      case 'surge':
+        play('charge', 'energy-heavy', 0.9, 1.2);
+        break;
       case 'signature': {
         const sig = TUNGSTEN_MODES[e.mode].signature.id;
         if (sig === 'ricochet') play('ricochet', 'ricochet', 0.8, 1);
@@ -256,6 +271,11 @@ export class TungstenCubeFx {
 
   private key(s: Ship, cube: number): string {
     return `${s.id}:${cube}`;
+  }
+
+  /** The drawn skin of a cube away from the dais, while it has a view. */
+  skin(s: Ship, cube: number): CubeSkinUniforms | null {
+    return this.views.get(this.key(s, cube))?.u ?? null;
   }
 
   private drop(s: Ship): void {
@@ -404,7 +424,10 @@ export class TungstenCubeFx {
       const t = s.tungsten!;
       const p = this.renderPos(c, this.v);
       const parked = c.state === 'hover' || c.state === 'guard' || c.state === 'orbit';
-      const bob = parked && !this.paint.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
+      const driven = c.state === 'driven';
+      // A spent cube sits low and dark in the water until it docks or recharges.
+      const spent = t.spent && c === t.cubes[0];
+      const bob = parked && !spent && !this.paint.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
       const ult = this.ult.cubeLook(s, c);
       const lift = slamLift(t, c.id) + (ult?.lift ?? 0);
       const size = CUBE.edge * c.scale * (ult?.size ?? 1);
@@ -417,9 +440,13 @@ export class TungstenCubeFx {
       v.mesh.quaternion.copy(this.q2).multiply(this.q);
       v.sweep.apply(v.u, c.mode, now, this.paint.reduce);
       const flash = clamp01(1 - (this.game.time - v.struck) / 0.25);
+      // Magnet Surge: a bright pulse through the etching as it fires, then a stronger glow while it runs.
+      const surge = t.surgeUntil ? clamp01(1 - (this.game.time - (t.surgeUntil - CUBE.surge.time)) / 0.6) : 0;
+      const sputter = this.paint.reduce ? 0.2 : hash01(c.id, Math.floor(now * 12)) < 0.18 ? 0.3 : 0.12;
+      const power = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + (driven ? 0.3 : 0) + (t.surgeUntil > this.game.time ? 0.5 : 0) + flash * 1.5 + surge * 2.5;
       v.u.uTime.value = anim;
-      v.u.uPower.value = ult ? ult.power : 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + flash * 1.5;
-      v.u.uFlicker.value = c.hp < c.maxHp * 0.3 ? 1 - c.hp / (c.maxHp * 0.3) : 0;
+      v.u.uPower.value = ult ? ult.power : spent ? sputter : power;
+      v.u.uFlicker.value = Math.max(c.hp < c.maxHp * 0.3 ? 1 - c.hp / (c.maxHp * 0.3) : 0, spent ? 0.5 : 0);
       v.u.uAssemble.value = 1;
       v.u.uHeat.value = ult?.heat ?? 0;
       const color = modeColor(c.mode);
@@ -435,13 +462,17 @@ export class TungstenCubeFx {
         // The pressure wave behind a low, fast cube throws up a rooster tail.
         const sx = v.trail[i],
           sz = v.trail[i + 2];
-        if (c.state === 'flying' && v.trail[i + 1] < 120 && hash01(c.id * 131 + Math.round(v.trail[i + 3] * 60), 1) < 0.6 * this.paint.detail) {
+        if ((c.state === 'flying' || c.state === 'driven') && v.trail[i + 1] < 120 && hash01(c.id * 131 + Math.round(v.trail[i + 3] * 60), 1) < 0.6 * this.paint.detail) {
           const base = this.paint.surface(sx, sz),
             h = drift(age, 110, 2.5, 120);
           if (h > 0) this.particles.push(BK.Spray, sx, base + h, sz, 22 + age * 160, SPRAY, 0.55 * k, hash01(i, c.id) * TAU, hash01(c.id, i));
         }
       }
-      if (parked || c.state === 'flying') {
+      if (spent) {
+        // Settled in the sea: a slack ring of foam and a dying glow.
+        this.paint.ring(p.x, p.z, H * c.scale * 1.15, FOAM, 0.35, BK.Foam, anim * 0.2 + c.id);
+        this.paint.ring(p.x, p.z, H * c.scale * 1.3, hot(color, 0.5), 0.12 + 0.1 * sputter);
+      } else if (parked || driven || c.state === 'flying') {
         // The levitation field pressing a dish into the sea under the cube.
         const base = this.paint.surface(p.x, p.z);
         const height = p.y - base;
@@ -459,6 +490,7 @@ export class TungstenCubeFx {
               this.particles.push(BK.Spray, p.x + Math.cos(a) * r, base + phase * 14, p.z + Math.sin(a) * r, 10 + phase * 18, SPRAY, 0.3 * (1 - phase), a, i);
             }
         }
+        if (driven) this.wake(c, p.x, p.z, color, anim);
       }
     }
     // Cubes that left: dissolving where they were last drawn.
@@ -475,27 +507,60 @@ export class TungstenCubeFx {
     }
   }
 
-  /** Effects tied to a Tungsten's own state: Shield arcs, tethers, reels and slams, the Lunge and the idle magnet. */
+  /** A steered cube's bow wave: foam piled ahead of its leading face and spray peeling off both sides. */
+  private wake(c: Cube, x: number, z: number, color: Color, anim: number): void {
+    const speed = Math.hypot(c.vx, c.vz);
+    const k = clamp01((speed - CUBE.drive.minSpeed) / 360);
+    if (k <= 0) return;
+    const ux = c.vx / speed,
+      uz = c.vz / speed,
+      h = H * c.scale;
+    const base = this.paint.surface(x, z);
+    this.paint.ring(x + ux * h, z + uz * h, h * (0.55 + 0.35 * k), FOAM, 0.6 * k, BK.Foam, anim + c.id);
+    this.paint.ring(x + ux * h * 0.8, z + uz * h * 0.8, h * (0.8 + 0.4 * k), hot(color, 1.2), 0.3 * k);
+    if (this.paint.reduce) return;
+    for (let i = 0; i < this.paint.n(10); i++) {
+      const phase = (anim * 2.2 + hash01(c.id, i)) % 1,
+        side = i % 2 ? 1 : -1;
+      const along = h * (0.9 - phase * 2.2),
+        out = h * (1.05 + phase * 0.8);
+      this.particles.push(BK.Spray, x + ux * along - uz * side * out, base + 4 + phase * 30 * k, z + uz * along + ux * side * out, 16 + phase * 40, SPRAY, 0.5 * k * (1 - phase), side, i);
+    }
+  }
+
+  /** The ship's four horn tips in world space, on the drawn hull. */
+  private hornTips(s: Ship): Vector3[] {
+    HORN_TIPS.forEach((h, i) => this.anchor(s, h.x, h.y, h.z, this.tips[i]));
+    return this.tips;
+  }
+
+  private nearestTip(tips: Vector3[], x: number, z: number): Vector3 {
+    let best = tips[0];
+    for (const tip of tips) if (Math.hypot(tip.x - x, tip.z - z) < Math.hypot(best.x - x, best.z - z)) best = tip;
+    return best;
+  }
+
+  /** Effects tied to a Tungsten's own state: Shield arcs, tethers, reels and slams, the Lunge and the idle dais. */
   private ship(s: Ship, t: TungstenState, team: Team | -1): void {
     const now = this.game.renderTime;
     const seen = this.shipVisible(s, team);
     this.ult.state(s, t, team, this.paint.reduce);
-    const tip = this.anchor(s, 0, MAGNET.poleTip, 0, new Vector3());
+    const tips = this.hornTips(s);
     const lead = t.cubes[0];
     const mode = modeColor(t.mode);
-    // Idle crackle between the crown pole and a cradled cube; livelier as the Shield store fills.
+    // Idle crackle from the horn tips up to the floating cube's base; livelier as the Shield store fills.
     if (seen && lead?.state === 'docked') {
-      const top = tip.y - (MAGNET.poleTip - (s.spec.freeboard + 6 + CUBE.edge));
+      const base = dockLift(s.spec) - H;
       const charge = t.charge / CUBE.chargeCap;
-      const arcs = 1 + Math.round(charge * 3);
-      for (let i = 0; i < arcs; i++) {
-        const on = this.paint.reduce || hash01(s.id * 17 + i, Math.floor(now * 9)) < 0.55 + charge * 0.4;
-        if (!on) continue;
-        const ox = (hash01(s.id + i, Math.floor(now * 20)) - 0.5) * CUBE.edge * 0.7,
-          oz = (hash01(s.id + i * 5, Math.floor(now * 20)) - 0.5) * CUBE.edge * 0.7;
-        const foot = this.anchor(s, ox, top - s.renderPos.y + 0.5, oz, this.v2);
+      HORN_TIPS.forEach((h, i) => {
+        const on = this.paint.reduce || hash01(s.id * 17 + i, Math.floor(now * 9)) < 0.45 + charge * 0.5;
+        if (!on) return;
+        const ox = (hash01(s.id + i, Math.floor(now * 20)) - 0.5) * 16,
+          oz = (hash01(s.id + i * 5, Math.floor(now * 20)) - 0.5) * 16;
+        const foot = this.anchor(s, h.x * 1.6 + ox, base + 0.5, h.z * 1.6 + oz, this.v2);
+        const tip = tips[i];
         this.paint.arc(tip.x, tip.y, tip.z, foot.x, foot.y, foot.z, s.id * 97 + i, hot(mode, 2.2), 0.8, 1.6, 3.5, 6);
-      }
+      });
     }
     // Shield: field lines from the crown to each guarding cube, and the capture shimmer around it.
     for (const c of t.cubes) {
@@ -503,8 +568,10 @@ export class TungstenCubeFx {
       const p = this.renderPos(c, this.v);
       const color = modeColor(c.mode);
       const radius = c.mode === modeOf('repel') ? CUBE.guard.repelRadius : CUBE.guard.radius;
-      if (seen)
-        for (let i = 0; i < 3; i++) this.paint.arc(tip.x, tip.y, tip.z, p.x, p.y + CUBE.edge * 0.45, p.z, c.id * 13 + i, hot(color, 2), 0.7 - i * 0.15, 2.4 - i * 0.6, 16 + i * 8, 12);
+      if (seen) {
+        const tip = this.nearestTip(tips, p.x, p.z);
+        for (let i = 0; i < 3; i++) this.paint.arc(tip.x, tip.y, tip.z, p.x, p.y - H * 0.8, p.z, c.id * 13 + i, hot(color, 2), 0.7 - i * 0.15, 2.4 - i * 0.6, 16 + i * 8, 12);
+      }
       const pulse = this.paint.reduce ? 0.5 : 0.5 + 0.5 * Math.sin(now * 5 + c.id);
       this.paint.field(p.x, p.y, p.z, radius * 1.15, hot(color, 1.8), 0.55 + pulse * 0.2, this.paint.reduce ? 0 : now * 0.35 + c.id);
       this.paint.ring(p.x, p.z, radius, hot(color, 1.2), 0.35, BK.Hex, now * 0.2);
@@ -560,6 +627,7 @@ export class TungstenCubeFx {
       }
       if (c) {
         const p = this.renderPos(c, this.v2);
+        const tip = this.nearestTip(tips, p.x, p.z);
         for (let i = 0; i < 3; i++) this.paint.arc(tip.x, tip.y, tip.z, p.x, p.y, p.z, s.id * 7 + i, hot(mode, 2.4), 0.85, 3 - i * 0.8, 30 + i * 20, 16);
       }
       // Bow wave thrown by the dragged hull.
@@ -593,7 +661,7 @@ export class TungstenCubeFx {
           const side = i % 2 ? 1 : -1,
             a = R(i, 0) * TAU,
             v = 60 + 90 * R(i, 1);
-          const o = this.anchor(s, (R(i, 2) - 0.5) * 30, s.spec.freeboard + 20 + R(i, 3) * 40, side * (CUBE.edge / 2 + 5), this.v);
+          const o = this.anchor(s, (R(i, 2) - 0.5) * H, dockLift(s.spec) + (R(i, 3) - 0.5) * CUBE.edge, side * (H + 5), this.v);
           p.push(BK.Spark, o.x + Math.cos(a) * drift(age, v, 3), o.y + drift(age, v * 0.4, 3, 30), o.z + Math.sin(a) * drift(age, v, 3), 1.2, hot(color, 2.4), 1 - f, 0, 0, Math.cos(a) * 4, 2, Math.sin(a) * 4, 1.4);
         }
         return;
@@ -642,7 +710,7 @@ export class TungstenCubeFx {
       }
       case 'dock': {
         if (!seen) return;
-        const top = this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge, 0, this.v);
+        const top = this.anchor(s, 0, dockLift(s.spec) + H, 0, this.v);
         if (age < 0.12) p.push(BK.Flare, top.x, top.y, top.z, 200, hot(WHITE, 1.6), 1 - age / 0.12);
         this.paint.loop(top.x, top.y - CUBE.edge / 2, top.z, CUBE.edge * (0.8 + ease(age / 0.3)), hot(color, 2), 0.8 * (1 - f));
         for (let i = 0; i < n(20); i++) {
@@ -657,7 +725,7 @@ export class TungstenCubeFx {
         return;
       case 'reform': {
         if (!seen) return;
-        const o = this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge / 2, 0, this.v);
+        const o = this.anchor(s, 0, dockLift(s.spec), 0, this.v);
         p.push(BK.Glow, o.x, o.y, o.z, 200 * (1 - f * 0.5), hot(color, 1.4), 0.6 * (1 - f));
         // Motes drawn in from all round onto the cradle.
         for (let i = 0; i < n(30); i++) {
@@ -670,7 +738,7 @@ export class TungstenCubeFx {
         return;
       }
       case 'switch': {
-        const o = c?.state === 'docked' ? this.anchor(s, 0, s.spec.freeboard + 6 + CUBE.edge / 2, 0, this.v) : this.v.set(e.x, e.y, e.z);
+        const o = c?.state === 'docked' ? this.anchor(s, 0, dockLift(s.spec), 0, this.v) : this.v.set(e.x, e.y, e.z);
         this.paint.loop(o.x, o.y, o.z, CUBE.edge * (0.7 + 1.2 * ease(age / 0.4)), hot(color, 2.2), 0.8 * (1 - f));
         if (age < 0.1) p.push(BK.Flare, o.x, o.y, o.z, 140, hot(color, 1.6), 1 - age / 0.1);
         return;
@@ -734,6 +802,35 @@ export class TungstenCubeFx {
         }
         return;
       }
+      case 'spent': {
+        // The cube drops into the sea: a splash ring and a short wall of spray, its glow dying.
+        const base = this.paint.surface(e.x, e.z);
+        this.paint.ring(e.x, e.z, H * (1 + 1.2 * ease(age / 0.6)), FOAM, 0.6 * (1 - f), BK.Foam, b.id);
+        p.push(BK.Glow, e.x, base + 10, e.z, CUBE.edge * 2 * (1 - f * 0.6), hot(color, 0.8), 0.4 * (1 - clamp01(age / 0.5)));
+        for (let i = 0; i < n(20); i++) {
+          const a = (i / 20) * TAU + R(i, 0) * 0.3,
+            out = H * (1 + 0.3 * R(i, 1)) + drift(age, 40, 2),
+            h = drift(age, 40 + 60 * R(i, 2), 1.6, 70);
+          if (h > 0) p.push(BK.Spray, e.x + Math.cos(a) * out, base + h, e.z + Math.sin(a) * out, 20 + age * 40, SPRAY, 0.55 * (1 - f), a, R(i, 3));
+        }
+        return;
+      }
+      case 'charged':
+      case 'surge': {
+        // The etching wakes (and on a Surge, blazes): a flare off the cube and a ring of field round it.
+        const surge = e.kind === 'surge';
+        const o = c?.state === 'docked' ? this.anchor(s, 0, dockLift(s.spec), 0, this.v) : c ? this.renderPos(c, this.v) : this.v.set(e.x, e.y, e.z);
+        if (age < 0.2) p.push(BK.Flare, o.x, o.y, o.z, (surge ? 320 : 160) * (1 - age / 0.2) + 60, hot(WHITE, surge ? 1.8 : 1.2), 1 - age / 0.2);
+        p.push(BK.Glow, o.x, o.y, o.z, CUBE.edge * (surge ? 3 : 2), hot(color, surge ? 1.4 : 0.9), 0.5 * (1 - f));
+        this.paint.loop(o.x, o.y, o.z, CUBE.edge * (0.8 + 1.4 * ease(age / 0.5)), hot(color, 2.2), 0.8 * (1 - f));
+        if (surge)
+          for (let i = 0; i < n(24); i++) {
+            const a = R(i, 0) * TAU,
+              v = 120 + 200 * R(i, 1);
+            p.push(BK.Spark, o.x + Math.cos(a) * drift(age, v, 2.4), o.y + drift(age, 80 * (R(i, 2) - 0.3), 2.4, 40), o.z + Math.sin(a) * drift(age, v, 2.4), 1.6, hot(color, 2.6), 1 - f, 0, 0, Math.cos(a) * 4, 1, Math.sin(a) * 4, 1.4);
+          }
+        return;
+      }
       case 'shield': {
         const radius = e.radius;
         this.paint.ring(e.x, e.z, s.spec.length * 0.5 + radius * ease(age / 0.6), hot(color, 1.5), 0.6 * (1 - f));
@@ -744,7 +841,7 @@ export class TungstenCubeFx {
       case 'overdriveEnd': {
         if (!seen) return;
         const start = e.kind === 'overdrive';
-        const o = this.anchor(s, 0, MAGNET.poleTip, 0, this.v);
+        const o = this.anchor(s, 0, dockLift(s.spec) + H, 0, this.v);
         if (start && age < 0.25) p.push(BK.Flare, o.x, o.y + 30, o.z, 520, hot(WHITE, 1.6), 1 - age / 0.25);
         // One expanding ring per mode, staggered, in the six colours.
         for (let m = 0; m < 6; m++) {

@@ -11,9 +11,10 @@ export const CUBE = {
   reform: 12,
   /** Docked repair per second, as a fraction of max HP. */
   dockRepair: 0.02,
-  /** Halo of extra docked cubes during Overdrive. */
+  /** Halo of extra docked cubes during Overdrive, wheeling slowly round the dais (rad/s). */
   ringRadius: 220,
   ringLift: 100,
+  ringSpin: 0.15,
   dock: { speed: 1600, damage: 50000, heal: 0.06, dealtHeal: 0.2, cubeRepair: 0.15 },
   lunge: { range: 4000, speed: 1500, damage: 60000, taken: 0.6, minDistance: 300 },
   guard: { time: 8, offset: 150, radius: 180, repelRadius: 260, taken: 0.25, speed: 1500 },
@@ -35,7 +36,7 @@ export const CUBE = {
   drive: { speed: 420, accel: 700, leash: 4500, damage: 45000, every: 1.5, allyEvery: 3, minSpeed: 60, drain: 0.125, regen: 0.03, dockRegen: 0.3, sink: 10, glide: 2.5, formation: 240 },
   /** Magnet Surge: full energy and an overcharge that steers faster, hits harder and costs nothing. */
   surge: { time: 6, speed: 1.4, damage: 1.4 },
-  /** Out on the water a cube turns slowly about its vertical (rad/s). */
+  /** A cube turns slowly about its vertical, docked or out on the water (rad/s). */
   spin: 0.25,
   overdrive: { time: 20 },
   aura: { radius: 1000, every: 0.25, life: 0.35 },

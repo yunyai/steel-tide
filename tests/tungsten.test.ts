@@ -121,6 +121,27 @@ describe('cube size', () => {
     park(t.cubes[0], 0, -300);
     expect(cubeIntercept(g, 1, 50, 40, -1500, 50, 40, 0, 'shell')?.cube).toBe(t.cubes[0]);
   });
+  it('spins the docked cube and wheels the Overdrive halo slowly round the dais', () => {
+    const { g, me, t } = duel();
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 0.05);
+    // Angles in hull space, so the ship's own turning doesn't count.
+    const yaw = () => t.cubes[0].yaw + me.heading;
+    const halo = () => {
+      const c = t.cubes.find((k) => k.slot === 1)!,
+        h = me.heading;
+      const dx = c.x - me.pos.x,
+        dz = c.z - me.pos.z;
+      return Math.atan2(dx * Math.cos(h) + dz * Math.sin(h), dx * Math.sin(h) - dz * Math.cos(h));
+    };
+    const y0 = yaw(),
+      a0 = halo();
+    run(g, 2);
+    expect(t.cubes.every((c) => c.state === 'docked')).toBe(true);
+    expect(yaw() - y0).toBeCloseTo(CUBE.spin * 2, 2);
+    expect(halo() - a0).toBeCloseTo(CUBE.ringSpin * 2, 2);
+  });
   it('keeps the Meteor at a 512 m impact', () => {
     expect(CUBE.edge * CUBE.meteor.scale).toBe(512);
   });

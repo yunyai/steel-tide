@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { InstancedBufferAttribute, Mesh, Scene, type Object3D } from 'three';
+import { Box3, InstancedBufferAttribute, Mesh, Scene, type Object3D } from 'three';
 import { ShipView } from '../src/render/ShipModel';
-import { TungstenModel } from '../src/render/TungstenModel';
+import { DAIS, HORN_TIPS, TungstenModel } from '../src/render/TungstenModel';
 import { TungstenCubeFx } from '../src/render/TungstenCubeFx';
 import { modeColor } from '../src/render/TungstenLook';
-import { CUBE } from '../src/skills/misc/TungstenModes';
+import { CUBE, dockLift } from '../src/skills/misc/TungstenModes';
 import { SHIP_BY_ID } from '../src/data/ships';
 import { stateHash } from '../src/net/hash';
 import type { Ship } from '../src/ships/Ship';
@@ -14,6 +14,7 @@ import { emptyGame, place, run } from './helpers';
 // Skill slots: Q Lunge, E Switch, Z Signature, X Surge, C Dock, V Shield, R Collapse, T Meteor, B Overdrive.
 const SWITCH = 1;
 const SIGNATURE = 2;
+const SURGE = 3;
 const DOCK = 4;
 const COLLAPSE = 6;
 const METEOR = 7;
@@ -94,6 +95,51 @@ describe('Tungsten model', () => {
     expect(yamato.tungstenModel).toBeFalsy();
     tungsten.dispose();
     yamato.dispose();
+  });
+
+  it("floats the cube over a dais, with nothing above the cube's base", () => {
+    const spec = SHIP_BY_ID.tungsten;
+    expect(DAIS.deck).toBe(spec.freeboard);
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat));
+    m.pose(1);
+    const base = dockLift(spec) - CUBE.edge / 2;
+    expect(Math.abs(m.cubes[0].mesh.position.y - dockLift(spec))).toBeLessThanOrEqual(2.5);
+    m.root.updateMatrixWorld(true);
+    const box = new Box3();
+    for (const o of m.root.children) if (!m.cubes.some((c) => c.mesh === o)) box.expandByObject(o);
+    expect(box.max.y).toBeLessThan(base);
+    expect(box.max.y).toBeGreaterThan(DAIS.deck);
+    expect(HORN_TIPS).toHaveLength(4);
+    for (const tip of HORN_TIPS) expect(tip.y).toBeLessThan(base - 5);
+    m.dispose();
+  });
+
+  it('spins and bobs the docked cube, and holds it still under reduced motion', () => {
+    const moving = new TungstenModel((geo, m) => new Mesh(geo, m));
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const still = new TungstenModel((geo, m) => new Mesh(geo, m));
+    const pose = (m: TungstenModel, time: number) => {
+      m.pose(time);
+      const c = m.cubes[0].mesh;
+      return [c.position.y, c.rotation.x, c.rotation.y, c.rotation.z];
+    };
+    expect(pose(moving, 3)).not.toEqual(pose(moving, 1));
+    expect(pose(still, 3)).toEqual(pose(still, 1));
+    moving.dispose();
+    still.dispose();
+  });
+
+  it("turns the docked cube with the sim's yaw, so it leaves the dais without a snap", () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat));
+    run(g, 3);
+    g.interpolate();
+    m.pose(g.renderTime, s);
+    const c = s.tungsten!.cubes[0];
+    const d = m.cubes[0].mesh.rotation.y - (c.yaw + s.heading);
+    expect(Math.abs(Math.atan2(Math.sin(d), Math.cos(d)))).toBeLessThan(0.02);
+    m.dispose();
   });
 
   it('shows the cube docked in its first mode in the ship preview', () => {
@@ -270,6 +316,66 @@ describe('Tungsten cube effects', () => {
     play(g, fx, 0.3);
     expect(look(s, fx, 0)).toBeGreaterThan(0);
     expect(look(s, fx, 0)).toBeLessThan(look(s, fx, 1));
+    fx.dispose();
+  });
+});
+
+describe('Tungsten steering effects', () => {
+  it('dims a spent cube to a sputter where it sank', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    const id = s.tungsten!.cubes[0].id;
+    park(s, 0, -1500);
+    play(g, fx, 0.2, [s]);
+    fx.prepare(0, 720);
+    const lit = fx.skin(s, id)!.uPower.value;
+    s.tungsten!.spent = true;
+    s.tungsten!.energy = 0;
+    play(g, fx, 0.5, [s]);
+    fx.prepare(0, 720);
+    expect(fx.skin(s, id)!.uPower.value).toBeLessThan(lit * 0.35);
+    expectFiniteFx(fx, scene);
+    fx.dispose();
+  });
+
+  it('throws a bow wave off a steered cube', () => {
+    const flat = (driven: boolean) => {
+      const g = emptyGame('open', 7, 'freeplay');
+      const s = place(g, 'tungsten', 0, 0, 0);
+      const fx = new TungstenCubeFx(new Scene(), g);
+      s.control.aimX = 0;
+      s.control.aimZ = -3000;
+      s.control.fire = true;
+      play(g, fx, 2, [s]);
+      const c = s.tungsten!.cubes[0];
+      expect(c.state).toBe('driven');
+      expect(Math.hypot(c.vx, c.vz)).toBeGreaterThan(300);
+      if (!driven) {
+        s.control.fire = false;
+        c.state = 'hover';
+        c.vx = c.vz = 0;
+      }
+      fx.prepare(0, 720);
+      const n = fx.particles.stats.flat.count;
+      fx.dispose();
+      return n;
+    };
+    expect(flat(true)).toBeGreaterThan(flat(false));
+  });
+
+  it('flares the docked cube when Magnet Surge fires', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const fx = new TungstenCubeFx(new Scene(), g);
+    play(g, fx, 0.2, [s]);
+    fx.prepare(0, 720);
+    const idle = fx.particles.stats.additive.count;
+    cast(s, SURGE);
+    play(g, fx, 0.05, [s]);
+    fx.prepare(0, 720);
+    expect(fx.particles.stats.additive.count).toBeGreaterThan(idle);
     fx.dispose();
   });
 });
