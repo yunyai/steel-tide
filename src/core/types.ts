@@ -270,6 +270,8 @@ export interface SkillSpec {
   description: string;
   /** An OVERPOWERED ultimate: charged by its own meter rather than a cooldown. */
   ult?: boolean;
+  /** An ultimate that powers the rest of the kit: while it runs the ship (and its AI) keeps casting skills. */
+  empowers?: boolean;
   /** Seconds of cooldown (skills) or of passive charge (ultimate). */
   cooldown: number;
   /** Seconds the skill stays active (0 for instant ones). */

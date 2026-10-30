@@ -369,7 +369,7 @@ export const FACTIONS: Record<Nation, Faction> = {
   lodestone: {
     id: 'lodestone', era: 'misc', label: 'The Lodestone', short: 'Lodestone',
     focus: 'Electromagnet titans that fight with a single tungsten cube.',
-    trait: { name: 'Lodestone Cradle', description: 'The cube blocks enemy fire, repairs 2% a second on the magnet and re-forms there 12 s after it shatters.' },
+    trait: { name: 'Lodestone Cradle', description: 'The cube blocks enemy fire, repairs 2% a second and recharges fast on the magnet, and re-forms there 12 s after it shatters. A cube that spends its energy sinks dead until it docks or slowly recharges.' },
   },
   fold: {
     id: 'fold', era: 'misc', label: 'The Fold', short: 'Fold',

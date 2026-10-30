@@ -8,13 +8,13 @@ import type { Ship } from '../../ships/Ship';
 import { stun } from '../../weapons/StrikeSystem';
 import { buff, hpFrac, hurt, mark } from '../kit';
 import { safeStep } from './StepperRuntime';
-import { CUBE, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf } from './TungstenModes';
+import { CUBE, dockLift, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf } from './TungstenModes';
 
-export type CubeState = 'docked' | 'flying' | 'hover' | 'guard' | 'orbit' | 'meteor' | 'collapse' | 'broken';
-export type CubePathKind = 'shot' | 'dock' | 'ricochet' | 'home';
+export type CubeState = 'docked' | 'flying' | 'hover' | 'guard' | 'orbit' | 'meteor' | 'collapse' | 'broken' | 'driven';
+export type CubePathKind = 'dock' | 'ricochet' | 'home';
 /** Orders for hashing and the HUD. */
-export const CUBE_STATES: readonly CubeState[] = ['docked', 'flying', 'hover', 'guard', 'orbit', 'meteor', 'collapse', 'broken'];
-export const PATH_KINDS: readonly CubePathKind[] = ['shot', 'dock', 'ricochet', 'home'];
+export const CUBE_STATES: readonly CubeState[] = ['docked', 'flying', 'hover', 'guard', 'orbit', 'meteor', 'collapse', 'broken', 'driven'];
+export const PATH_KINDS: readonly CubePathKind[] = ['dock', 'ricochet', 'home'];
 
 export interface CubePath {
   kind: CubePathKind;
@@ -24,8 +24,6 @@ export interface CubePath {
   ty: number;
   tz: number;
   speed: number;
-  /** Stops on the first hull (Crush shots). */
-  stops: boolean;
   /** Hulls struck and allies healed this pass. */
   hit: number[];
   healed: number[];
@@ -52,6 +50,9 @@ export interface Cube {
   pz: number;
   /** Rotation about the vertical (three.js rotation.y). */
   yaw: number;
+  /** Velocity (m/s) while steered or gliding to a stop. */
+  vx: number;
+  vz: number;
   scale: number;
   hp: number;
   maxHp: number;
@@ -60,7 +61,7 @@ export interface Cube {
   /** Seconds until a broken cube re-forms. */
   reform: number;
   path: CubePath | null;
-  /** Orbit contacts: last strike time per enemy. */
+  /** Last strike (or Mend pass) time per ship, for orbit and steering contacts. */
   contacts: { id: number; at: number }[];
   gone: boolean;
 }
@@ -128,6 +129,10 @@ export interface TungstenState {
   ult: TungstenUlt | null;
   overdriveUntil: number;
   auraTick: number;
+  /** Steering energy, 0..1. A spent cube cannot be steered until it docks or recharges in full. */
+  energy: number;
+  spent: boolean;
+  surgeUntil: number;
 }
 
 const H = CUBE.edge / 2;
@@ -155,6 +160,8 @@ function newCube(id: number, mode: number, slot: number, extra: boolean): Cube {
     py: 0,
     pz: 0,
     yaw: 0,
+    vx: 0,
+    vz: 0,
     scale: 1,
     hp: CUBE.hp,
     maxHp: CUBE.hp,
@@ -180,6 +187,9 @@ export function newTungstenState(): TungstenState {
     ult: null,
     overdriveUntil: 0,
     auraTick: 0,
+    energy: 1,
+    spent: false,
+    surgeUntil: 0,
   };
 }
 
@@ -189,12 +199,14 @@ export function clearTungsten(s: Ship): void {
   if (!t) return;
   t.cubes = [t.cubes[0]];
   const c = t.cubes[0];
-  Object.assign(c, { state: 'docked', path: null, hp: c.maxHp, scale: 1, reform: 0, flown: 0, contacts: [], mode: t.mode });
+  Object.assign(c, { state: 'docked', path: null, hp: c.maxHp, scale: 1, reform: 0, flown: 0, vx: 0, vz: 0, contacts: [], mode: t.mode });
   dockPose(s, c);
   c.px = c.x;
   c.py = c.y;
   c.pz = c.z;
-  t.charge = t.guardUntil = t.overdriveUntil = 0;
+  t.charge = t.guardUntil = t.overdriveUntil = t.surgeUntil = 0;
+  t.energy = 1;
+  t.spent = false;
   t.lunge = t.ult = null;
   t.tethers = [];
   t.acts = [];
@@ -204,25 +216,48 @@ export const primaryCube = (t: TungstenState): Cube => t.cubes[0];
 export const overdriveOn = (s: Ship): boolean => (s.tungsten?.overdriveUntil ?? 0) > s.game.time;
 const cubeById = (t: TungstenState, id: number) => t.cubes.find((c) => c.id === id) ?? null;
 const shipById = (s: Ship, id: number) => s.game.ships.find((o) => o.id === id) ?? null;
-const skillSpec = (s: Ship, i: number): SkillSpec => s.skills[Math.max(0, i)].spec;
+/** Credited with steering contacts: the cube is the Tungsten's main weapon, not a skill. */
+export const CUBE_CONTACT: SkillSpec = { id: 'tungstenCube', name: 'Tungsten cube', short: 'CUBE', description: 'A steered cube striking a hull.', cooldown: 0, duration: 0, accent: 0x3ff0ff, icon: 'ram' };
+const skillSpec = (s: Ship, i: number): SkillSpec => (i < 0 ? CUBE_CONTACT : s.skills[i].spec);
 const hostile = (s: Ship, o: Ship) => o.alive && o.team !== s.team && !o.deep && !o.mods.banished;
 const foesNear = (s: Ship, x: number, z: number, r: number) => s.game.ships.filter((o) => hostile(s, o) && gap(o.pos.x, o.pos.z, x, z) <= r);
 const busy = (c: Cube) => c.state === 'meteor' || c.state === 'collapse';
 /** A cube on its way keeps the mode it was sent with: its hits, speed and fall were set by it. */
 export const inFlight = (c: Cube) => c.state === 'flying' || busy(c);
-const parked = (c: Cube) => c.state === 'hover' || c.state === 'guard' || c.state === 'orbit';
+/** Out under the magnet's hold, a wall on the water: hovering, steered, guarding or orbiting. */
+const parked = (c: Cube) => c.state === 'hover' || c.state === 'driven' || c.state === 'guard' || c.state === 'orbit';
+
+/**
+ * AI: hold the fire button to steer the cube at `target`. It starts with energy to spare and lets go before the
+ * cube is spent, leaving it out as a wall to recharge; Overdrive and Surge cost nothing, so it never lets go then.
+ */
+export function aiSteers(s: Ship, target: Ship | null): boolean {
+  const t = s.tungsten!,
+    c = t.cubes[0];
+  if (!target || t.spent || !(c.state === 'docked' || c.state === 'hover' || c.state === 'driven')) return false;
+  if (gap(s.pos.x, s.pos.z, target.pos.x, target.pos.z) > CUBE.drive.leash) return false;
+  if (overdriveOn(s) || t.surgeUntil > s.game.time) return true;
+  return t.energy > (c.state === 'driven' ? 0.08 : 0.3);
+}
 
 /** Centre height over water, or clear of the land beneath. */
 export function hoverY(s: Ship, x: number, z: number, scale = 1): number {
-  return Math.max(0, s.game.map.heightAt(x, z)) + H * scale + 6;
+  return Math.max(0, s.game.map.heightAt(x, z)) + CUBE.hoverY + H * (scale - 1);
 }
 
-/** Where a docked cube sits: the cradle under the magnet arch, or the Overdrive ring above the deck. */
+/** Where a docked cube sits: floating over the dais, or in the Overdrive halo around and above it. */
 export function dockPoint(s: Ship, slot: number, out = tmp): Vector3 {
-  const lift = s.spec.freeboard + 6 + H;
+  const lift = dockLift(s.spec);
   if (slot === 0) return s.localToWorld(0, lift, 0, out);
   const a = ((slot - 1) / 5) * Math.PI * 2;
   return s.localToWorld(Math.cos(a) * CUBE.ringRadius, lift + CUBE.ringLift, Math.sin(a) * CUBE.ringRadius, out);
+}
+/** A cube settles on the magnet; the cradle cube's arrival wakes a spent magnet. */
+function seat(s: Ship, c: Cube): void {
+  c.state = 'docked';
+  c.path = null;
+  dockPose(s, c);
+  if (!c.extra) s.tungsten!.spent = false;
 }
 function dockPose(s: Ship, c: Cube): void {
   const p = dockPoint(s, c.slot);
@@ -252,6 +287,7 @@ export function applyTungstenPassives(s: Ship, m: Ship['mods']): void {
       m.cooldownMul *= 0.85;
     } else if (mode === REPEL) m.damageTakenMul *= 0.88;
   }
+  if (s.tungsten?.cubes.some((c) => c.state === 'orbit')) m.damageTakenMul *= CUBE.orbit.taken;
 }
 
 function emit(s: Ship, kind: import('../../core/Events').TungstenEventKind, c: Cube | null, x: number, y: number, z: number, radius = 0, target?: Ship, mode = c?.mode ?? s.tungsten!.mode): void {
@@ -289,17 +325,12 @@ function tether(s: Ship, c: Cube, o: Ship, skill: number): void {
   const old = t.tethers.find((x) => x.target === o.id);
   if (old) Object.assign(old, { cube: c.id, skill, until });
   else t.tethers.push({ target: o.id, cube: c.id, skill, until, tick: 0 });
+  // The chain takes over from the Tether aura's drag rather than stacking on it.
+  o.effects = o.effects.filter((e) => e.id !== 'debuff:tungstenDrag');
   buff(o, 'debuff:tungstenChain', CUBE.aura.life, (m) => {
     m.speedMul *= HIT.tether.slow;
   });
 }
-
-const stores = new WeakMap<SkillSpec, SkillSpec>();
-const storeSpec = (spec: SkillSpec) => {
-  let s = stores.get(spec);
-  if (!s) stores.set(spec, (s = { ...spec, ult: true }));
-  return s;
-};
 
 /**
  * The one place cube damage happens. `body` hits (the cube itself striking a hull) take the mode's damage
@@ -311,13 +342,13 @@ export function cubeHit(owner: Ship, c: Cube, target: Ship, base: number, spec: 
   let amount = base;
   if (body) {
     amount *= mode.damage;
-    if (c.mode === KINETIC) amount *= 1 + HIT.kinetic.bonus * Math.min(1, c.flown / HIT.kinetic.full);
+    // A steered cube's speed is already in `base`; a cube on a path gains with the distance it flew.
+    if (c.mode === KINETIC && c.path) amount *= 1 + HIT.kinetic.bonus * Math.min(1, c.flown / HIT.kinetic.full);
   }
   const core = amount;
   let dealt = hurt(owner, target, amount, spec);
-  // Released Shield damage is the enemy's own fire coming back: it refills no ultimate meters.
   if (spend && t.charge > 0) {
-    dealt += target.takeDamage(t.charge * owner.mods.damageMul, owner, storeSpec(spec));
+    dealt += target.takeDamage(t.charge * owner.mods.damageMul, owner, spec);
     t.charge = 0;
   }
   if (body) {
@@ -388,8 +419,9 @@ export function cubeIntercept(game: Ship['game'], team: number, ox: number, oy: 
     for (const c of t.cubes) {
       if (c.gone || !(c.state === 'flying' || parked(c))) continue;
       const h = H * c.scale;
-      if (c.state === 'guard') {
-        const r = c.mode === REPEL ? CUBE.guard.repelRadius : CUBE.guard.radius;
+      if (c.state === 'guard' || c.state === 'orbit') {
+        const F = c.state === 'orbit' ? { radius: CUBE.orbit.field, repel: CUBE.orbit.repelField } : { radius: CUBE.guard.radius, repel: CUBE.guard.repelRadius };
+        const r = c.mode === REPEL ? F.repel : F.radius;
         const k = len2 > 1e-9 ? Math.max(0, Math.min(1, ((c.x - ox) * dx + (c.z - oz) * dz) / len2)) : 0;
         const py = oy + dy * k;
         if (gap(ox + dx * k, oz + dz * k, c.x, c.z) <= r && py <= 600 && (!best || k < best.t)) {
@@ -417,7 +449,7 @@ export function cubeIntercept(game: Ship['game'], team: number, ox: number, oy: 
 export function absorbCube(hit: CubeHitInfo, damage: number, attacker: Ship | null, x: number, y: number, z: number): void {
   const t = hit.owner.tungsten!;
   if (hit.capture) {
-    t.charge = Math.min(CUBE.chargeCap, t.charge + damage);
+    t.charge = Math.min(CUBE.chargeCap * (overdriveOn(hit.owner) ? CUBE.orbit.cap : 1), t.charge + damage);
     damageCube(hit.owner, hit.cube, damage * CUBE.guard.taken, attacker);
     emit(hit.owner, 'capture', hit.cube, x, y, z, damage);
   } else {
@@ -426,8 +458,8 @@ export function absorbCube(hit: CubeHitInfo, damage: number, attacker: Ship | nu
   }
 }
 
-function newPath(kind: CubePathKind, skill: number, tx: number, ty: number, tz: number, speed: number, stops = false): CubePath {
-  return { kind, skill, tx, ty, tz, speed, stops, hit: [], healed: [], dealt: 0, target: 0, bounces: 0 };
+function newPath(kind: CubePathKind, skill: number, tx: number, ty: number, tz: number, speed: number): CubePath {
+  return { kind, skill, tx, ty, tz, speed, hit: [], healed: [], dealt: 0, target: 0, bounces: 0 };
 }
 function sendHome(s: Ship, c: Cube, kind: 'dock' | 'home', skill = -1): void {
   const p = dockPoint(s, c.slot);
@@ -456,7 +488,7 @@ export function lungeToCube(s: Ship, skill: number): boolean {
   const c = t.cubes[0];
   if (c.state === 'docked') return s.failSkill('Magnet Lunge: throw the cube first');
   if (c.state === 'broken') return s.failSkill('Magnet Lunge: the cube is re-forming');
-  if (c.state !== 'hover') return s.failSkill('Magnet Lunge: the cube must be hovering');
+  if (c.state !== 'hover' && c.state !== 'driven') return s.failSkill('Magnet Lunge: the cube must be hovering');
   const d = gap(s.pos.x, s.pos.z, c.x, c.z);
   if (d > CUBE.lunge.range) return s.failSkill('Magnet Lunge: the cube is beyond 4 km');
   const h = bearingTo(s.pos.x, s.pos.z, c.x, c.z);
@@ -480,6 +512,7 @@ export function lungeToCube(s: Ship, skill: number): boolean {
   if (land < 0) return s.failSkill('Magnet Lunge: no clear water toward the cube');
   const [x1, z1] = at(land);
   t.lunge = { x0: s.pos.x, z0: s.pos.z, x1, z1, elapsed: 0, time: land / CUBE.lunge.speed, hit: [], cube: c.id };
+  c.state = 'hover';
   s.heading = s.prevHeading = s.renderHeading = h;
   t.guardUntil = Math.min(t.guardUntil, s.game.time);
   emit(s, 'lunge', c, s.pos.x, 0, s.pos.z, land);
@@ -498,45 +531,16 @@ export function switchMode(s: Ship): boolean {
   return true;
 }
 
-export function throwCubes(s: Ship, skill: number): boolean {
-  if (!cubeReady(s, 'Tungsten Shot')) return false;
-  const cubes = driven(s);
-  const b = bearingTo(s.pos.x, s.pos.z, s.control.aimX, s.control.aimZ);
-  const rx = Math.cos(b),
-    rz = Math.sin(b);
-  let thrown = 0;
-  cubes.forEach((c, i) => {
-    const off = (i - (cubes.length - 1) / 2) * 150;
-    const ax = s.control.aimX + rx * off,
-      az = s.control.aimZ + rz * off;
-    const d = gap(c.x, c.z, ax, az);
-    if (d < 1) return;
-    const ux = (ax - c.x) / d,
-      uz = (az - c.z) / d;
-    let reach = Math.min(d, CUBE.shot.range);
-    // It hovers over the last clear water short of an island; a cube already over land may cross to water.
-    let wet = s.game.map.heightAt(c.x, c.z) < -2;
-    for (let a = 30; a <= reach; a += 30) {
-      const px = c.x + ux * a,
-        pz = c.z + uz * a;
-      const land = s.game.map.heightAt(px, pz) > -2 || Math.abs(px) > MAP_HALF - 200 || Math.abs(pz) > MAP_HALF - 200;
-      if (!land) wet = true;
-      else if (wet) {
-        reach = Math.max(0, a - (H + 20));
-        break;
-      }
-    }
-    if (reach < 100) return;
-    const x = c.x + ux * reach,
-      z = c.z + uz * reach;
-    const mode = TUNGSTEN_MODES[c.mode];
-    c.state = 'flying';
-    c.flown = 0;
-    c.path = newPath('shot', skill, x, hoverY(s, x, z), z, CUBE.shot.speed * mode.speed, mode.stops);
-    emit(s, 'throw', c, c.x, c.y, c.z);
-    thrown++;
-  });
-  return thrown > 0 || s.failSkill('Tungsten Shot: land in the way');
+/** Magnet Surge: full energy wherever the cube is, waking a spent one, and an overcharge for its steering. */
+export function surge(s: Ship): boolean {
+  if (!cubeReady(s, 'Magnet Surge')) return false;
+  const t = s.tungsten!;
+  t.energy = 1;
+  t.spent = false;
+  t.surgeUntil = s.game.time + CUBE.surge.time;
+  const c = t.cubes[0];
+  emit(s, 'surge', c, c.x, c.y, c.z);
+  return true;
 }
 
 export function dockCubes(s: Ship, skill: number): boolean {
@@ -566,7 +570,7 @@ export function signature(s: Ship, skill: number): boolean {
       if (!first) continue;
       c.state = 'flying';
       c.flown = 0;
-      c.path = newPath('ricochet', skill, first.pos.x, hoverY(s, first.pos.x, first.pos.z), first.pos.z, CUBE.shot.speed * TUNGSTEN_MODES[c.mode].speed);
+      c.path = newPath('ricochet', skill, first.pos.x, hoverY(s, first.pos.x, first.pos.z), first.pos.z, SIGNATURE.ricochet.speed * TUNGSTEN_MODES[c.mode].speed);
       c.path.target = first.id;
       c.path.bounces = SIGNATURE.ricochet.bounces;
     } else if (c.mode === CRUSH || c.mode === TETHER) {
@@ -634,7 +638,7 @@ export function raiseShield(s: Ship, _skill: number): boolean {
     c.path = null;
     c.contacts = [];
   }
-  t.guardUntil = s.game.time + CUBE.guard.time;
+  t.guardUntil = s.game.time + (orbit ? CUBE.orbit.time : CUBE.guard.time);
   const c = t.cubes[0];
   emit(s, 'shield', c, s.pos.x, 0, s.pos.z, orbit ? CUBE.orbit.radius : CUBE.guard.radius);
   return true;
@@ -673,6 +677,8 @@ export function overdrive(s: Ship): boolean {
   const t = s.tungsten!;
   t.cubes = t.cubes.filter((c) => !c.extra);
   t.overdriveUntil = s.game.time + CUBE.overdrive.time;
+  t.energy = 1;
+  t.spent = false;
   let slot = 1;
   for (let m = 0; m < TUNGSTEN_MODES.length; m++) {
     if (m === t.mode) continue;
@@ -703,13 +709,14 @@ export function updateTungsten(s: Ship, dt: number): void {
     t.overdriveUntil = 0;
     emit(s, 'overdriveEnd', t.cubes[0], s.pos.x, 0, s.pos.z);
   }
-  // Overdrive's skill has no duration (the AI holds every skill while an ultimate runs), so its meter is
-  // held empty here instead, as a running ultimate's would be.
-  if (t.overdriveUntil) for (const st of s.skills) if (st.spec.id === 'tungstenOverdrive') st.meter = 0;
   if (t.lunge) stepLunge(s, t, dt);
   if (t.ult?.kind === 'collapse') stepCollapse(s, t, dt);
   else if (t.ult?.kind === 'meteor') stepMeteor(s, t, dt);
-  for (const c of t.cubes) stepCube(s, t, c, dt);
+  steer(s, t, dt);
+  for (const c of t.cubes) {
+    stepCube(s, t, c, dt);
+    if (c.state !== 'hover' && c.state !== 'driven') c.vx = c.vz = 0;
+  }
   if (!t.overdriveUntil)
     for (const c of t.cubes) {
       if (!c.extra) continue;
@@ -762,9 +769,7 @@ function stepLunge(s: Ship, t: TungstenState, dt: number): void {
   emit(s, 'arrive', c, s.pos.x, 0, s.pos.z);
   if (!c || c.state !== 'hover') return;
   if (gap(c.x, c.z, s.pos.x, s.pos.z) < 400 + s.spec.length / 2) {
-    c.state = 'docked';
-    c.path = null;
-    dockPose(s, c);
+    seat(s, c);
     emit(s, 'dock', c, c.x, c.y, c.z);
   } else sendHome(s, c, 'home');
 }
@@ -779,10 +784,9 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
     case 'broken':
       c.reform -= dt;
       if (c.reform <= 0) {
-        c.state = 'docked';
+        seat(s, c);
         c.hp = c.maxHp;
         c.reform = 0;
-        dockPose(s, c);
         c.px = c.x;
         c.py = c.y;
         c.pz = c.z;
@@ -793,7 +797,15 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
       stepPath(s, t, c, dt);
       return;
     case 'hover':
-      c.y = hoverY(s, c.x, c.z, c.scale);
+      if (c.vx || c.vz) {
+        const k = Math.exp(-CUBE.drive.glide * dt);
+        c.vx *= k;
+        c.vz *= k;
+        if (Math.hypot(c.vx, c.vz) < 5) c.vx = c.vz = 0;
+      }
+      glide(s, t, c, dt);
+      break;
+    case 'driven':
       break;
     case 'guard': {
       if (g.time >= t.guardUntil) return sendHome(s, c, 'home');
@@ -813,11 +825,7 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
       c.yaw = -a;
       const spec = skillSpec(s, 5);
       for (const o of g.ships) {
-        if (!hostile(s, o) || distToHull(o, c.x, c.z) > H * 1.2 + 20) continue;
-        const last = c.contacts.find((k) => k.id === o.id);
-        if (last && g.time - last.at < CUBE.orbit.every) continue;
-        if (last) last.at = g.time;
-        else c.contacts.push({ id: o.id, at: g.time });
+        if (!hostile(s, o) || distToHull(o, c.x, c.z) > H * 1.2 + 20 || !due(c, o.id, CUBE.orbit.every, g.time)) continue;
         cubeHit(s, c, o, CUBE.orbit.damage, spec, false, false);
         const d = Math.max(1, gap(o.pos.x, o.pos.z, s.pos.x, s.pos.z));
         o.shove(((o.pos.x - s.pos.x) / d) * CUBE.orbit.knock * 1.5, ((o.pos.z - s.pos.z) / d) * CUBE.orbit.knock * 1.5);
@@ -847,6 +855,132 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
     const push = Math.min(h - d, CUBE.shoveSpeed * dt);
     o.pos.x += ux * push;
     o.pos.z += uz * push;
+  }
+}
+
+/** Whether `id` may be struck (or healed) again by this cube; records the contact if so. */
+function due(c: Cube, id: number, every: number, now: number): boolean {
+  const last = c.contacts.find((k) => k.id === id);
+  if (last && now - last.at < every) return false;
+  if (last) last.at = now;
+  else c.contacts.push({ id, at: now });
+  return true;
+}
+
+/**
+ * The fire button steers the cube (every free cube in Overdrive, in formation) toward the reticle, held inside
+ * the magnet's leash. Steering spends energy unless Overdrive or a Surge is running; anything else recharges it.
+ */
+function steer(s: Ship, t: TungstenState, dt: number): void {
+  const g = s.game,
+    D = CUBE.drive;
+  const held = s.control.fire && s.currentSlot?.kind === 'cube' && !s.mods.stunned && !s.mods.disarmed && !t.lunge && !t.spent;
+  const cubes = held ? driven(s).filter((c) => c.state === 'docked' || c.state === 'hover' || c.state === 'driven') : [];
+  for (const c of t.cubes) if (c.state === 'driven' && !cubes.includes(c)) c.state = 'hover';
+  if (!cubes.length) {
+    t.energy = Math.min(1, t.energy + (t.cubes[0].state === 'docked' ? D.dockRegen : D.regen) * dt);
+    if (t.spent && t.energy >= 1) {
+      t.spent = false;
+      const c = t.cubes[0];
+      emit(s, 'charged', c, c.x, c.y, c.z);
+    }
+    return;
+  }
+  const dx = s.control.aimX - s.pos.x,
+    dz = s.control.aimZ - s.pos.z;
+  const k = Math.min(1, D.leash / Math.max(1, Math.hypot(dx, dz)));
+  const ax = s.pos.x + dx * k,
+    az = s.pos.z + dz * k;
+  for (const c of cubes) {
+    if (c.state !== 'driven') {
+      if (c.state === 'docked') emit(s, 'throw', c, c.x, c.y, c.z);
+      c.state = 'driven';
+      c.path = null;
+      c.flown = 0;
+    }
+    const a = ((c.slot - 1) / 5) * Math.PI * 2,
+      r = c.slot ? D.formation : 0;
+    drive(s, t, c, ax + Math.cos(a) * r, az + Math.sin(a) * r, dt);
+  }
+  if (overdriveOn(s) || t.surgeUntil > g.time) return;
+  t.energy = Math.max(0, t.energy - D.drain * dt);
+  if (t.energy > 0) return;
+  t.spent = true;
+  for (const c of cubes) c.state = 'hover';
+  const c = t.cubes[0];
+  emit(s, 'spent', c, c.x, c.y, c.z);
+}
+
+/** Accelerates a steered cube toward (x, z), braking in time to settle on it, then moves it. */
+function drive(s: Ship, t: TungstenState, c: Cube, x: number, z: number, dt: number): void {
+  const D = CUBE.drive;
+  const top = D.speed * TUNGSTEN_MODES[c.mode].speed * (t.surgeUntil > s.game.time ? CUBE.surge.speed : 1);
+  const dx = x - c.x,
+    dz = z - c.z,
+    d = Math.hypot(dx, dz);
+  const cap = D.accel * dt;
+  if (d < 2 && Math.hypot(c.vx, c.vz) < cap) {
+    c.vx = c.vz = 0;
+  } else {
+    const want = d > 0 ? Math.min(top, Math.sqrt(2 * D.accel * d)) / d : 0;
+    let ex = dx * want - c.vx,
+      ez = dz * want - c.vz;
+    const e = Math.hypot(ex, ez);
+    if (e > cap) {
+      ex *= cap / e;
+      ez *= cap / e;
+    }
+    c.vx += ex;
+    c.vz += ez;
+  }
+  glide(s, t, c, dt);
+}
+
+/** Moves a cube under its own momentum: it turns slowly, keeps its height (or sinks when spent) and rams. */
+function glide(s: Ship, t: TungstenState, c: Cube, dt: number): void {
+  const g = s.game,
+    lim = MAP_HALF - 200;
+  const ox = c.x,
+    oz = c.z;
+  c.x += c.vx * dt;
+  c.z += c.vz * dt;
+  if (Math.abs(c.x) > lim) {
+    c.x = Math.sign(c.x) * lim;
+    c.vx = 0;
+  }
+  if (Math.abs(c.z) > lim) {
+    c.z = Math.sign(c.z) * lim;
+    c.vz = 0;
+  }
+  c.flown += Math.hypot(c.x - ox, c.z - oz);
+  c.yaw += CUBE.spin * dt;
+  const rest = t.spent && !c.extra ? Math.max(0, g.map.heightAt(c.x, c.z)) + H * c.scale - CUBE.drive.sink : hoverY(s, c.x, c.z, c.scale);
+  c.y += Math.max(-60 * dt, Math.min(60 * dt, rest - c.y));
+  c.contacts = c.contacts.filter((k) => g.time - k.at < CUBE.drive.allyEvery);
+  ram(s, t, c, ox, oz);
+}
+
+/** A moving cube strikes enemy hulls in its path, harder the faster it goes; a Mend cube heals allies it passes. */
+function ram(s: Ship, t: TungstenState, c: Cube, ox: number, oz: number): void {
+  const g = s.game,
+    D = CUBE.drive;
+  const speed = Math.hypot(c.vx, c.vz);
+  if (speed < D.minSpeed) return;
+  const h = H * c.scale;
+  const momentum = Math.min(1.6, Math.max(0.3, speed / D.speed)) * (t.surgeUntil > g.time ? CUBE.surge.damage : 1);
+  for (const o of g.ships) {
+    const foe = hostile(s, o);
+    if (!foe && !(c.mode === MEND && o !== s && o.alive && o.team === s.team)) continue;
+    if (segmentHitsHull(o, ox, oz, c.x, c.z, h) < 0 || !due(c, o.id, foe ? D.every : D.allyEvery, g.time)) continue;
+    if (!foe) {
+      o.heal(o.maxHp * HIT.mend.ally);
+      continue;
+    }
+    cubeHit(s, c, o, D.damage * momentum, CUBE_CONTACT, true);
+    if (TUNGSTEN_MODES[c.mode].stops) {
+      c.vx = c.vz = 0;
+      return;
+    }
   }
 }
 
@@ -895,7 +1029,7 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
       const k = segmentHitsHull(o, ox, oz, c.x, c.z, h);
       if (k < 0) continue;
       p.hit.push(o.id);
-      p.dealt += cubeHit(s, c, o, p.kind === 'ricochet' ? SIGNATURE.ricochet.damage : p.kind === 'dock' ? CUBE.dock.damage : CUBE.shot.damage, spec, true);
+      p.dealt += cubeHit(s, c, o, p.kind === 'ricochet' ? SIGNATURE.ricochet.damage : CUBE.dock.damage, spec, true);
       if (p.kind === 'ricochet') {
         p.bounces--;
         const next = p.bounces > 0 ? nextTarget(s, c, SIGNATURE.ricochet.hop, o.id) : null;
@@ -903,11 +1037,6 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
         p.target = next.id;
         p.hit = [];
         return;
-      }
-      if (p.stops && p.kind === 'shot') {
-        c.x = ox + (c.x - ox) * k;
-        c.z = oz + (c.z - oz) * k;
-        return land(s, c);
       }
     }
     if (c.mode === MEND)
@@ -918,14 +1047,12 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
         }
   }
   if (f < 1) return;
-  if (p.kind === 'shot' || p.kind === 'ricochet') return land(s, c);
+  if (p.kind === 'ricochet') return land(s, c);
   if (p.kind === 'home' && c.extra && !t.overdriveUntil) {
     c.gone = true;
     return;
   }
-  c.state = 'docked';
-  c.path = null;
-  dockPose(s, c);
+  seat(s, c);
   if (p.kind === 'dock') {
     if (!c.extra) s.heal(s.maxHp * CUBE.dock.heal);
     s.heal(p.dealt * CUBE.dock.dealtHeal);

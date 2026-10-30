@@ -8,7 +8,7 @@ export type TungstenEventKind =
   | 'throw' | 'hit' | 'land' | 'dock' | 'break' | 'reform' | 'switch' | 'signature' | 'slam' | 'reel'
   | 'lunge' | 'arrive' | 'capture' | 'block' | 'shield' | 'contact'
   | 'collapse' | 'collapseHold' | 'collapseBurst' | 'meteorRise' | 'meteorFall' | 'meteorImpact' | 'fragment'
-  | 'overdrive' | 'overdriveEnd';
+  | 'overdrive' | 'overdriveEnd' | 'spent' | 'charged' | 'surge';
 
 export interface GameEventMap {
   gunFired: { ship: Ship; x: number; y: number; z: number; bearing: number; caliber: number; secondary: boolean; look?: GunLook };

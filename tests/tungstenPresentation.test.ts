@@ -11,10 +11,9 @@ import type { Ship } from '../src/ships/Ship';
 import type { Game } from '../src/core/Game';
 import { emptyGame, place, run } from './helpers';
 
-// Skill slots: Q Lunge, E Switch, Z Signature, X Shot, C Dock, V Shield, R Collapse, T Meteor, B Overdrive.
+// Skill slots: Q Lunge, E Switch, Z Signature, X Surge, C Dock, V Shield, R Collapse, T Meteor, B Overdrive.
 const SWITCH = 1;
 const SIGNATURE = 2;
-const SHOT = 3;
 const DOCK = 4;
 const COLLAPSE = 6;
 const METEOR = 7;
@@ -32,6 +31,22 @@ function cast(s: Ship, slot: number): void {
     s.meter = 1;
   }
   expect(s.activateSkill(slot), s.skillFailure).toBe(true);
+}
+
+/** Leaves the cube hovering out at sea. */
+function park(s: Ship, x: number, z: number): void {
+  const c = s.tungsten!.cubes[0];
+  c.state = 'hover';
+  c.path = null;
+  c.x = c.px = x;
+  c.z = c.pz = z;
+  c.y = c.py = CUBE.hoverY;
+}
+
+/** Sends the cube flying home from out at sea. */
+function recall(s: Ship, x: number, z: number): void {
+  park(s, x, z);
+  cast(s, DOCK);
 }
 
 /** Steps the sim and the effects together, frame by frame, as the renderer does. */
@@ -141,14 +156,12 @@ describe('Tungsten model', () => {
 });
 
 describe('Tungsten cube effects', () => {
-  it('draws a thrown cube with its trail, then dissolves its view once the cube docks', () => {
+  it('draws a flying cube with its trail, then dissolves its view once the cube docks', () => {
     const g = emptyGame('open', 7, 'freeplay');
     const s = place(g, 'tungsten', 0, 0, 0);
     const scene = new Scene();
     const fx = new TungstenCubeFx(scene, g);
-    s.control.aimX = 0;
-    s.control.aimZ = -2500;
-    cast(s, SHOT);
+    recall(s, 0, -3500);
     play(g, fx, 0.4, [s]);
     expect(s.tungsten!.cubes[0].state).toBe('flying');
 
@@ -160,8 +173,6 @@ describe('Tungsten cube effects', () => {
     expectFiniteFx(fx, scene);
     expect(stateHash(g)).toBe(before);
 
-    play(g, fx, 2, [s]);
-    cast(s, DOCK);
     for (let i = 0; i < 10 && s.tungsten!.cubes[0].state !== 'docked'; i++) play(g, fx, 0.5, [s]);
     expect(s.tungsten!.cubes[0].state).toBe('docked');
     play(g, fx, 0.8, [s]);
@@ -194,9 +205,7 @@ describe('Tungsten cube effects', () => {
     const s = place(g, 'tungsten', 0, 0, 0);
     const scene = new Scene();
     const fx = new TungstenCubeFx(scene, g);
-    s.control.aimX = 0;
-    s.control.aimZ = -2500;
-    cast(s, SHOT);
+    recall(s, 0, -3500);
     play(g, fx, 0.4, [s]);
     fx.prepare(0, 720);
     expect(fx.count).toBeGreaterThan(0);
@@ -221,9 +230,7 @@ describe('Tungsten cube effects', () => {
     fx.prepare(1, 720);
     expect(fx.lines.count).toBeGreaterThan(0);
 
-    s.control.aimX = 0;
-    s.control.aimZ = 4000;
-    cast(s, SHOT);
+    recall(s, 0, 4500);
     play(g, fx, 0.4);
     s.mods.untargetable = true;
     fx.prepare(0, 720);
@@ -256,10 +263,8 @@ describe('Tungsten cube effects', () => {
     }
     // Restore from a cube out at sea: its tide shows, but not the pulse on the hull.
     const { g, s, fx } = hidden(MEND);
-    s.control.aimX = 0;
-    s.control.aimZ = 4000;
-    cast(s, SHOT);
-    play(g, fx, 3);
+    park(s, 0, 4000);
+    play(g, fx, 0.1);
     expect(s.tungsten!.cubes[0].state).toBe('hover');
     cast(s, SIGNATURE);
     play(g, fx, 0.3);

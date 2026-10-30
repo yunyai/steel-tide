@@ -69,7 +69,8 @@ describe('ship roster', () => {
     for (const s of SHIPS) {
       expect(s.specialty.length).toBeGreaterThan(20);
       expect(s.description.length).toBeGreaterThan(20);
-      expect(!!(s.main || s.air || s.torpedoes || s.missiles)).toBe(true);
+      // The Tungsten's weapon is its cube.
+      expect(!!(s.main || s.air || s.torpedoes || s.missiles) || s.id === 'tungsten', s.id).toBe(true);
       expect(s.consumables[0].type).toBe('repair');
       expect(s.consumables.length).toBeLessThanOrEqual(2);
     }

@@ -1,30 +1,48 @@
 /** The Tungsten's cube: one table of numbers, shared by the sim, the HUD and the renderer. */
 export const CUBE = {
   /** Edge of the cube at scale 1 (m). */
-  edge: 64,
-  /** Centre height when hovering over water. */
-  hoverY: 38,
+  edge: 128,
+  /** Centre height when hovering over water, its base 6 m clear. */
+  hoverY: 70,
+  /** Gap between the dais and a docked cube's base (m). */
+  float: 26,
   hp: 2500000,
   /** Seconds a shattered cube takes to re-form on the magnet. */
   reform: 12,
   /** Docked repair per second, as a fraction of max HP. */
   dockRepair: 0.02,
-  /** Ring of extra docked cubes during Overdrive. */
-  ringRadius: 120,
-  ringLift: 40,
-  shot: { range: 4000, speed: 1800, damage: 80000 },
+  /** Halo of extra docked cubes during Overdrive. */
+  ringRadius: 220,
+  ringLift: 100,
   dock: { speed: 1600, damage: 50000, heal: 0.06, dealtHeal: 0.2, cubeRepair: 0.15 },
   lunge: { range: 4000, speed: 1500, damage: 60000, taken: 0.6, minDistance: 300 },
   guard: { time: 8, offset: 150, radius: 180, repelRadius: 260, taken: 0.25, speed: 1500 },
   chargeCap: 600000,
-  orbit: { radius: 420, rate: 0.6, damage: 40000, knock: 300, every: 1 },
+  /**
+   * Shield in Overdrive: the cubes ring the ship (`radius`), batter hulls and each wears a capture field
+   * (`field`, `repelField` in Repel); the ship takes `taken` damage, and the store holds `cap` times as much.
+   */
+  orbit: { radius: 420, rate: 0.9, damage: 80000, knock: 450, every: 0.75, time: 10, field: 240, repelField: 300, taken: 0.7, cap: 2 },
   /** Parked cubes push enemy hulls out of their footprint at up to this speed (m/s). */
   shoveSpeed: 240,
   collapse: { range: 4500, travel: 0.6, pull: 3, radius: 1600, core: 700, coreDps: 15000, tick: 0.25, burst: 400000, edge: 120000, burstRadius: 1200, merged: 1.5, mergedRadius: 1.2 },
-  meteor: { range: 5000, rise: 1.2, grow: 1, fall: 0.8, shrink: 0.6, height: 1800, scale: 8, damage: 700000, edge: 175000, radius: 900, ring: 500, share: 0.4 },
+  meteor: { range: 5000, rise: 1.2, grow: 1, fall: 0.8, shrink: 0.6, height: 1800, scale: 4, damage: 700000, edge: 175000, radius: 900, ring: 500, share: 0.4 },
+  /**
+   * Steering with the fire button: the cube chases the reticle (`speed` times the mode's factor) on the magnet's
+   * energy, a fraction drained while steered and recharged otherwise. A spent cube sinks to rest until it docks
+   * or its slow recharge is full. Contact damage scales with speed; each hull is struck at most once per `every`.
+   */
+  drive: { speed: 420, accel: 700, leash: 4500, damage: 45000, every: 1.5, allyEvery: 3, minSpeed: 60, drain: 0.125, regen: 0.03, dockRegen: 0.3, sink: 10, glide: 2.5, formation: 240 },
+  /** Magnet Surge: full energy and an overcharge that steers faster, hits harder and costs nothing. */
+  surge: { time: 6, speed: 1.4, damage: 1.4 },
+  /** Out on the water a cube turns slowly about its vertical (rad/s). */
+  spin: 0.25,
   overdrive: { time: 20 },
   aura: { radius: 1000, every: 0.25, life: 0.35 },
 } as const;
+
+/** Height of a docked cube's centre above the waterline: it floats `CUBE.float` over the dais on the deck. */
+export const dockLift = (spec: { freeboard: number }) => spec.freeboard + CUBE.float + CUBE.edge / 2;
 
 export type TungstenModeId = 'kinetic' | 'crush' | 'shard' | 'repel' | 'tether' | 'mend';
 
@@ -96,7 +114,7 @@ export const modeOf = (id: TungstenModeId): number => TUNGSTEN_MODES.findIndex((
 
 /** Signature numbers, by mode. */
 export const SIGNATURE = {
-  ricochet: { bounces: 5, reach: 2000, hop: 1500, damage: 55000 },
+  ricochet: { bounces: 5, reach: 2000, hop: 1500, damage: 55000, speed: 1800 },
   slam: { time: 0.75, damage: 120000, stun: 1.5 },
   storm: { damage: 70000, turrets: 2, out: 5 },
   repulse: { damage: 40000, knock: 300 },

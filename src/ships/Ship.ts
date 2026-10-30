@@ -118,7 +118,9 @@ export type WeaponSlot =
   | { kind: 'gun'; ammo: AmmoType; label: string }
   | { kind: 'torp'; label: string }
   | { kind: 'air'; sq: SquadronType; label: string }
-  | { kind: 'vls'; label: string };
+  | { kind: 'vls'; label: string }
+  /** The Tungsten steers its cube with the fire button. */
+  | { kind: 'cube'; label: string };
 
 export interface TurretState {
   spec: GunTurretSpec;
@@ -761,6 +763,7 @@ export class Ship {
         { kind: 'air', sq: 'fighter', label: spec.air.fighter.name },
       );
     }
+    if (this.tungsten) this.slots.push({ kind: 'cube', label: 'Tungsten cube' });
     this.slot = Math.min(this.slot, Math.max(0, this.slots.length - 1));
   }
 
@@ -898,7 +901,7 @@ export class Ship {
 
   maxAimRange(): number {
     if (this.spec.air && !this.spec.main) return Math.max(this.spec.air.range, this.spec.missiles?.range ?? 0);
-    return Math.max(this.mainRange, this.spec.torpedoes?.range ?? 0, this.spec.missiles?.range ?? 0, 3000 * RANGE_SCALE);
+    return Math.max(this.mainRange, this.spec.torpedoes?.range ?? 0, this.spec.missiles?.range ?? 0, this.tungsten ? CUBE.meteor.range : 0, 3000 * RANGE_SCALE);
   }
 
   /** Search is running: torpedoes are seen further out. */
@@ -1140,9 +1143,9 @@ export class Ship {
     for (const i of this.ultIndices) this.skills[i].meter = Math.min(1, this.skills[i].meter + amount);
   }
 
-  /** True while any ultimate is running. */
+  /** True while any ultimate is running, other than one that empowers the rest of the kit. */
   get ultActive(): boolean {
-    return this.ultIndices.some((i) => this.skills[i].active);
+    return this.ultIndices.some((i) => this.skills[i].active && !this.skills[i].spec.empowers);
   }
 
   /** Last activation failure, shown locally by the HUD. No simulation randomness. */

@@ -8,6 +8,8 @@ import { canActivate } from '../ships/Consumables';
 import { ESCORT_LEASH } from '../modes/Convoy';
 import type { Ship } from '../ships/Ship';
 import { aiWantsSkill } from '../skills/registry';
+import { CUBE } from '../skills/misc/TungstenModes';
+import { aiSteers } from '../skills/misc/TungstenRuntime';
 import { solve } from '../weapons/Ballistics';
 import { avoid, evasion, rudderFor, separate } from './Navigation';
 
@@ -362,6 +364,11 @@ export class AIController {
     const c = ship.control;
     const t = this.target;
     this.wantTorps = false;
+    if (ship.tungsten) {
+      c.slot = ship.slots.findIndex((s) => s.kind === 'cube');
+      c.fire = aiSteers(ship, t);
+      return;
+    }
     // Cells loaded and the target inside missile range: ripple a salvo off first.
     const ms = ship.spec.missiles;
     if (ms && t && ship.vls && ship.vls.reload <= 0 && !t.submerged && dist2D(ship.pos.x, ship.pos.z, t.pos.x, t.pos.z) < ms.range * 0.95) {
@@ -518,6 +525,9 @@ export class AIController {
       time = dist2D(ship.pos.x, ship.pos.z, px, pz) / spd;
     } else if (slot?.kind === 'air' || slot?.kind === 'vls') {
       time = 0;
+    } else if (slot?.kind === 'cube') {
+      const cube = ship.tungsten!.cubes[0];
+      time = dist2D(cube.x, cube.z, t.pos.x, t.pos.z) / CUBE.drive.speed;
     } else {
       const table = ship.tableFor(ship.ammo);
       if (table) time = solve(table, d).time;
@@ -525,6 +535,16 @@ export class AIController {
     const lead = this.game.difficulty.lead;
     c.aimX = t.pos.x + forwardX(t.heading) * t.speed * time * lead + this.errX;
     c.aimZ = t.pos.z + forwardZ(t.heading) * t.speed * time * lead + this.errZ;
+    // Steer the cube through the target, not onto it, so it rams at speed and comes round again; skills
+    // take the target itself.
+    if (slot?.kind === 'cube' && c.skill < 0) {
+      const cube = ship.tungsten!.cubes[0];
+      const dx = c.aimX - cube.x,
+        dz = c.aimZ - cube.z,
+        n = Math.hypot(dx, dz) || 1;
+      c.aimX += (dx / n) * 400;
+      c.aimZ += (dz / n) * 400;
+    }
     if(ship.architect && c.skill===0){
       const dx=ship.pos.x-t.pos.x,dz=ship.pos.z-t.pos.z,d=Math.hypot(dx,dz)||1;
       c.aimX=t.pos.x+dx/d*700;c.aimZ=t.pos.z+dz/d*700;
