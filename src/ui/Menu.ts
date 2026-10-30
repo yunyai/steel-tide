@@ -1,3 +1,5 @@
+import { cubeFirepower, cubeLoadout, tungstenCodex } from './TungstenCodex';
+import { CUBE } from '../skills/misc/TungstenModes';
 import { architectLoadoutEditor,savedArchitectLoadout,saveArchitectLoadout,type ArchitectEditor } from './ArchitectLoadout';
 import { fleetEditor } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
@@ -95,11 +97,12 @@ function salvoDpm(s: ShipSpec): number {
   }
   // Point defence takes a share of every salvo.
   if (s.missiles) d += (s.missiles.salvo * s.missiles.damage * 60 * 0.6) / s.missiles.reload;
+  if (s.id === 'tungsten') d += cubeFirepower();
   return d;
 }
 
 function reach(s: ShipSpec): number {
-  return Math.max(s.air?.range ?? 0, s.main?.range ?? 0, s.torpedoes?.range ?? 0, s.missiles?.range ?? 0);
+  return Math.max(s.air?.range ?? 0, s.main?.range ?? 0, s.torpedoes?.range ?? 0, s.missiles?.range ?? 0, s.id === 'tungsten' ? CUBE.shot.range : 0);
 }
 
 // Gauges are scaled against every era's line ships; titans simply max them out.
@@ -122,6 +125,7 @@ function loadout(s: ShipSpec): string[] {
     const desc = [...counts].map(([b, n]) => `${n}×${b}`).join(' + ');
     out.push(`Main: ${desc} ${s.main.name}, ${(s.main.range / 1000).toFixed(1)} km, ${s.main.reload.toFixed(1)} s reload${s.main.ap ? '' : ' (HE only)'}`);
   }
+  if (s.id === 'tungsten') out.push(cubeLoadout());
   for (const sec of s.secondaries ?? []) out.push(`Secondary: ${sec.perSide * 2}×${sec.barrels} ${sec.name}`);
   if (s.torpedoes) {
     const tubes = s.torpedoes.launchers.reduce((a, l) => a + (l.tubes ?? s.torpedoes!.tubes), 0);
@@ -591,6 +595,7 @@ export class Menu {
           pc.architectLoadout=accepted;saveArchitectLoadout(accepted);
           return {accepted:changes.map(c=>c.index),pending:[],skipped:[],rejected:[]};
         })).el]:[]),
+        ...(s.id === 'tungsten' ? [tungstenCodex(() => this.hooks.click())] : []),
         h('ul', { class: 'loadout' }, ...loadout(s).map((l) => h('li', {}, l)), ...(best ? [h('li', {}, `Best ${survival ? 'Survival' : 'Boss Rush'}: wave ${best.wave}, ${best.score.toLocaleString()} points`)] : [])),
       );
     };

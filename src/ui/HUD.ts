@@ -2,7 +2,7 @@ import { architectSkillPresentation,architectModuleSkillPresentation,architectIn
 import { architectDockingStatus } from '../skills/misc/ArchitectRuntime';
 import { CROSS } from '../skills/misc/CrossStep';
 import { vectorMobilityPresentation } from './VectorMobilityPresentation';
-import { tungstenPresentation } from './TungstenPresentation';
+import { cubeReticle, cubeSlot, tungstenPresentation, type TungstenView } from './TungstenPresentation';
 import { ARCHETYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
@@ -128,6 +128,9 @@ export class HUD {
   private turretDots: HTMLElement[] = [];
   private telegraph: HTMLElement[] = [];
   private slotEls: { root: HTMLElement; bar: HTMLElement; info: HTMLElement }[] = [];
+  /** The Tungsten's view this frame, shared by its panel, status lines and skill buttons. */
+  private tungsten: TungstenView | null = null;
+  private tungstenEls: { root: HTMLElement; mode: HTMLElement; where: HTMLElement; gauges: Record<'energy' | 'cube' | 'store', { root: HTMLElement; fill: HTMLElement; text: HTMLElement }>; cubes: HTMLElement[] } | null = null;
   private skillEls: SkillEl[] = [];
   private consEls: SkillEl[] = [];
   private vectorEls: {root:HTMLElement;t:HTMLElement;count:HTMLElement;lastActive?:number;wasReady:boolean}[] = [];
@@ -280,6 +283,23 @@ export class HUD {
       for(let i=0;i<10;i++){
         const item=el('div','architect-slot',battery);item.innerHTML=`<b>${i+1}</b><em></em><span>DOCK</span><i></i>`;this.moduleEls.push(item);
       }
+    }
+    // Tungsten: the cube's whereabouts, the magnet's energy, the cube's health and the Shield store.
+    if (me.tungsten) {
+      const root = el('div', 'tungsten-panel', ck);
+      const head = el('div', 'tp-head', root);
+      const mode = el('b', '', head);
+      const where = el('span', '', head);
+      const gauge = (label: string) => {
+        const g = el('div', 'tp-gauge', root);
+        el('span', 'tp-label', g).textContent = label;
+        const text = el('span', 'num', g);
+        return { root: g, fill: el('i', '', el('div', 'tp-bar', g)), text };
+      };
+      const gauges = { energy: gauge('Energy'), cube: gauge('Cube'), store: gauge('Store') };
+      gauges.energy.root.classList.add('segmented');
+      const row = el('div', 'tp-cubes', gauges.cube.root);
+      this.tungstenEls = { root, mode, where, gauges, cubes: Array.from({ length: 6 }, () => el('i', '', row)) };
     }
     const nb = el('div', 'namebar', ck);
     el('span', 'cls', nb).innerHTML = classIcon(me.spec.cls);
@@ -548,6 +568,7 @@ export class HUD {
     const e = this.e;
     const team = this.team;
     const enemy: Team = team === 0 ? 1 : 0;
+    this.tungsten = me.tungsten ? tungstenPresentation(me.tungsten, g.time, me.pos.x, me.pos.z) : null;
 
     if (g.rush) this.updateRush();
     else this.updateScore(team, enemy);
@@ -568,6 +589,7 @@ export class HUD {
 
     this.updateHull(dt);
     this.updateSkills();
+    this.updateTungsten();
     if(me.architect){
       // The docking summary rides on the turret strip instead of a bar of its own.
       const docking=architectDockingStatus(me),summary=`Modular arsenal · Dock ${docking.count}/10 · DR ${Math.round(docking.damageReduction*100)}% · Hull +${Math.round(!me.alive||me.mods.healBlock?0:docking.hullRegenPerSecond*me.mods.regenMul).toLocaleString()}/s · CAP ${docking.capacitors} ready / ${docking.chargingCycles} half`;
@@ -611,6 +633,8 @@ export class HUD {
         const r = Math.max(0, me.vls.reload);
         fracR = 1 - r / (me.spec.missiles.reload * me.mods.missileReloadMul);
         info = r <= 0 ? `${me.spec.missiles.salvo + (me.trait?.vlsExtra ?? 0)} ready` : `${r.toFixed(0)}s`;
+      } else if (s.kind === 'cube' && me.tungsten) {
+        ({ frac: fracR, info } = cubeSlot(me.tungsten));
       }
       setText(se.info, info);
       setWidth(se.bar, fracR);
@@ -881,7 +905,7 @@ export class HUD {
       if(a.repairInterruptedUntil>g.time)st.push(['Backstep repair interrupted', '',glyph('heal')]);
       if(a.flicker)st.push([`Flicker ${a.flicker.count}/20`, 'buff',glyph('blink')]);
     }
-    if (me.tungsten) for (const line of tungstenPresentation(me.tungsten, g.time, me.pos.x, me.pos.z).status) st.push([line.text, line.buff ? 'buff' : '', glyph(line.icon)]);
+    if (this.tungsten) for (const line of this.tungsten.status) st.push([line.text, line.buff ? 'buff' : '', glyph(line.icon)]);
     if (me.effects.some((f) => f.id === 'pickup:fury')) st.push(['Fury', 'buff', glyph('fire')]);
     if (g.exposed[team] > 0) st.push(['Enemies exposed', 'buff', glyph('reveal')]);
     if (g.exposed[enemy] > 0) st.push(['You are exposed', '', glyph('reveal')]);
@@ -908,7 +932,7 @@ export class HUD {
 
   private updateSkills(): void {
     const me = this.pc.ship;
-    const tungsten = me.tungsten ? tungstenPresentation(me.tungsten, this.game.time, me.pos.x, me.pos.z) : null;
+    const tungsten = this.tungsten;
     me.skills.forEach((st, i) => {
       const se = this.skillEls[i];
       // Switch and Signature name the current mode and its move, in its colour.
@@ -1022,6 +1046,32 @@ export class HUD {
     v3.set(x, y, z).project(this.pc.camera);
     if (v3.z > 1 || v3.z < -1) return null;
     return { x: (v3.x * 0.5 + 0.5) * this.viewportWidth, y: (-v3.y * 0.5 + 0.5) * this.viewportHeight };
+  }
+
+  private updateTungsten(): void {
+    const v = this.tungsten?.panel;
+    const els = this.tungstenEls;
+    if (!v || !els) return;
+    const t = this.tungsten!;
+    if (els.root.style.getPropertyValue('--mode') !== t.accent) els.root.style.setProperty('--mode', t.accent);
+    setText(els.mode, t.switchLabel);
+    setText(els.where, v.where);
+    for (const key of ['energy', 'cube', 'store'] as const) {
+      const g = els.gauges[key];
+      const value = v[key];
+      g.root.hidden = !value;
+      if (!value) continue;
+      g.root.classList.toggle('low', value.low);
+      setWidth(g.fill, value.frac);
+      setText(g.text, value.text);
+    }
+    els.root.classList.toggle('overdrive', v.cubes.length > 0);
+    v.cubes.forEach((c, i) => {
+      const bar = els.cubes[i];
+      if (bar.style.getPropertyValue('--type') !== c.color) bar.style.setProperty('--type', c.color);
+      const f = `${Math.max(0, Math.min(1, c.frac))}`;
+      if (bar.style.getPropertyValue('--health') !== f) bar.style.setProperty('--health', f);
+    });
   }
 
   private updateMarkers(): void {
@@ -1186,6 +1236,8 @@ export class HUD {
     } else if (slot?.kind === 'air') {
       sub = `${slot.label} strike`;
       out = range > (me.spec.air?.range ?? 0);
+    } else if (slot?.kind === 'cube' && me.tungsten) {
+      ({ text: sub, out } = cubeReticle(me.tungsten, this.game.time, pc.aim.x, pc.aim.z));
     } else if (slot?.kind === 'vls' && me.spec.missiles) {
       const lock = me.vls?.lock;
       out = range > me.spec.missiles.range;

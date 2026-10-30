@@ -1,5 +1,5 @@
 import { CUBE, TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
-import type { TungstenState } from '../skills/misc/TungstenRuntime';
+import type { CubeState, TungstenState } from '../skills/misc/TungstenRuntime';
 import type { Team } from '../core/types';
 import type { Ship } from '../ships/Ship';
 
@@ -11,7 +11,26 @@ export interface TungstenStatusLine {
   icon: string;
 }
 
-/** What the HUD shows for a Tungsten: live Switch and Signature buttons, and its status lines. */
+/** One bar of the Tungsten panel. */
+export interface TungstenGauge {
+  frac: number;
+  text: string;
+  /** Drawn in the warning colour. */
+  low: boolean;
+}
+
+/** The panel over the Tungsten's hull bar: where the cube is, the magnet's energy, the cube's health and the Shield store. */
+export interface TungstenPanel {
+  where: string;
+  energy: TungstenGauge;
+  cube: TungstenGauge;
+  /** Shown while the Shield is up or holds damage. */
+  store: TungstenGauge | null;
+  /** In Overdrive, one health bar per cube, in mode order. */
+  cubes: { color: string; frac: number }[];
+}
+
+/** What the HUD shows for a Tungsten: live Switch and Signature buttons, its status lines and its panel. */
 export interface TungstenView {
   switchLabel: string;
   /** Live line added to the Switch tooltip. */
@@ -22,10 +41,16 @@ export interface TungstenView {
   /** The current mode's colour, for the Switch and Signature buttons. */
   accent: string;
   status: TungstenStatusLine[];
+  panel: TungstenPanel;
 }
 
 const css = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
-const thousands = (v: number) => `${Math.round(v / 1000)}k`;
+const amount = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${Math.round(v / 1000)}k`);
+/** Whole seconds left, without float dust turning 20 into 21. */
+const secs = (v: number) => Math.ceil(v - 1e-6);
+const km = (d: number) => `${(d / 1000).toFixed(1)} km`;
+const primary = (t: TungstenState) => t.cubes.find((k) => k.slot === 0 && !k.extra) ?? t.cubes[0];
+const PLACE: Record<CubeState, string> = { docked: 'Docked', flying: 'In flight', hover: 'Out', guard: 'Shielding', orbit: 'Shielding', meteor: 'Meteor', collapse: 'Collapse', broken: 'Shattered' };
 
 /** The Tungsten's HUD state at game time `time`, for a ship standing at (x, z). */
 export function tungstenPresentation(t: TungstenState, time: number, x: number, z: number): TungstenView {
@@ -35,31 +60,79 @@ export function tungstenPresentation(t: TungstenState, time: number, x: number, 
   const status: TungstenStatusLine[] = [];
 
   if (overdrive > 0) status.push({ text: `Overdrive · all modes · ${Math.ceil(overdrive)}s`, buff: true, icon: 'fleet' });
-
-  // The cradle cube; a quiet line, or none, while it sits whole on the magnet.
-  const c = t.cubes.find((k) => k.slot === 0 && !k.extra);
-  if (c) {
-    const hp = c.hp < c.maxHp ? ` · ${Math.round((c.hp / c.maxHp) * 100)}%` : '';
-    if (c.state === 'broken') status.push({ text: `Cube re-forming · ${Math.ceil(c.reform)}s`, buff: false, icon: 'magnet' });
-    else if (c.state !== 'docked') status.push({ text: `Cube out · ${(Math.hypot(c.x - x, c.z - z) / 1000).toFixed(1)} km${hp}`, buff: true, icon: 'magnet' });
-    else if (hp) status.push({ text: `Cube docked${hp}`, buff: true, icon: 'magnet' });
-  }
-
+  const surge = t.surgeUntil - time;
+  if (surge > 0) status.push({ text: `Surge · ${Math.ceil(surge)}s`, buff: true, icon: 'magnet' });
   const guard = t.guardUntil - time;
-  if (guard > 0) status.push({ text: `Shield ${Math.ceil(guard)}s${t.charge > 0 ? ` · ${thousands(t.charge)} stored` : ''}`, buff: true, icon: 'shield' });
-  else if (t.charge > 0) status.push({ text: `Charge ${thousands(t.charge)} / ${thousands(CUBE.chargeCap)}`, buff: true, icon: 'shield' });
-
+  if (guard > 0) status.push({ text: `Shield ${Math.ceil(guard)}s`, buff: true, icon: 'shield' });
   const tethered = t.tethers.filter((k) => k.until > time).length;
   if (tethered) status.push({ text: `Tethered ×${tethered}`, buff: true, icon: 'magnet' });
 
+  const next = TUNGSTEN_MODES[(t.mode + 1) % TUNGSTEN_MODES.length];
   return {
     switchLabel: overdrive > 0 ? 'ALL' : mode.name.toUpperCase(),
-    switchTitle: overdrive > 0 ? 'Every mode is active during Overdrive.' : `${mode.name} now; tap for ${TUNGSTEN_MODES[(t.mode + 1) % TUNGSTEN_MODES.length].name}.`,
+    switchTitle: overdrive > 0 ? 'Every mode is active during Overdrive.' : `${mode.name} now; tap for ${next.name}.\nThrow: ${mode.hit}\nPassive: ${mode.passive}`,
     signatureLabel: overdrive > 0 ? 'ALL' : sig.id.toUpperCase(),
     signatureTitle: overdrive > 0 ? "Every cube fires its own mode's move." : `Now ${sig.name}, ${(sig.radius / 1000).toFixed(1)} km round the cube.`,
     accent: css(mode.color),
     status,
+    panel: panel(t, time, x, z),
   };
+}
+
+function panel(t: TungstenState, time: number, x: number, z: number): TungstenPanel {
+  const c = primary(t);
+  const where = c.state === 'hover' || c.state === 'flying' ? `${PLACE[c.state]} · ${km(Math.hypot(c.x - x, c.z - z))}` : PLACE[c.state];
+
+  let energy: string;
+  if (t.surgeUntil > time) energy = `Surge ${Math.ceil(t.surgeUntil - time)}s · free throws`;
+  else if (t.overdriveUntil > time) energy = 'Overdrive · free throws';
+  else if (t.spent) {
+    const docked = c.state === 'docked';
+    const wait = secs((1 - t.energy) / (docked ? CUBE.energy.dockRegen : CUBE.energy.regen));
+    energy = docked ? `Spent · charging ${wait}s` : `Spent · dock or wait ${wait}s`;
+  } else {
+    // Any energy left buys a throw; the one that empties the magnet spends it.
+    const n = secs(t.energy / CUBE.shot.cost);
+    energy = `${n} throw${n === 1 ? '' : 's'}${t.energy < 1 ? ' · recharging' : ''}`;
+  }
+  const free = t.surgeUntil > time || t.overdriveUntil > time;
+
+  const cube: TungstenGauge =
+    c.state === 'broken'
+      ? { frac: 1 - c.reform / CUBE.reform, text: `Re-forming ${secs(c.reform)}s`, low: true }
+      : { frac: c.hp / c.maxHp, text: `${amount(c.hp)} / ${amount(c.maxHp)}`, low: c.hp / c.maxHp < 0.3 };
+
+  const cap = CUBE.chargeCap * (t.overdriveUntil > time ? CUBE.orbit.cap : 1);
+  const store = t.guardUntil > time || t.charge > 0 ? { frac: t.charge / cap, text: `${amount(t.charge)} / ${amount(cap)}`, low: false } : null;
+
+  const cubes =
+    t.overdriveUntil > time
+      ? TUNGSTEN_MODES.map((m, i) => {
+          const k = t.cubes.find((o) => o.mode === i && !o.gone);
+          return { color: css(m.color), frac: k && k.state !== 'broken' ? k.hp / k.maxHp : 0 };
+        })
+      : [];
+
+  return { where, energy: { frac: t.energy, text: energy, low: !free && (t.spent || t.energy < CUBE.shot.cost) }, cube, store, cubes };
+}
+
+/** The reticle's line for the fire button: how far and how long the throw is, or why there is none. */
+export function cubeReticle(t: TungstenState, time: number, aimX: number, aimZ: number): { text: string; out: boolean } {
+  const c = primary(t);
+  if (c.state === 'broken') return { text: `Cube re-forming · ${secs(c.reform)}s`, out: true };
+  if (t.spent) return { text: 'Spent: Dock or Surge to throw', out: true };
+  if (c.state !== 'docked' && c.state !== 'hover') return { text: c.state === 'flying' ? 'Cube in flight' : 'Cube busy', out: true };
+  const d = Math.hypot(aimX - c.x, aimZ - c.z);
+  if (d > CUBE.shot.range) return { text: `Beyond the ${CUBE.shot.range / 1000} km throw: it lands short`, out: true };
+  const speed = CUBE.shot.speed * TUNGSTEN_MODES[c.mode].speed * (t.surgeUntil > time ? CUBE.surge.speed : 1);
+  return { text: `Throw ${km(d)}, ${(d / speed).toFixed(1)} s`, out: false };
+}
+
+/** The cube's weapon slot: its throw reload, or why it cannot throw. */
+export function cubeSlot(t: TungstenState): { frac: number; info: string } {
+  if (primary(t).state === 'broken') return { frac: 0, info: 'Re-forming' };
+  if (t.spent) return { frac: 0, info: 'Spent' };
+  return t.reload > 0 ? { frac: 1 - t.reload / CUBE.shot.reload, info: `${t.reload.toFixed(1)}s` } : { frac: 1, info: 'Ready' };
 }
 
 export interface CubeMarker {

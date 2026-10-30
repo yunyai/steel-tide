@@ -4069,3 +4069,53 @@ select {
   .skillbar.titan:has(.vector:not([hidden])) .sk.cons .ch { top:29px; }
 }
 
+
+/* Tungsten panel, over the hull bar: where the cube is, the magnet's energy, the cube's health and the Shield store. */
+.tungsten-panel { --mode:var(--cyan); display:grid; grid-template-columns:minmax(96px,auto) repeat(3,minmax(0,1fr)); gap:4px 12px; align-items:end; padding:6px 12px 6px 10px;
+  font-family:var(--display); line-height:1; color:var(--ice);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--mode) 18%,transparent),var(--glass) 85%);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mode) 34%,transparent), inset 0 1px color-mix(in srgb,var(--mode) 70%,transparent);
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px); }
+.tp-head { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.tp-head b { font-size:13px; font-weight:700; letter-spacing:.06em; color:var(--mode); text-shadow:0 0 8px color-mix(in srgb,var(--mode) 70%,transparent); }
+.tp-head span { font-size:10px; color:#a9c4d8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; }
+.tp-gauge { --bar:var(--mode); display:grid; grid-template-columns:auto minmax(0,1fr); gap:4px 6px; align-items:baseline; min-width:0; }
+.tp-gauge[hidden] { display:grid; visibility:hidden; }
+.tp-gauge:nth-of-type(2) { --bar:#dfe9f2; }
+.tp-gauge:nth-of-type(3) { --bar:var(--gold); }
+.tp-label { font-size:8.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }
+.tp-gauge .num { justify-self:end; max-width:100%; font-size:10.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; }
+.tp-bar { grid-column:1/-1; position:relative; height:4px; background:rgba(169,196,216,.14); overflow:hidden; }
+.tp-bar i { display:block; height:100%; background:var(--bar); box-shadow:0 0 6px var(--bar); }
+/* One notch per throw. */
+.tp-gauge.segmented .tp-bar::after { content:''; position:absolute; inset:0; background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 2px),var(--abyss) calc(25% - 2px) 25%); }
+.tp-gauge.low { --bar:var(--red); }
+.tp-gauge.low .num { color:var(--amber); }
+.tp-cubes { display:none; }
+.tungsten-panel.overdrive .tp-cubes { grid-column:1/-1; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:2px; }
+.tp-cubes i { --type:var(--cyan); --health:1; height:3px; background:linear-gradient(90deg,var(--type) calc(var(--health) * 100%),rgba(169,196,216,.14) 0); box-shadow:0 0 4px color-mix(in srgb,var(--type) 60%,transparent); }
+@media(max-width:1350px) { .tungsten-panel { grid-template-columns:minmax(80px,auto) repeat(3,minmax(0,1fr)); gap:4px 8px; } .tp-label { display:none; } }
+
+/* Tungsten mode guide, at the foot of the dossier: a hex chip per mode and the detail of the one picked. */
+.tungsten-codex { margin:16px 0; padding:14px; background:#0c1721e8; border:1px solid #60778166; border-radius:6px; min-width:0; }
+.tungsten-codex h3 { margin:0; color:#ffcf86; font-family:var(--display); font-size:18px; font-weight:700; letter-spacing:.02em; }
+.codex-chips { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; margin:0 0 12px; }
+.codex-chip { --ring:color-mix(in srgb,var(--type-color) 55%,transparent); display:flex; flex-direction:column; align-items:center; gap:4px; min-width:0; padding:0; background:none; border:0; color:inherit; cursor:pointer; }
+.codex-chip b { position:relative; display:flex; align-items:center; justify-content:center; width:46px; height:40px; background:var(--ring); clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%); font-family:var(--display); line-height:1; }
+.codex-chip b::before { content:''; position:absolute; inset:1.5px; clip-path:inherit; background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--type-color) 30%,var(--abyss)),var(--abyss) 80%); }
+.codex-chip b span { position:relative; font-size:13px; font-weight:700; letter-spacing:.03em; color:var(--type-color); text-shadow:0 0 8px color-mix(in srgb,var(--type-color) 70%,transparent); }
+.codex-chip small { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:10px; line-height:12px; color:#a7bdc8; }
+.codex-chip[data-rainbow] b { background:conic-gradient(#3ff0ff,#ffae2b,#ff3b3b,#3d6bff,#b46bff,#3dff8a,#3ff0ff); }
+.codex-chip[data-rainbow] b span { background:linear-gradient(90deg,#3ff0ff,#ffae2b,#ff3b3b,#b46bff,#3dff8a); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:none; }
+.codex-chip:hover,.codex-chip:focus-visible { --ring:var(--type-color); outline:none; }
+.codex-chip:focus-visible small { color:var(--ice); text-decoration:underline; }
+.codex-chip[aria-pressed="true"] { --ring:var(--amber); filter:drop-shadow(0 0 6px rgba(255,181,71,.55)); }
+.codex-chip[aria-pressed="true"] small { color:#ffe3b0; }
+.codex-detail { --type-color:var(--cyan); padding:10px 12px; border-left:2px solid var(--type-color); background:linear-gradient(90deg,color-mix(in srgb,var(--type-color) 12%,transparent),transparent 70%); }
+.codex-detail[data-rainbow] { border-image:linear-gradient(180deg,#3ff0ff,#ffae2b,#ff3b3b,#3d6bff,#b46bff,#3dff8a) 1; background:linear-gradient(90deg,rgba(180,107,255,.12),transparent 70%); }
+.codex-detail h4 { margin:0 0 8px; font-family:var(--display); font-size:15px; letter-spacing:.02em; color:var(--type-color); }
+.codex-detail[data-rainbow] h4 { color:var(--ice); }
+.codex-detail dl { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:7px 14px; margin:0; font-size:12.5px; line-height:1.45; }
+.codex-detail dt { padding-top:1px; font-family:var(--display); font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--mute); }
+.codex-detail dd { margin:0; color:#d6e4ee; }
+@media(max-width:520px) { .tungsten-codex { padding:10px; } .codex-chips { grid-template-columns:repeat(4,minmax(0,1fr)); } .codex-detail dl { grid-template-columns:minmax(0,1fr); gap:2px; } .codex-detail dd { margin-bottom:6px; } }

@@ -100,7 +100,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       return g.ships.filter((o) => o.alive && o.team !== s.team && Math.hypot(o.pos.x - t.pos.x, o.pos.z - t.pos.z) < 1600).length >= 2 || t.spec.cls === 'TT';
     },
   }),
-  def(spec('tungstenMeteor', 'Tungsten Meteor', 'METEOR', 110, 3.6, 'meteor', 'The cube rises, grows eightfold and falls on the reticle (5 km) for up to 700k with its mode effect.', true), {
+  def(spec('tungstenMeteor', 'Tungsten Meteor', 'METEOR', 110, 3.6, 'meteor', 'The cube rises, grows fourfold and falls on the reticle (5 km) for up to 700k with its mode effect.', true), {
     activate: (s, _g, st) => meteor(s, st.index),
     aiShouldUse(s, _g, t) {
       return !!t && range(s, t) < CUBE.meteor.range;
