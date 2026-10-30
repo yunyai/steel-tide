@@ -15,7 +15,9 @@ export const ELEMENT_STYLE:Record<ArchitectElement,{name:string;short:string;col
 };
 export const REACTION_NAMES:Record<string,string>={'cryo+furnace':'Thermal Shock','furnace+storm':'Overload','furnace+gravity':'Core Collapse','furnace+prism':'Solar Flare','cryo+storm':'Superconduct','cryo+gravity':'Cold Crush','cryo+prism':'Crystal Break','gravity+storm':'Magnetic Storm','prism+storm':'Arc Spectrum','gravity+prism':'Singularity'};
 export type ElementAttack='skill'|'salvo'|'reaction'|'assembly'|'killbox';
-export interface ElementEvent {ship:Ship;slot:number;element:ArchitectElement;attack:ElementAttack;phase:'cast'|'hit';id:number;x:number;y:number;z:number;tx:number;ty:number;tz:number;radius:number;pair?:ArchitectElement;type?:ModuleSlot["type"];target?:number;damage?:number}
+export interface ElementEvent {ship:Ship;slot:number;element:ArchitectElement;attack:ElementAttack;phase:'cast'|'hit';id:number;x:number;y:number;z:number;tx:number;ty:number;tz:number;radius:number;pair?:ArchitectElement;type?:ModuleSlot["type"];target?:number;damage?:number;
+ /** Presentation only: secondary victims a chain reaction arcs to, in order. */
+ chain?:readonly {x:number;y:number;z:number}[]}
 export interface ElementMark {target:number;element:ArchitectElement|null;until:number;ready:number}
 export interface ElementJob {id:number;slot:number;element:ArchitectElement;attack:ElementAttack;x:number;y:number;z:number;tx:number;ty:number;tz:number;elapsed:number;next:number;count:number;interval:number;damage:number;radius:number;beam:number;chain:boolean;pull:boolean;slow:boolean;channel:boolean;mark:boolean;type:ModuleSlot['type'];variant:number;target:number;underwater:boolean;support:boolean;projectile:boolean;speed:number;life:number}
 export interface ElementPull {target:number;x:number;z:number;until:number}
@@ -39,7 +41,7 @@ export function architectSkillRechargeRate(s:Ship,a:ModuleSlot):number {
  if(!s.alive||!['deployed','citadel'].includes(a.state)||!a.entity?.alive||s.architect?.ultimate?.kind==='assembly')return 0;
  return a.state==='citadel'?5:Math.min(1.5,1+(moduleLinked(s,a)?.25:0)+(a.boostUntil>s.game.time?.25:0));
 }
-export function emitElement(s:Ship,a:ModuleSlot,j:ElementJob,phase:'cast'|'hit',p?:Ship,pair?:ArchitectElement):void{s.game.events.emit('architectElement',{ship:s,slot:a.index,element:a.element,attack:j.attack,phase,id:j.id,x:j.x,y:j.y,z:j.z,tx:p?.pos.x??j.tx,ty:p?p.pos.y+12:j.ty,tz:p?.pos.z??j.tz,radius:j.radius||j.beam,pair,type:a.type,target:p?.id});}
+export function emitElement(s:Ship,a:ModuleSlot,j:ElementJob,phase:'cast'|'hit',p?:Ship,pair?:ArchitectElement,chain?:readonly {x:number;y:number;z:number}[]):void{s.game.events.emit('architectElement',{ship:s,slot:a.index,element:a.element,attack:j.attack,phase,id:j.id,x:j.x,y:j.y,z:j.z,tx:p?.pos.x??j.tx,ty:p?p.pos.y+12:j.ty,tz:p?.pos.z??j.tz,radius:j.radius||j.beam,pair,type:a.type,target:p?.id,chain});}
 function slow(t:Ship){buff(t,'debuff:architectCryo',3,m=>{m.speedMul=Math.min(m.speedMul,.8);});}
 function pull(s:Ship,t:Ship,x:number,z:number){if(t.mods.knockImmune||t.mods.ccImmune||t.mods.invulnerable)return;const a=s.architect!.elements;const old=a.pulls.find(p=>p.target===t.id);if(old){old.x=x;old.z=z;old.until=s.game.time+.5;}else a.pulls.push({target:t.id,x,z,until:s.game.time+.5});}
 /** Distance to the hull's physical vertical span, combined with its plan-view footprint. */
@@ -64,7 +66,7 @@ export function applyElementMark(s:Ship,a:ModuleSlot,t:Ship,underwater=false):vo
  const targets=chain?[t,...arsenalTeam(s,true).filter(v=>v!==t&&(underwater?canTrack(s,v):elementEligible(s,v))&&Math.hypot(v.pos.x-t.pos.x,v.pos.z-t.pos.z)<=600&&clearLine(s,t.pos.x,t.pos.z,v.pos.x,v.pos.z,t.pos.y+12,v.pos.y+12)===1).sort((a,b)=>a.pos.distanceTo(t.pos)-b.pos.distanceTo(t.pos)||a.id-b.id).slice(0,2)]:pair==='gravity+prism'?[t]:arsenalTeam(s,true).filter(v=>v.alive&&v.team!==s.team&&(!v.submerged||underwater)&&inElementBlast(v,t.pos.x,t.pos.y+12,t.pos.z,radius)&&clearLine(s,t.pos.x,t.pos.z,v.pos.x,v.pos.z,t.pos.y+12,v.pos.y+12)===1);
  for(const v of targets){const n=damage(s,a,v,amount,'reaction',false,underwater,other);if(n>0){if(pair==='cryo+storm')slow(v);if(pair==='furnace+gravity'||pair==='cryo+gravity'||pair==='gravity+storm'&&v===t)pull(s,v,t.pos.x,t.pos.z);}}
  if(!s.alive||!s.architect)return;
- const p=elementOrigin(s,a),j=job(s,a,'reaction',p,t.pos,amount,radius);emitElement(s,a,j,'hit',t,other);
+ const p=elementOrigin(s,a),j=job(s,a,'reaction',p,t.pos,amount,radius);emitElement(s,a,j,'hit',t,other,chain?targets.slice(1).map(v=>({x:v.pos.x,y:v.pos.y+12,z:v.pos.z})):undefined);
  if(moduleLinked(s,a)){const v=arsenalTeam(s,true).filter(v=>!targets.includes(v)&&(underwater?canTrack(s,v):elementEligible(s,v))&&Math.hypot(v.pos.x-t.pos.x,v.pos.z-t.pos.z)<=600&&clearLine(s,t.pos.x,t.pos.z,v.pos.x,v.pos.z,t.pos.y+12,v.pos.y+12)===1).sort((a,b)=>a.pos.distanceTo(t.pos)-b.pos.distanceTo(t.pos)||a.id-b.id)[0];if(v){damage(s,a,v,amount*.5,'reaction',false,underwater,other);emitElement(s,a,j,'hit',v,other);}}
 }
 function job(s:Ship,a:ModuleSlot,attack:ElementAttack,p:{x:number;y:number;z:number},t:{x:number;y:number;z:number},damage:number,radius=0):ElementJob{return{id:++s.architect!.elements.serial,slot:a.index,element:a.element,attack,x:p.x,y:p.y,z:p.z,tx:t.x,ty:t.y+12,tz:t.z,elapsed:-.25,next:0,count:1,interval:.3,damage,radius,beam:0,chain:false,pull:false,slow:false,channel:true,mark:true,type:a.type,variant:a.skill,target:0,underwater:a.type==='abyss',support:['sentinel','restoration','bastion','resonance'].includes(a.type),projectile:false,speed:0,life:0};}

@@ -11,11 +11,14 @@ import { reducedMotion } from './ArchitectPose';
 import { elementalTurretGeometry } from './ArchitectModel';
 import { getVectorMobilityStatus } from '../skills/misc/ArchitectRuntime';
 import { quality } from './Quality';
+import { ArchitectReactionFx } from './ArchitectReactionFx';
 const vertex=`attribute vec4 tint;varying vec4 vTint;varying vec3 vNormal;varying vec3 vEye;void main(){vTint=tint;mat3 im=mat3(instanceMatrix);vec3 n=normal/vec3(dot(im[0],im[0]),dot(im[1],im[1]),dot(im[2],im[2]));vec4 mv=modelViewMatrix*instanceMatrix*vec4(position,1.);vNormal=normalize(normalMatrix*im*n);vEye=-mv.xyz;gl_Position=projectionMatrix*mv;}`;
 const fragment=`varying vec4 vTint;varying vec3 vNormal;varying vec3 vEye;void main(){float rim=pow(1.-abs(dot(normalize(vNormal),normalize(vEye))),1.5);gl_FragColor=vec4(vTint.rgb*(.8+rim*.8),vTint.a*(.25+rim*.65));}`;
 const CAP=256,mat=new Matrix4(),pos=new Vector3(),scale=new Vector3(),q=new Quaternion(),color=new Color(),up=new Vector3(0,1,0),axis=new Vector3(0,0,1);
 interface Pulse {e:ElementEvent;age:number;life:number}
 const elementClips={furnace:['blast-shock','blast-heavy'],cryo:['ward-rise','cut-light'],storm:['arcane-charge','energy-pulse'],gravity:['phase-arrival','blast-heavy'],prism:['energy-charge','energy-heavy']} as const;
+/** Third layer of a reaction's sting, on top of both elements' impacts. */
+const reactionStings:Record<string,string>={'cryo+furnace':'sonniss-splash','furnace+storm':'thunder','furnace+gravity':'collapse','furnace+prism':'energy-heavy','cryo+storm':'zap','cryo+gravity':'collapse','cryo+prism':'cut-heavy','gravity+storm':'thunder','prism+storm':'laser','gravity+prism':'phase-arrival'};
 const specialistClips:Partial<Record<ArchitectType,readonly [string,string]>>={
  sentinel:['sensor-ping','sensor-ping'],abyss:['torpedo-launch','sonniss-depth'],restoration:['ward-rise','energy-pulse'],
  bastion:['shield','ward-rise'],resonance:['energy-charge','zap'],swarm:['missile-launch','blast-shock'],
@@ -24,30 +27,42 @@ const specialistClips:Partial<Record<ArchitectType,readonly [string,string]>>={
 export class ArchitectElementFx {
  private pools:InstancedMesh[]=[];private pulses:Pulse[]=[];private off:(()=>void)[]=[];
  private heard=new Map<number,number>();private locals:Ship[]=[];private reduced=reducedMotion();private detail=quality().particles;
+ readonly reactions:ArchitectReactionFx;
  constructor(private scene:Scene,private game:Game){
+  this.reactions=new ArchitectReactionFx(scene,game);
   for(const [i,geo] of [new TorusGeometry(1,.035,5,48),new SphereGeometry(1,12,8),new OctahedronGeometry(1),new CylinderGeometry(1,1,1,8)].entries()){
    geo.setAttribute('tint',new InstancedBufferAttribute(new Float32Array(CAP*4),4).setUsage(DynamicDrawUsage));
    const mesh=new InstancedMesh(geo,new ShaderMaterial({vertexShader:vertex,fragmentShader:fragment,transparent:true,depthWrite:false,blending:AdditiveBlending,toneMapped:false}),CAP);mesh.name=`architect-elements-${i}`;mesh.count=0;mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(DynamicDrawUsage);scene.add(mesh);this.pools.push(mesh);
   }
-  const reset=(s:Ship)=>{this.pulses=this.pulses.filter(p=>p.e.ship!==s);this.heard.delete(s.id);};
+  const reset=(s:Ship)=>{this.pulses=this.pulses.filter(p=>p.e.ship!==s);this.heard.delete(s.id);this.reactions.drop(s);};
   this.off.push(game.events.on('architectElement',e=>{
    if(game.over)return;const impact=e.phase==='hit';
-   // Merge coincident elemental impacts while keeping each emitter's charge visible.
-   if(impact&&this.pulses.some(p=>p.age<.04&&p.e.ship===e.ship&&p.e.element===e.element&&p.e.phase==='hit'&&Math.hypot(p.e.tx-e.tx,p.e.tz-e.tz)<80))return;
+   if(impact&&e.pair){this.reaction(e);return;}
+   // Merge coincident elemental impacts of one attack while keeping each emitter's charge visible.
+   if(impact&&this.pulses.some(p=>p.age<.04&&p.e.ship===e.ship&&p.e.element===e.element&&p.e.attack===e.attack&&p.e.phase==='hit'&&Math.hypot(p.e.tx-e.tx,p.e.tz-e.tz)<80))return;
    this.pulses.push({e,age:0,life:impact?(e.attack==='reaction'?.8:1):.4});if(this.pulses.length>160)this.pulses.shift();
    if(game.time-(this.heard.get(e.ship.id)??-100)<.1)return;this.heard.set(e.ship.id,game.time);
    const clips=(e.attack==='skill'&&e.type?specialistClips[e.type]:undefined)??elementClips[e.element];
    const local=this.locals.includes(e.ship);audio.play(impact?'explosion':'charge',impact?e.tx:e.x,impact?e.ty:e.y,impact?e.tz:e.z,impact?2:100,(local?.42:.22)*architectBatterySkillGain(game),{category:'ability',priority:local?3:1,asset:`${import.meta.env.BASE_URL}audio/${clips[impact?1:0]}.m4a`,rate:e.attack==='skill'?.88:1});
-  }),game.events.on('respawn',e=>reset(e.ship)),game.events.on('shipChanged',e=>reset(e.old)),game.events.on('shift',e=>reset(e.ship)),game.events.on('shipSunk',e=>reset(e.ship)),game.events.on('gameOver',()=>{this.pulses=[];this.heard.clear();}));
+  }),game.events.on('respawn',e=>reset(e.ship)),game.events.on('shipChanged',e=>reset(e.old)),game.events.on('shift',e=>reset(e.ship)),game.events.on('shipSunk',e=>reset(e.ship)),game.events.on('gameOver',()=>{this.pulses=[];this.heard.clear();this.reactions.clear();}));
  }
- update(dt:number,locals:Ship[]=[]){this.locals=locals;for(const p of this.pulses)p.age+=dt;this.pulses=this.pulses.filter(p=>p.age<p.life);}
- get count(){return this.pools.reduce((n,p)=>n+p.count,0);}
+ /** A reaction is its own burst with a layered sting; it never merges into the hit that set it off. */
+ private reaction(e:ElementEvent){
+  this.reactions.add(e);const local=this.locals.includes(e.ship),gain=(local?.5:.3)*architectBatterySkillGain(this.game),key=[e.pair!,e.element].sort().join('+'),url=(clip:string)=>`${import.meta.env.BASE_URL}audio/${clip}.m4a`;
+  for(const [i,el] of [e.pair!,e.element].entries())audio.play('explosion',e.tx,e.ty,e.tz,2,gain*(i?1:.8),{category:'ability',priority:local?3:2,asset:url(elementClips[el][1]),rate:i?1:.82});
+  audio.play('charge',e.tx,e.ty,e.tz,2,gain*.75,{category:'ability',priority:local?3:2,asset:url(reactionStings[key]),rate:1.15});
+ }
+ update(dt:number,locals:Ship[]=[]){this.locals=locals;for(const p of this.pulses)p.age+=dt;this.pulses=this.pulses.filter(p=>p.age<p.life);this.reactions.update();}
+ get count(){return this.pools.reduce((n,p)=>n+p.count,0)+this.reactions.count;}
+ get distortions(){return this.reactions.distortions;}
+ setFog(color:Color,density:number){this.reactions.setFog(color,density);}
  private put(i:number,x:number,y:number,z:number,sx:number,sy:number,sz:number,c:number,a:number,rotation:Quaternion=q.identity()){
   const p=this.pools[i];if(p.count>=CAP||a<.005||Math.min(sx,sy,sz)<=0)return;const n=p.count++;mat.compose(pos.set(x,y,z),rotation,scale.set(sx,sy,sz));p.setMatrixAt(n,mat);color.setHex(c);(p.geometry.getAttribute('tint') as InstancedBufferAttribute).setXYZW(n,color.r,color.g,color.b,a);
  }
  private ring(x:number,y:number,z:number,r:number,c:number,a:number,tilt=Math.PI/2){q.setFromAxisAngle(new Vector3(1,0,0),tilt);this.put(0,x,y,z,r,r,r,c,a,q);}
  private tube(ax:number,ay:number,az:number,bx:number,by:number,bz:number,r:number,c:number,a:number){const d=new Vector3(bx-ax,by-ay,bz-az),len=d.length();if(len<.01)return;q.setFromUnitVectors(up,d.divideScalar(len));this.put(3,(ax+bx)/2,(ay+by)/2,(az+bz)/2,r,len,r,c,a,q);}
- prepare(team:Team|-1){
+ prepare(team:Team|-1,heightPx=720){
+  this.reactions.prepare(team,heightPx);
   for(const p of this.pools)p.count=0;
   if(!this.game.over)for(const p of [...this.pulses].sort((a,b)=>Number(b.e.ship.humanIndex>=0)-Number(a.e.ship.humanIndex>=0))){
    const e=p.e;if(!e.ship.alive||!e.ship.architect||e.ship.mods.banished||team!==-1&&!contactVisible(e.ship,team))continue;
@@ -115,5 +130,5 @@ export class ArchitectElementFx {
   if(!this.game.over)for(const s of this.game.ships){if(!s.alive||!s.architect||team!==-1&&!contactVisible(s,team))continue;for(const j of s.architect.elements.jobs){if(!j.projectile)continue;const c=ELEMENT_STYLE[j.element].color,dx=j.tx-j.x,dy=j.ty-j.y,dz=j.tz-j.z,len=Math.hypot(dx,dy,dz)||1;this.put(1,j.x,j.y,j.z,5,5,5,c,1);this.tube(j.x-dx/len*45,j.y-dy/len*45,j.z-dz/len*45,j.x,j.y,j.z,j.underwater?3:2,c,.7);}}
   for(const p of this.pools){p.visible=p.count>0;if(!p.count)continue;for(const attribute of [p.instanceMatrix,p.geometry.getAttribute('tint') as InstancedBufferAttribute]){attribute.clearUpdateRanges();attribute.addUpdateRange(0,p.count*attribute.itemSize);attribute.needsUpdate=true;}}
  }
- dispose(){for(const off of this.off)off();for(const p of this.pools){this.scene.remove(p);p.dispose();p.geometry.dispose();(p.material as ShaderMaterial).dispose();}this.pulses=[];this.heard.clear();}
+ dispose(){for(const off of this.off)off();for(const p of this.pools){this.scene.remove(p);p.dispose();p.geometry.dispose();(p.material as ShaderMaterial).dispose();}this.pulses=[];this.heard.clear();this.reactions.dispose();}
 }

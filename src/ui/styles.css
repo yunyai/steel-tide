@@ -4002,8 +4002,13 @@ select {
 .module-cooldowns i { width:21px; height:21px; display:grid; place-items:center; border-radius:50%; background:conic-gradient(var(--cool-color,#a4e8ff) calc(var(--ready)*1turn),#14232eaa 0); border:1px solid #111d28; color:#fff; font:10px sans-serif; text-shadow:0 1px 2px #000; box-shadow:0 0 0 2px #11202bc9; }
 @media(max-width:700px){.arsenal-choices{grid-template-columns:1fr;}}
 .pop.elemental-hit b,.pop.elemental-hit span { color:var(--accent); }
-.pop.elemental-reaction { border-left:3px solid var(--accent); padding:4px 9px; background:linear-gradient(90deg,#07151ee0,transparent); }
-.pop.elemental-reaction b { color:var(--accent); font-size:1.15em; text-shadow:0 0 12px var(--accent),0 2px 3px #000; }
+.pop.elemental-reaction { border-left:3px solid var(--accent); border-right:3px solid var(--accent2,var(--accent)); padding:5px 11px; background:linear-gradient(90deg,#07151ee8,#07151e99 65%,#07151e40); clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px); }
+.pop.elemental-reaction small { color:var(--accent2,var(--accent)); letter-spacing:.04em; }
+.pop.elemental-reaction b { color:var(--accent); font-size:1.4em; text-shadow:0 0 12px var(--accent),0 0 22px var(--accent2,var(--accent)),0 2px 3px #000; }
+/* A reaction lands harder than a hit: it overshoots, then settles. */
+.pop.elemental-reaction.fresh b { animation:reaction-pop .42s cubic-bezier(.2,1.6,.4,1); }
+@keyframes reaction-pop { from { transform:scale(1.35); opacity:0; filter:brightness(2.2); } 45% { opacity:1; } }
+@media (prefers-reduced-motion: reduce) { .pop.elemental-reaction.fresh b { animation:none; } }
 
 .arsenal-editor .arsenal-disclosure { padding:5px 10px; font-size:11px; color:#c1d8e3; background:transparent; border-color:var(--edge-hi); border-radius:0; }
 .arsenal-editor .arsenal-presets button { flex:1 1 auto; padding:9px 10px; border:0; border-radius:0; white-space:nowrap; background:var(--glass-hi); font-family:var(--display); font-size:12px; font-weight:600; }

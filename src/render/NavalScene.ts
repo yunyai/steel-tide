@@ -129,6 +129,7 @@ export class NavalScene implements BattleScene {
     this.skillFx.setFog(color, density);
     this.batteryFx.setFog(color, density);
     this.dashFx.setFog(color, density);
+    this.elementFx.setFog(color, density);
   }
 
   dispose(): void {
@@ -252,14 +253,14 @@ export class NavalScene implements BattleScene {
     }
   }
 
-  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions,...this.batteryFx.distortions]; }
+  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions,...this.batteryFx.distortions,...this.elementFx.distortions]; }
 
   prepare(vp: Viewport, heightPx: number): void {
     this.fleetFx.prepare(vp.team);
     this.architectFx.prepare(vp.team, heightPx);
     this.batteryFx.prepare(vp.team, heightPx);
     this.dashFx.prepare(vp.team, heightPx);
-    this.elementFx.prepare(vp.team);
+    this.elementFx.prepare(vp.team, heightPx);
     this.crossFx.prepare(vp.team, heightPx);
     this.stepperFx.prepare(vp.team, heightPx);
     this.torpedoAim.update(this.aiming.get(vp.camera), heightPx);

@@ -196,7 +196,8 @@ export class Feedback {
         if (h.ship === pc.ship) this.hit(h.damage, h.attacker, h.attacker.pos.x, h.attacker.pos.z);
         if (!mine(h.attacker) || h.ship.team === team || h.damage <= 0) return;
         const reaction=h.skill.reaction,element=h.skill.element;
-        this.add(h.ship,reaction?`reaction:${[...reaction].sort().join('+')}`:`skill:${h.skill.id}`,'skill',h.damage,reaction?`${ELEMENT_STYLE[reaction[0]].short} + ${ELEMENT_STYLE[reaction[1]].short} · ${h.skill.short}`:h.skill.short,element?`#${ELEMENT_STYLE[element].color.toString(16).padStart(6,'0')}`:accentCss(h.skill.accent));
+        const hex=(e:keyof typeof ELEMENT_STYLE)=>`#${ELEMENT_STYLE[e].color.toString(16).padStart(6,'0')}`;
+        this.add(h.ship,reaction?`reaction:${[...reaction].sort().join('+')}`:`skill:${h.skill.id}`,'skill',h.damage,reaction?`${ELEMENT_STYLE[reaction[0]].short} + ${ELEMENT_STYLE[reaction[1]].short} · ${h.skill.short}`:h.skill.short,element?hex(element):accentCss(h.skill.accent),reaction?hex(reaction[0]):'');
         this.tick(false);
       }),
       ev.on('shipSunk', (s) => {
@@ -218,7 +219,7 @@ export class Feedback {
     this.off = [];
   }
 
-  private add(target: Ship, key: string, kind: PopKind, damage: number, title = '', accent = ''): void {
+  private add(target: Ship, key: string, kind: PopKind, damage: number, title = '', accent = '', accent2 = ''): void {
     const now = this.clock;
     const merge = kind === 'skill' ? SKILL_MERGE : MERGE;
     let p = this.pops.find((q) => q.live && q.target === target && q.key === key && now - q.last < merge);
@@ -232,6 +233,8 @@ export class Feedback {
       p.damage = 0;
       p.title = title;
       p.el.style.setProperty('--accent', accent || 'var(--cyan)');
+      if (accent2) p.el.style.setProperty('--accent2', accent2);
+      else p.el.style.removeProperty('--accent2');
       p.born = now;
       p.live = true;
       // Stack above any popup already over this target.
