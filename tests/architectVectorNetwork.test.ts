@@ -34,3 +34,20 @@ it('replays both mobility clocks, charge depletion, refits and Search identicall
  // The escort flew, settled on the water between windows, and lifts again for the second cast.
  expect(peak).toBeGreaterThan(80);expect(between).toEqual(['deployed',null,0,null]);expect(s.architect!.slots[1].follow).not.toBeNull();
 });
+
+it('keeps stacked Vector thrusters, Hull Dash impacts and an ultimate refund identical on two peers',()=>{
+ const picks=defaultLoadout();for(let i=0;i<6;i++)picks[i]={type:'vector',skill:(i%2) as 0|1};
+ const config=navalRules.config({...DEFAULT_SETTINGS,type:'freeplay',era:'mixed'},[{pick:'architect',team:0,name:'Builder',architectLoadout:picks},{pick:'iowa',team:1,name:'Target'}],713);config.ai=[0,0];
+ const a=new Game(config),b=new Game(structuredClone(config)),x=new TurnApplier(a),y=new TurnApplier(b);
+ for(const g of [a,b]){g.map.heightAt=()=>-100;const [s,t]=g.humans();s.pos.set(0,0,1500);s.throttle=2;s.speed=0;s.secondaries=[];
+  t.pos.set(600,0,1540);t.hp=t.maxHp=1e8;t.throttle=2;t.speed=0;t.secondaries=[];}
+ let landed=0;a.events.on('architectDash',e=>{if(e.phase==='land')landed++;});
+ for(let k=0;k<200;k++){
+  const edge=k===0||k===30||k===60?{hd:1 as const}:k===90?{sk:7}:k===120?{sk:4}:null;
+  const turn:Turn={k,p:k===0?[[0,[0,4000,1500,0,-1]],[1,[0,0,0,0,-1]]]:k===90?[[0,[0,600,1500,0,-1]]]:undefined,e:edge?[[0,0,edge]]:undefined};
+  if(k===90)for(const g of [a,b])g.humans()[0].meter=1;
+  for(let tick=0;tick<TURN_TICKS;tick++){x.applyTick(turn,tick);y.applyTick(JSON.parse(JSON.stringify(turn)),tick);expect(x.hash()).toBe(y.hash());}
+ }
+ const [s,t]=a.humans();expect(landed).toBe(3);expect(t.hp).toBeLessThan(1e8);expect(s.mods.speedMul).toBeGreaterThan(1.3);
+ expect(s.architect!.ultimate).toBeNull();expect(s.skills[7].meter).toBeGreaterThan(.2);
+});

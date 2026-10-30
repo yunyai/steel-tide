@@ -66,6 +66,8 @@ function rail(s:Ship,x:number,y:number,z:number,tx:number,ty:number,tz:number,wi
 export function updateArchitectUltimate(s:Ship,dt:number):void {
   const a=s.architect,u=a?.ultimate;if(!a||!u)return;
   u.elapsed+=dt;
+  // Nothing left to command: stand down early and keep the unused charge.
+  if(u.members.every(i=>a.slots[i].state==='destroyed')){endArchitectUltimate(s);return;}
   if(u.elapsed<=1.5+1e-8)for(const i of u.members){const slot=a.slots[i];if(slot.entity?.alive)updateModulePath(s,slot,dt);}
   if(u.elapsed+1e-8>=1.5){
     for(const i of u.members){
@@ -90,7 +92,6 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
           for(const t of victims)ultimateElementHit(s,slot,t,'assembly');
         }
       }
-      else s.failSkill('Final Assembly: every participating module was destroyed');
     }
     if(u.elapsed+1e-8>=4)endArchitectUltimate(s);
   }else if(u.kind==='killbox'){
@@ -158,6 +159,9 @@ export function endArchitectUltimate(s:Ship,recalling=false):void {
       if(slot.path)slot.path.settling=true;
     }
   }
-  const st=s.skills[indexOf(u.kind)];if(st){st.time=0;if(st.active){st.active=false;s.game.events.emit('skillEnd',{ship:s,index:st.index});}}
+  const st=s.skills[indexOf(u.kind)];
+  // Ending early (Recall, or every platform lost) refunds the meter for the time left; a sunk Architect keeps nothing.
+  if(st&&s.alive&&st.spec.duration>0)st.meter=Math.max(st.meter,Math.max(0,Math.min(1,st.time/st.spec.duration)));
+  if(st){st.time=0;if(st.active){st.active=false;s.game.events.emit('skillEnd',{ship:s,index:st.index});}}
   s.game.events.emit('architectCommand',{ship:s,kind:'end'});
 }

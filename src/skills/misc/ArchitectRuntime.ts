@@ -3,12 +3,12 @@ import { ARCHETYPES, validSelection, copyLoadout, type ArchitectLoadout, type Ar
 import { newElementState, updateElements, moduleLinked, elementTarget, fireCapacitorBolt, type ArchitectElement, type ElementState } from './ArchitectElements';
 import { ensureArchitectHealth, detachArchitectHealth, returnArchitectHealth, rebuildArchitectHealth, ARCHITECT_FULL_HP, MODULE_COMBAT_HP, PLATFORM_HEALTH_RATIO } from './ArchitectHealth';
 import { Vector3 } from 'three';
-import type { Ship, TurretState } from '../../ships/Ship';
+import type { Mods, Ship, TurretState } from '../../ships/Ship';
 import type { SkillSpec } from '../../core/types';
 import { canTrack } from '../../core/Targeting';
 import { MAP_HALF } from '../../config';
-import { bearingTo, DEG, wrapDeg } from '../../core/math';
-import { segmentHitsHull } from '../../core/hull';
+import { bearingTo, DEG, wrapAngle, wrapDeg } from '../../core/math';
+import { distToHull, segmentHitsHull } from '../../core/hull';
 import { hurt } from '../kit';
 import { safeStep, type Landing } from './StepperRuntime';
 import { updateArchitectUltimate, endArchitectUltimate, type ArchitectUltimate } from './ArchitectUltimates';
@@ -28,7 +28,7 @@ export interface ArchitectState {
   links:{a:number;b:number}[];linkUntil:number;linkTick:number;
   ultimate:ArchitectUltimate|null;
   clearing:boolean;
-  drive:{dx:number;dz:number;elapsed:number;distance:number;moving:boolean}|null;
+  drive:{dx:number;dz:number;elapsed:number;distance:number;moving:boolean;from:number;travelled:number;hit:number[]}|null;
   capacitorReadyAt:number;
 }
 export interface ArchitectPlatform { owner:Ship; index:number }
@@ -48,28 +48,56 @@ export interface VectorMobilityState {
   dashCharges:number;dashRechargeAt:number;mobileReadyAt:number;mobileUntil:number;mobileDuration:number;
 }
 const DASH_TIME=.55,DASH_RECHARGE=10,MOBILE_COOLDOWN=14,HOVER_SPEED=1200,HOVER_CLEARANCE=80,HOVER_LANDING=1.2;
+/** Hull Dash pose: the bow swings onto the dash bearing, the hull lifts clear of the water and sets back down. */
+const DASH_TURN=.15,DASH_RISE=.12,DASH_LIFT=50;
+/** Per living Vector, with no cap: the arsenal is meant to stack into something ridiculous. */
+export const VECTOR_THRUST={speed:.06,accel:.2,turn:.12,rudder:.12,traverse:.15,escort:.15} as const;
 function livingVectors(s:Ship):ModuleSlot[]{return s.architect?.slots.filter(v=>v.type==='vector'&&v.state!=='destroyed'&&v.hp>0&&(!v.entity||v.entity.alive&&v.entity.hp>0))??[];}
+/** Living Vectors and their specializations; destroyed Vectors stop counting until rebuilt. */
+export function vectorStats(s:Ship):{count:number;dashSpecs:number;mobileSpecs:number}{
+  const v=livingVectors(s);return {count:v.length,dashSpecs:v.filter(x=>x.skill===0).length,mobileSpecs:v.filter(x=>x.skill===1).length};
+}
+/** Thrusters: every living Vector adds speed, acceleration, helm and turret traverse. */
+export function applyVectorThrusters(s:Ship,m:Mods):void{
+  const n=livingVectors(s).length;if(!n)return;
+  m.speedMul*=1+VECTOR_THRUST.speed*n;m.accelMul*=1+VECTOR_THRUST.accel*n;m.turnMul*=1+VECTOR_THRUST.turn*n;m.rudderMul*=1+VECTOR_THRUST.rudder*n;m.traverseMul*=1+VECTOR_THRUST.traverse*n;
+}
+/** Dash specializations add reach and charges; Mobile Battery specializations add time and shorten the recharge. */
+export function vectorTuning(s:Ship){
+  const {count,dashSpecs,mobileSpecs}=vectorStats(s),extraDash=Math.max(0,dashSpecs-1),extraMobile=Math.max(0,mobileSpecs-1);
+  let cooldown=MOBILE_COOLDOWN;for(let i=0;i<extraMobile;i++)cooldown*=.85;
+  const extra=Math.max(0,count-1);
+  return {count,dashSpecs,mobileSpecs,dashDistance:dashSpecs?1100+150*extraDash:800,dashCharges:2+extraDash,mobileDuration:mobileSpecs?14+3*extraMobile:10,mobileCooldown:cooldown,
+    pathDamage:15000+3000*extra,landDamage:25000+5000*extra,landRadius:450+50*extra,escortSpeed:HOVER_SPEED*(1+VECTOR_THRUST.escort*count)};
+}
+const dashSpec=(s:Ship):SkillSpec=>({...s.skills[1].spec,id:'architectHullDash',name:'Hull Dash',short:'HULL DASH',accent:ARCHETYPES.vector.color,ult:false});
 function vectorMovementBlock(s:Ship):string{
   return !s.alive?'Ship sunk':!livingVectors(s).length?'Requires a living Vector':s.architect?.ultimate?.kind==='assembly'?'Final Assembly active':s.stepper?.cross||s.stepper?.flicker||s.stepper?.rush?'Stepping':s.mods.banished?'Banished':s.mods.stunned?'Stunned':s.mods.rooted?'Rooted':s.mods.feared?'Feared':'';
 }
 /** A pure snapshot lets presentation read timers without advancing authoritative state. */
-function vectorCharges(s:Ship):{charges:number;rechargeAt:number}{
-  let charges=s.vectorMobility.dashCharges,rechargeAt=s.vectorMobility.dashRechargeAt;
-  while(charges<2&&rechargeAt>0&&s.game.time+1e-8>=rechargeAt){charges++;rechargeAt=charges<2?rechargeAt+DASH_RECHARGE:0;}
+function vectorCharges(s:Ship,max=vectorTuning(s).dashCharges):{charges:number;rechargeAt:number}{
+  let charges=Math.min(max,s.vectorMobility.dashCharges),rechargeAt=s.vectorMobility.dashRechargeAt;
+  if(charges<max&&!rechargeAt)rechargeAt=s.game.time+DASH_RECHARGE;
+  while(charges<max&&rechargeAt>0&&s.game.time+1e-8>=rechargeAt){charges++;rechargeAt=charges<max?rechargeAt+DASH_RECHARGE:0;}
+  if(charges>=max)rechargeAt=0;
   return {charges,rechargeAt};
 }
+/** A lost Vector clamps spare charges; a rebuilt or refitted one starts recharging the new slot. */
 export function updateVectorMobilityTimers(s:Ship):void{
-  if(s.vectorMobility.dashCharges>=2||!s.vectorMobility.dashRechargeAt)return;
-  const q=vectorCharges(s);s.vectorMobility.dashCharges=q.charges;s.vectorMobility.dashRechargeAt=q.rechargeAt;
+  const max=vectorTuning(s).dashCharges,v=s.vectorMobility;
+  if(v.dashCharges===max&&!v.dashRechargeAt)return;
+  const q=vectorCharges(s,max);v.dashCharges=q.charges;v.dashRechargeAt=q.rechargeAt;
 }
 export function getVectorMobilityStatus(s:Ship){
   const a=s.architect;if(!a)return null;
-  const vectors=livingVectors(s),q=vectorCharges(s),v=s.vectorMobility,reason=vectorMovementBlock(s);
+  const vectors=livingVectors(s),tuning=vectorTuning(s),q=vectorCharges(s,tuning.dashCharges),v=s.vectorMobility,reason=vectorMovementBlock(s);
   const escort=a.ultimate?.kind==='killbox'?'Grand Battery active':a.ultimate?.kind==='citadel'?'Citadel active':!a.slots.some(slot=>slot.state==='deployed'&&slot.entity?.alive)?'No deployed platforms':'';
   const cooldownRemaining=Math.max(0,v.mobileReadyAt-s.game.time),activeRemaining=Math.max(0,v.mobileUntil-s.game.time);
-  return {unlocked:vectors.length>0,
-    hullDash:{charges:q.charges,maxCharges:2,rechargeRemaining:q.rechargeAt?Math.max(0,q.rechargeAt-s.game.time):0,rechargeDuration:DASH_RECHARGE,activeRemaining:a.drive?Math.max(0,DASH_TIME-a.drive.elapsed):0,duration:DASH_TIME,distance:vectors.some(slot=>slot.skill===0)?1100:800,blockedReason:reason||(a.drive?'Hull Dash active':q.charges<=0?'Hull Dash recharging':'')},
-    mobileBattery:{cooldownRemaining,cooldownDuration:MOBILE_COOLDOWN,activeRemaining,duration:activeRemaining>0?v.mobileDuration:vectors.some(slot=>slot.skill===1)?14:10,blockedReason:reason||(cooldownRemaining>0?'Mobile Battery recharging':escort)},
+  // Equipped but all destroyed: the soonest rebuild, for the greyed-out HUD tiles.
+  const rebuild=vectors.length?0:Math.min(Infinity,...a.slots.filter(slot=>slot.type==='vector'&&slot.state==='destroyed').map(slot=>Math.max(0,slot.rebuild)));
+  return {unlocked:vectors.length>0,equipped:a.slots.some(slot=>slot.type==='vector'),vectors:vectors.length,rebuildRemaining:Number.isFinite(rebuild)?rebuild:0,
+    hullDash:{charges:q.charges,maxCharges:tuning.dashCharges,rechargeRemaining:q.rechargeAt?Math.max(0,q.rechargeAt-s.game.time):0,rechargeDuration:DASH_RECHARGE,activeRemaining:a.drive?Math.max(0,DASH_TIME-a.drive.elapsed):0,duration:DASH_TIME,distance:tuning.dashDistance,pathDamage:tuning.pathDamage,landDamage:tuning.landDamage,landRadius:tuning.landRadius,blockedReason:reason||(a.drive?'Hull Dash active':q.charges<=0?'Hull Dash recharging':'')},
+    mobileBattery:{cooldownRemaining,cooldownDuration:tuning.mobileCooldown,activeRemaining,duration:activeRemaining>0?v.mobileDuration:tuning.mobileDuration,blockedReason:reason||(cooldownRemaining>0?'Mobile Battery recharging':escort)},
   };
 }
 export function activateArchitectHullDash(s:Ship):boolean{
@@ -78,16 +106,17 @@ export function activateArchitectHullDash(s:Ship):boolean{
   const dx=s.control.aimX-s.pos.x,dz=s.control.aimZ-s.pos.z,d=Math.hypot(dx,dz);
   if(!Number.isFinite(d)||d<1)return s.failSkill('Hull Dash: aim away from the hull');
   const distance=Math.min(d,status.hullDash.distance),step=Math.min(8,distance);
-  if(!architectStepLegal(s,s.pos.x+dx/d*step,s.pos.z+dz/d*step))return s.failSkill('Hull Dash: movement blocked');
+  if(!architectStepLegal(s,s.pos.x+dx/d*step,s.pos.z+dz/d*step,true))return s.failSkill('Hull Dash: movement blocked');
   updateVectorMobilityTimers(s);const v=s.vectorMobility;
-  if(v.dashCharges===2)v.dashRechargeAt=s.game.time+DASH_RECHARGE;
-  v.dashCharges--;a.drive={dx:dx/d,dz:dz/d,elapsed:0,distance,moving:false};
+  if(v.dashCharges===status.hullDash.maxCharges)v.dashRechargeAt=s.game.time+DASH_RECHARGE;
+  v.dashCharges--;a.drive={dx:dx/d,dz:dz/d,elapsed:0,distance,moving:false,from:s.heading,travelled:0,hit:[]};
+  s.game.events.emit('architectDash',{ship:s,phase:'launch',x:s.pos.x,z:s.pos.z,radius:0,vectors:status.vectors});
   return true;
 }
 export function activateArchitectMobileBattery(s:Ship):boolean{
   const status=getVectorMobilityStatus(s),a=s.architect;if(!a||!status)return false;
   if(status.mobileBattery.blockedReason)return s.failSkill(status.mobileBattery.blockedReason);
-  const v=s.vectorMobility;v.mobileDuration=status.mobileBattery.duration;v.mobileUntil=s.game.time+v.mobileDuration;v.mobileReadyAt=s.game.time+MOBILE_COOLDOWN;
+  const v=s.vectorMobility;v.mobileDuration=status.mobileBattery.duration;v.mobileUntil=s.game.time+v.mobileDuration;v.mobileReadyAt=s.game.time+status.mobileBattery.cooldownDuration;
   const escorts=a.slots.filter(slot=>slot.state==='deployed'&&slot.entity?.alive),rng=s.game.rng;
   // Shuffled radius bands keep escorts apart; altitude, tilt and pace are drawn per platform.
   const bands=escorts.map((_,n)=>n);
@@ -104,11 +133,11 @@ export function hoverPoint(s:Ship,f:HoverOrbit):{x:number;y:number;z:number} {
   const x=Math.max(-lim,Math.min(lim,s.pos.x+Math.sin(f.angle)*r)),z=Math.max(-lim,Math.min(lim,s.pos.z-Math.cos(f.angle)*r));
   return {x,y:Math.max(f.height+f.tilt*Math.sin(f.angle+f.phase)+8*Math.sin(s.game.time*1.7+f.phase*3),s.game.map.heightAt(x,z)+HOVER_CLEARANCE+20),z};
 }
-function moveHovering(s:Ship,slot:ModuleSlot,dt:number):void {
+function moveHovering(s:Ship,slot:ModuleSlot,dt:number,speed:number):void {
   const m=slot.entity!,f=slot.follow!;f.angle+=f.rate*dt;
   const t=hoverPoint(s,f),dx=t.x-m.pos.x,dy=t.y-m.pos.y,dz=t.z-m.pos.z,d=Math.hypot(dx,dy,dz);
   // Eases into the moving orbit point instead of snapping onto it.
-  const k=Math.min(1,Math.min(HOVER_SPEED,150+d*4)*dt/Math.max(1e-6,d)),x=m.pos.x+dx*k,z=m.pos.z+dz*k,h=Math.hypot(dx,dz);
+  const k=Math.min(1,Math.min(speed,150+d*4)*dt/Math.max(1e-6,d)),x=m.pos.x+dx*k,z=m.pos.z+dz*k,h=Math.hypot(dx,dz);
   let y=m.pos.y+dy*k;
   const ahead=h>1?Math.min(150,h)/h:0,ground=Math.max(s.game.map.heightAt(x,z),s.game.map.heightAt(x+dx*ahead,z+dz*ahead))+HOVER_CLEARANCE;
   // Climb ahead of terrain at a bounded rate; never sink into the ground directly below.
@@ -129,35 +158,65 @@ function landHovering(s:Ship):void {
 }
 /** Protection ends immediately on interruption, collision, Vector loss or the last motion tick. */
 export function architectDashDamageReduction(s:Ship):number{return s.architect?.drive?.moving&&!vectorMovementBlock(s)? .7:0;}
-function architectStepLegal(m:Ship,x:number,z:number):boolean{
+/** Enemy hulls never block a dash: it barrels through and flings them aside. Terrain, walls and allies still do. */
+function architectStepLegal(m:Ship,x:number,z:number,ignoreEnemies=false):boolean{
   const owner=m.architectPlatform?.owner??m,bottom=m.pos.y-m.spec.draft,top=m.pos.y+m.spec.freeboard+30;
-  return safeStep(m,x,z,m.heading,false,[],o=>o.architectDrone?.owner===owner||o.pos.y-o.spec.draft>top||bottom>o.pos.y+o.spec.freeboard+30);
+  return safeStep(m,x,z,m.heading,ignoreEnemies,[],o=>o.architectDrone?.owner===owner||o.pos.y-o.spec.draft>top||bottom>o.pos.y+o.spec.freeboard+30);
 }
 /** Small swept steps stop at the last legal footprint, including thin terrain and walls. */
-function moveArchitectLegally(m:Ship,x:number,z:number):boolean{
+function moveArchitectLegally(m:Ship,x:number,z:number,ignoreEnemies=false):boolean{
   const dx=x-m.pos.x,dz=z-m.pos.z,n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/8)),ox=m.pos.x,oz=m.pos.z;
   for(let i=1;i<=n;i++){
     const nx=ox+dx*i/n,nz=oz+dz*i/n;
-    if(!architectStepLegal(m,nx,nz))return false;
+    if(!architectStepLegal(m,nx,nz,ignoreEnemies))return false;
     m.pos.x=nx;m.pos.z=nz;
   }
   return true;
 }
+const dashEnemy=(s:Ship,t:Ship)=>t.alive&&t.team!==s.team&&!t.deep&&!t.mods.banished;
+/** Every enemy hull the dash sweeps is hit once and flung off the path. */
+function dashThrough(s:Ship,ox:number,oz:number,damage:number):void{
+  const p=s.architect!.drive!;
+  for(const t of s.game.ships){
+    if(!dashEnemy(s,t)||p.hit.includes(t.id)||segmentHitsHull(t,ox,oz,s.pos.x,s.pos.z,s.spec.beam/2+20)<0)continue;
+    p.hit.push(t.id);
+    const side=(t.pos.x-s.pos.x)*p.dz-(t.pos.z-s.pos.z)*p.dx<0?-1:1;
+    hurt(s,t,damage,dashSpec(s));
+    if(t.alive)t.shove(p.dz*side*380+p.dx*80,-p.dx*side*380+p.dz*80);
+  }
+}
+/** The hull sets down with a shockwave that shoves and damages enemies around it. */
+function dashLanding(s:Ship,tuning:ReturnType<typeof vectorTuning>):void{
+  for(const t of s.game.ships){
+    if(!dashEnemy(s,t)||distToHull(t,s.pos.x,s.pos.z)>tuning.landRadius)continue;
+    hurt(s,t,tuning.landDamage,dashSpec(s));
+    if(t.alive){const dx=t.pos.x-s.pos.x,dz=t.pos.z-s.pos.z,d=Math.hypot(dx,dz)||1;t.shove(dx/d*220,dz/d*220);}
+  }
+  s.game.events.emit('architectDash',{ship:s,phase:'land',x:s.pos.x,z:s.pos.z,radius:tuning.landRadius,vectors:tuning.count});
+}
+/** Height of the hull above the water partway through a dash. */
+export function dashLift(elapsed:number):number{return DASH_LIFT*smooth(elapsed/DASH_RISE)*smooth((DASH_TIME-elapsed)/DASH_RISE);}
 function updateArchitectDrive(s:Ship,dt:number):void{
   const a=s.architect!,p=a.drive;
   if(p){
-    if(vectorMovementBlock(s))a.drive=null;
-    else {const step=Math.min(dt,DASH_TIME-p.elapsed),d=p.distance*step/DASH_TIME;p.elapsed+=step;
-      const ox=s.pos.x,oz=s.pos.z,legal=moveArchitectLegally(s,s.pos.x+p.dx*d,s.pos.z+p.dz*d);p.moving=s.pos.x!==ox||s.pos.z!==oz;
-      if(!legal||p.elapsed>=DASH_TIME-1e-8)a.drive=null;
+    if(vectorMovementBlock(s)){a.drive=null;s.pos.y=0;}
+    else {const tuning=vectorTuning(s),step=Math.min(dt,DASH_TIME-p.elapsed),d=p.distance*step/DASH_TIME;p.elapsed+=step;
+      // The bow swings onto the dash bearing first, so the hull travels bow-first.
+      s.heading=wrapAngle(p.from+wrapAngle(bearingTo(0,0,p.dx,p.dz)-p.from)*smooth(p.elapsed/DASH_TURN));
+      const ox=s.pos.x,oz=s.pos.z,legal=moveArchitectLegally(s,s.pos.x+p.dx*d,s.pos.z+p.dz*d,true);p.moving=s.pos.x!==ox||s.pos.z!==oz;
+      p.travelled+=Math.hypot(s.pos.x-ox,s.pos.z-oz);
+      dashThrough(s,ox,oz,tuning.pathDamage);
+      s.pos.y=legal?dashLift(p.elapsed):0;
+      if(!legal||p.elapsed>=DASH_TIME-1e-8){a.drive=null;s.pos.y=0;if(p.travelled>1)dashLanding(s,tuning);}
     }
   }
   if(a.ultimate)return;
   if(s.vectorMobility.mobileUntil>s.game.time&&livingVectors(s).length){
+    const speed=vectorTuning(s).escortSpeed;
     // Crowd control holds escorts in place; the clock keeps running.
     if(!s.mods.stunned&&!s.mods.rooted&&!s.mods.feared&&!s.mods.banished)for(const slot of a.slots){
       const m=slot.entity;if(!slot.follow||slot.state!=='deployed'||!m?.alive||m.mods.stunned||m.mods.rooted||m.mods.feared||m.mods.banished)continue;
-      moveHovering(s,slot,dt);
+      moveHovering(s,slot,dt,speed);
     }
   }else if(a.slots.some(slot=>slot.follow))landHovering(s);
 }
@@ -326,6 +385,7 @@ export function destroyPlatform(m:Ship):void {
 }
 export function clearArchitect(s:Ship):void {
   const a=s.architect;if(!a)return;
+  if(a.drive)s.pos.y=0;
   s.game.battery.cancelOwner(s);
   const full=a.healthReady?a.fullHp:s.maxHp;
   s.maxHp=full;
@@ -436,6 +496,8 @@ export function turretInDock(s:Ship,t:TurretState):boolean {
 export function setArchitectLoadout(s:Ship,loadout:ArchitectLoadout):void{
  s.architectLoadout=copyLoadout(loadout);
  if(s.architect)for(const a of s.architect.slots){const pick=s.architectLoadout[a.index];a.type=pick.type;a.skill=pick.skill;a.element=ARCHETYPES[a.type].element;}
+ // A fresh hull starts with every dash charge its arsenal grants.
+ s.vectorMobility.dashCharges=vectorTuning(s).dashCharges;s.vectorMobility.dashRechargeAt=0;
 }
 export function refitArchitect(s:Ship,index:number,pick:import('../../data/architectLoadout').ArchitectSelection):boolean{
  const result=(accepted:boolean,reason?:string)=>{s.game.events.emit('architectRefit',{ship:s,index,pick:{...pick},accepted,...(reason?{reason}:{})});return accepted;};

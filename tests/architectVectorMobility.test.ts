@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { emptyGame, place, run } from './helpers';
 import { defaultLoadout } from '../src/data/architectLoadout';
 import { activateConsumable } from '../src/ships/Consumables';
-import { clearArchitect, materialize, refitArchitect, setArchitectLoadout, updateArchitect } from '../src/skills/misc/ArchitectRuntime';
+import { clearArchitect, dashLift, materialize, refitArchitect, setArchitectLoadout, updateArchitect, vectorTuning, VECTOR_THRUST } from '../src/skills/misc/ArchitectRuntime';
+import type { ArchitectSelection } from '../src/data/architectLoadout';
 import { stateHash } from '../src/net/hash';
 
 function arena(skill:0|1=0){
@@ -43,10 +44,30 @@ describe('independent Vector mobility',()=>{
   expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeCloseTo(10,4);
   while(g.time<started+20-1e-8)g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);
  });
- it('caps at a closer reticle and never stacks duplicate distance or duration enhancements',()=>{
+ it('caps at a closer reticle and stacks duplicate specializations without a cap',()=>{
   const {g,s}=arena();const picks=defaultLoadout();for(let i=0;i<4;i++)picks[i]={type:'vector',skill:i%2 as 0|1};setArchitectLoadout(s,picks);escorts(s,1);
+  expect(s.getVectorMobilityStatus()?.hullDash).toMatchObject({charges:3,maxCharges:3,distance:1250});
   s.control.aimX=150;dash(s);mobile(s);run(g,.55);expect(s.pos.x).toBeCloseTo(150);
-  expect(s.getVectorMobilityStatus()?.mobileBattery.duration).toBe(14);expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(1);
+  expect(s.getVectorMobilityStatus()?.mobileBattery.duration).toBe(17);expect(s.getVectorMobilityStatus()?.mobileBattery.cooldownDuration).toBeCloseTo(14*.85);
+  expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);
+ });
+ it.each([0,1,5,10])('adds the uncapped thruster passive for %i living Vectors',n=>{
+  const {s}=arena();const picks:ArchitectSelection[]=defaultLoadout().map((p,i)=>i<n?{type:'vector',skill:(i%2) as 0|1}:p.type==='vector'?{type:'storm',skill:0}:p);
+  setArchitectLoadout(s,picks);s.refreshModifiers();const m=s.mods;
+  expect(m.speedMul).toBeCloseTo(1+VECTOR_THRUST.speed*n);expect(m.accelMul).toBeCloseTo(1+VECTOR_THRUST.accel*n);
+  expect(m.turnMul).toBeCloseTo(1+VECTOR_THRUST.turn*n);expect(m.rudderMul).toBeCloseTo(1+VECTOR_THRUST.rudder*n);expect(m.traverseMul).toBeCloseTo(1+VECTOR_THRUST.traverse*n);
+  const t=vectorTuning(s),dashes=Math.ceil(n/2),mobiles=Math.floor(n/2);
+  expect(t.dashCharges).toBe(2+Math.max(0,dashes-1));expect(t.dashDistance).toBe(dashes?1100+150*(dashes-1):800);
+  expect(t.mobileDuration).toBe(mobiles?14+3*(mobiles-1):10);expect(t.escortSpeed).toBeCloseTo(1200*(1+.15*n));
+  expect(t.pathDamage).toBe(15000+3000*Math.max(0,n-1));expect(t.landDamage).toBe(25000+5000*Math.max(0,n-1));expect(t.landRadius).toBe(450+50*Math.max(0,n-1));
+ });
+ it('drops a destroyed Vector from the passive and clamps spare charges until it is rebuilt',()=>{
+  const {g,s}=arena();const picks=defaultLoadout();picks[0]={type:'vector',skill:0};picks[1]={type:'vector',skill:0};setArchitectLoadout(s,picks);
+  expect(s.vectorMobility.dashCharges).toBe(3);s.refreshModifiers();expect(s.mods.speedMul).toBeCloseTo(1.12);
+  const lost=s.architect!.slots[1];lost.state='destroyed';lost.hp=0;lost.rebuild=60;g.step();
+  expect(s.mods.speedMul).toBeCloseTo(1.06);expect(s.vectorMobility.dashCharges).toBe(2);expect(s.vectorMobility.dashRechargeAt).toBe(0);
+  lost.state='docked';lost.hp=5000;g.step();
+  expect(s.getVectorMobilityStatus()?.hullDash).toMatchObject({charges:2,maxCharges:3});expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeGreaterThan(9.9);
  });
  it('rejects Mobile Battery without deployed platforms instead of spending the cooldown',()=>{
   const {g,s}=arena(1);expect(s.getVectorMobilityStatus()?.mobileBattery.blockedReason).toBe('No deployed platforms');
@@ -81,7 +102,7 @@ describe('independent Vector mobility',()=>{
    const {g,s}=arena();s.control.aimX=0;s.control.aimZ=3500;
    if(obstacle==='terrain')g.map.heightAt=(_x,z)=>z>=1900&&z<=1910?50:-100;
    if(obstacle==='wall')g.walls.push({team:1,x0:-500,z0:1900,x1:500,z1:1900,age:0,life:100} as typeof g.walls[number]);
-   if(obstacle==='ship'){const block=place(g,'iowa',1,0,2000);block.throttle=2;block.secondaries=[];}
+   if(obstacle==='ship'){const block=place(g,'iowa',0,0,2000);block.throttle=2;block.secondaries=[];}
    dash(s);run(g,.55);expect(s.pos.z,obstacle).toBeGreaterThan(1500);expect(s.pos.z,obstacle).toBeLessThan(1900);
    expect(s.architect!.drive).toBeNull();
   }
@@ -99,11 +120,11 @@ describe('independent Vector mobility',()=>{
    radii.add(Math.round(a.follow!.radius));heights.add(Math.round(a.follow!.height));}
   expect(radii.size).toBe(4);expect(heights.size).toBe(4);expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);
  });
- it('chases a dashing hull at no more than 1200 m/s and clears terrain below the orbit',()=>{
+ it('chases a dashing hull at the stacked escort speed and clears terrain below the orbit',()=>{
   const {g,s,t}=arena(1);t.withdraw();const slots=escorts(s,3);g.map.heightAt=(x,z)=>Math.hypot(x-2500,z-1500)<600?150:-100;
   mobile(s);g.step();run(g,2);s.pos.x=2500;
   for(let i=0;i<300;i++){const before=slots.map(a=>a.entity!.pos.clone());g.step();
-   slots.forEach((a,n)=>{const m=a.entity!;expect(m.pos.distanceTo(before[n])).toBeLessThanOrEqual(1200/60+1e-6);expect(m.pos.y).toBeGreaterThan(g.map.heightAt(m.pos.x,m.pos.z)+19);});}
+   slots.forEach((a,n)=>{const m=a.entity!;expect(m.pos.distanceTo(before[n])).toBeLessThanOrEqual(1200*(1+VECTOR_THRUST.escort)/60+1e-6);expect(m.pos.y).toBeGreaterThan(g.map.heightAt(m.pos.x,m.pos.z)+19);});}
   for(const a of slots)expect(Math.hypot(a.entity!.pos.x-s.pos.x,a.entity!.pos.z-s.pos.z)).toBeLessThan(1100);
  });
  it('settles every escort on reserved water when the window ends, or docks it quietly',()=>{
@@ -146,13 +167,37 @@ describe('independent Vector mobility',()=>{
  });
  it('stops movement benefits immediately when the last Vector dies while recharge clocks continue',()=>{
   const {g,s,t}=arena(1),a=s.architect!.slots[0],m=materialize(s,a);a.state='deployed';m.pos.set(1000,0,0);
-  dash(s);mobile(s);g.step();m.takeDamage(1e9,t,null,false,true);const p=s.pos.clone();run(g,.2);
-  expect(s.pos.distanceTo(p)).toBeCloseTo(0);expect(s.architect!.drive).toBeNull();expect(a.follow).toBeNull();
+  dash(s);mobile(s);g.step();expect(s.pos.y).toBeGreaterThan(0);m.takeDamage(1e9,t,null,false,true);const p=s.pos.clone();run(g,.2);
+  expect(Math.hypot(s.pos.x-p.x,s.pos.z-p.z)).toBeCloseTo(0);expect(s.pos.y).toBe(0);expect(s.architect!.drive).toBeNull();expect(a.follow).toBeNull();
   expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(1);expect(s.getVectorMobilityStatus()?.mobileBattery.cooldownRemaining).toBeGreaterThan(13);
+ });
+ it('turns bow-first onto the dash bearing and lifts clear of the water before setting down',()=>{
+  const {g,s}=arena();s.heading=0;const heights:number[]=[];dash(s);
+  for(let i=0;i<Math.round(.55*60);i++){g.step();heights.push(s.pos.y);}
+  expect(Math.max(...heights)).toBeCloseTo(50);expect(s.pos.y).toBe(0);expect(s.heading).toBeCloseTo(Math.PI/2);
+  expect(dashLift(0)).toBe(0);expect(dashLift(.275)).toBeCloseTo(50);expect(dashLift(.55)).toBeCloseTo(0);
+ });
+ it('barrels through enemy hulls once each, shoving them aside, and lands with a shockwave',()=>{
+  const {g,s,t}=arena();t.withdraw();const events:string[]=[];g.events.on('architectDash',e=>events.push(e.phase));
+  const path=place(g,'iowa',1,500,1540),near=place(g,'iowa',1,1400,1500);
+  for(const e of [path,near]){e.hp=e.maxHp=1e7;e.throttle=2;e.speed=0;e.secondaries=[];}
+  dash(s);run(g,.6);
+  expect(s.pos.x).toBeCloseTo(1100);expect(events).toEqual(['launch','land']);
+  expect(path.hp).toBeLessThan(1e7);expect(path.pos.z).toBeGreaterThan(1600);
+  expect(near.hp).toBeLessThan(1e7);expect(near.pos.x).toBeGreaterThan(1400);
+  const once=path.hp;run(g,.5);expect(path.hp).toBe(once);
+ });
+ it('scales dash impact damage with every living Vector',()=>{
+  const dealt=(n:number)=>{
+   const {g,s,t}=arena();t.withdraw();const picks:ArchitectSelection[]=defaultLoadout().map((p,i)=>i<n?{type:'vector',skill:1}:p.type==='vector'?{type:'storm',skill:0}:p);setArchitectLoadout(s,picks);
+   const e=place(g,'iowa',1,950,1500);e.hp=e.maxHp=1e7;e.throttle=2;e.secondaries=[];s.control.aimX=800;dash(s);run(g,.6);return 1e7-e.hp;
+  };
+  expect(dealt(5)).toBeGreaterThan(dealt(1)*1.4);
  });
  it('hashes persistent charges, recharge, cooldown and activity as well as current movement',()=>{
   const {g,s}=arena();dash(s);mobile(s);g.step();
   for(const key of ['dashCharges','dashRechargeAt','mobileReadyAt','mobileUntil','mobileDuration'] as const){const h=stateHash(g),value=s.vectorMobility[key];s.vectorMobility[key]++;expect(stateHash(g),key).not.toBe(h);s.vectorMobility[key]=value;}
   const h=stateHash(g);s.architect!.drive!.elapsed+=.1;expect(stateHash(g)).not.toBe(h);
+  const h2=stateHash(g);s.architect!.drive!.hit.push(99);expect(stateHash(g)).not.toBe(h2);
  });
 });

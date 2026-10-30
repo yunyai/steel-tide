@@ -1,7 +1,7 @@
 import type { SupportAdmission } from '../skills/misc/ArchitectSupport';
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
-import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, activateArchitectHullDash, activateArchitectMobileBattery, getVectorMobilityStatus, updateVectorMobilityTimers, architectDashDamageReduction, type VectorMobilityState, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
+import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, activateArchitectHullDash, activateArchitectMobileBattery, applyVectorThrusters, getVectorMobilityStatus, updateVectorMobilityTimers, architectDashDamageReduction, type VectorMobilityState, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
@@ -158,6 +158,9 @@ export interface Mods {
   damageTakenMul: number;
   citadelDR: number;
   speedMul: number;
+  /** Throttle response and helm response (Vector thrusters). */
+  accelMul: number;
+  rudderMul: number;
   invulnerable: boolean;
   /** AI, target lock, aim assist and homing weapons ignore this ship (it still draws, shimmering). */
   untargetable: boolean;
@@ -275,6 +278,8 @@ function baseMods(): Mods {
     damageTakenMul: 1,
     citadelDR: 0,
     speedMul: 1,
+    accelMul: 1,
+    rudderMul: 1,
     invulnerable: false,
     untargetable: false,
     secRangeMul: 1,
@@ -1039,6 +1044,7 @@ export class Ship {
     }
     // Buffs first, then debuffs, so an unstoppable ship can keep its pace through slows and stuns.
     for (const e of this.effects) if (!e.id.startsWith('debuff:')) e.apply(m);
+    if (this.architect) applyVectorThrusters(this, m);
     const { speedMul, traverseMul, turnMul } = m;
     for (const e of this.effects) if (e.id.startsWith('debuff:')) e.apply(m);
     if (m.unstoppable) {
@@ -1250,11 +1256,11 @@ export class Ship {
       this.speed = 0;
     }
     const target = frac * maxSpd * (1 - 0.12 * Math.abs(this.rudder));
-    const accel = (this.maxSpeed / s.accelTime) * (Math.sign(target - this.speed) !== Math.sign(this.speed) ? 1.3 : 1);
+    const accel = (this.maxSpeed / s.accelTime) * this.mods.accelMul * (Math.sign(target - this.speed) !== Math.sign(this.speed) ? 1.3 : 1);
     if (!this.mods.rooted) this.speed = approach(this.speed, target, accel * dt);
 
     if (this.rudderJam > 0) this.rudderJam -= dt;
-    else this.rudder = approach(this.rudder, stunned ? 0 : this.rudderTarget, dt / s.rudderTime);
+    else this.rudder = approach(this.rudder, stunned ? 0 : this.rudderTarget, (dt * this.mods.rudderMul) / s.rudderTime);
 
     this.turnRate = ((this.speed / s.turnRadius) * this.rudder * this.mods.turnMul);
     this.heading = wrapAngle(this.heading + this.turnRate * dt);
@@ -1895,6 +1901,8 @@ export class Ship {
       return;
     }
     this.alive = false;
+    // A hull sunk mid-dash drops back onto the water.
+    if (this.architect?.drive) { this.architect.drive = null; this.pos.y = 0; }
     if (this.stepper?.copy) this.withdrawn = true;
     this.hp = 0;
     this.deathTime = 0;

@@ -44,7 +44,7 @@ export function stateHash(g: Game): number {
     if (s.architect) {
       const a=s.architect;
       for(const n of [a.capacitorReadyAt,a.drive?1:0])h=mix(h,n);
-      if(a.drive)for(const n of [a.drive.dx,a.drive.dz,a.drive.elapsed,a.drive.distance,a.drive.moving?1:0])h=mix(h,n);
+      if(a.drive)for(const n of [a.drive.dx,a.drive.dz,a.drive.elapsed,a.drive.distance,a.drive.moving?1:0,a.drive.from,a.drive.travelled,...a.drive.hit])h=mix(h,n);
       for (const n of [a.huntTarget,a.huntUntil,a.fullHp,a.moduleHp,a.healthReady?1:0,a.linkUntil,a.linkTick,a.clearing?1:0]) h=mix(h,n);
       for (const slot of a.slots) {
         h=mix(h,slot.capacitorCycles);h=mix(h,slot.capacitorCharged?1:0);
