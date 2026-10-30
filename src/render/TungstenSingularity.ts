@@ -19,7 +19,7 @@ import type { Ship } from '../ships/Ship';
 import { CUBE } from '../skills/misc/TungstenModes';
 import { hash01 } from './BurstParticles';
 import type { SpatialDistortion } from './SpatialDistortion';
-import { modeColor } from './TungstenLook';
+import { MODE_COLORS, modeColor } from './TungstenLook';
 import { clamp01, smooth } from './TungstenPaint';
 
 /** Height the singularity hangs at: the cube is crushed while rising to it. */
@@ -43,6 +43,7 @@ export interface CollapseLook {
   /** Seconds since the cube arrived and began to collapse (negative while it is still flying in). */
   hold: number;
   merged: boolean;
+  /** The collapsing cube's own mode: its burst carries that mode's hit. */
   mode: number;
 }
 
@@ -51,7 +52,8 @@ export function collapseLook(s: Ship, game: Game): CollapseLook | null {
   const u = s.tungsten?.ult;
   if (!u || u.kind !== 'collapse' || !s.alive) return null;
   const lag = game.time - game.renderTime;
-  return { x: u.x, z: u.z, hold: u.elapsed - lag - CUBE.collapse.travel, merged: u.merged, mode: s.tungsten!.mode };
+  const lead = s.tungsten!.cubes.find((c) => c.id === u.cubes[0]);
+  return { x: u.x, z: u.z, hold: u.elapsed - lag - CUBE.collapse.travel, merged: u.merged, mode: lead?.mode ?? s.tungsten!.mode };
 }
 
 /** 0..1: how far the cube has been crushed into the hole. */
@@ -68,6 +70,25 @@ float noise3(vec3 p) {
   return mix(a, b, f.z);
 }
 float fbm3(vec3 p) { return noise3(p) * 0.55 + noise3(p * 2.1 + 7.3) * 0.3 + noise3(p * 4.3 - 3.1) * 0.15; }
+`;
+
+/**
+ * The gas colour at an angle round the hole: the cube's mode colour, or in Overdrive's merged Collapse the six
+ * mode colours in bands, each band one mode.
+ */
+const TINT = /* glsl */ `
+uniform vec3 uColor;
+uniform float uRainbow;
+${MODE_COLORS.map((c, i) => `const vec3 M${i} = vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)});`).join('\n')}
+vec3 modeAt(float i) {
+  i = mod(i, 6.0);
+  return i < 0.5 ? M0 : i < 1.5 ? M1 : i < 2.5 ? M2 : i < 3.5 ? M3 : i < 4.5 ? M4 : M5;
+}
+vec3 tint(float angle) {
+  if (uRainbow < 0.5) return uColor;
+  float u = fract(angle / 6.28318530718) * 6.0;
+  return mix(modeAt(floor(u)), modeAt(floor(u) + 1.0), smoothstep(0.2, 0.8, fract(u)));
+}
 `;
 
 const FOG = /* glsl */ `
@@ -108,7 +129,7 @@ void main() {
 const HALO_FRAG = /* glsl */ `
 ${FOG}
 ${NOISE}
-uniform vec3 uColor;
+${TINT}
 uniform vec3 uNormal;
 uniform float uTime, uGlow, uRatio;
 varying vec2 vUv;
@@ -129,8 +150,10 @@ void main() {
   float flow = fbm3(vec3(cos(theta - uTime * 0.9) * 2.5, sin(theta - uTime * 0.9) * 2.5, rho * 4.0));
   float upper = smoothstep(1.1, 1.24, rho) * (1.0 - smoothstep(1.5, 1.95, rho)) * smoothstep(-0.25 - face * 1.3, 0.4, s);
   float lower = smoothstep(1.04, 1.1, rho) * (1.0 - smoothstep(1.16, 1.26, rho)) * smoothstep(-0.25 - face * 1.3, 0.4, -s) * 0.45;
-  vec3 hotc = mix(vec3(1.0, 0.94, 0.86), uColor, smoothstep(1.15, 1.8, rho));
-  vec3 col = vec3(1.0, 0.95, 0.9) * photon * 1.4 + uColor * glow + hotc * (upper + lower) * (0.4 + 1.3 * flow) * 1.1;
+  // White-hot only at the photon ring; the lensed gas beyond it burns in the mode colour.
+  vec3 c = tint(theta - uTime * 0.9);
+  vec3 hotc = mix(vec3(1.0, 0.94, 0.86), c * 1.3, smoothstep(1.04, 1.3, rho));
+  vec3 col = mix(vec3(1.0, 0.95, 0.9), c, 0.35) * photon * 1.4 + c * glow * 1.4 + hotc * (upper + lower) * (0.4 + 1.3 * flow) * 1.1;
   float edge = 1.0 - smoothstep(0.8, 1.0, length(vUv));
   float clear = 1.0 - haze(vDist);
   // The hole eats the light round it, so even against a bright sky the ring and disk stand out.
@@ -160,7 +183,7 @@ void main() {
 const DISK_FRAG = /* glsl */ `
 ${FOG}
 ${NOISE}
-uniform vec3 uColor;
+${TINT}
 uniform float uTime, uGlow, uSpin;
 varying vec2 vLocal;
 varying float vDoppler;
@@ -174,8 +197,10 @@ void main() {
   float lanes = noise3(vec3(cos(a) * 1.1, sin(a) * 1.1, log(r) * 26.0));
   float density = smoothstep(0.0, 0.06, rn) * (1.0 - smoothstep(0.55, 1.0, rn));
   float lum = density * (0.25 + 0.9 * clumps * clumps + 0.3 * lanes) * pow(1.0 - rn, 1.2) + exp(-rn * 18.0) * 0.5;
-  vec3 hotc = mix(vec3(1.0, 0.9, 0.78), uColor, smoothstep(0.02, 0.3, rn));
-  hotc = mix(hotc, uColor * 0.3 + vec3(0.22, 0.05, 0.02), smoothstep(0.45, 1.0, rn));
+  // A thin white-hot inner rim; past it the gas is the mode colour, deepening outward rather than reddening.
+  vec3 c = tint(a);
+  vec3 hotc = mix(vec3(1.0, 0.9, 0.78), c * 1.15, smoothstep(0.0, 0.12, rn));
+  hotc = mix(hotc, c * 0.6, smoothstep(0.45, 1.0, rn));
   float beam = pow(clamp(1.0 + 0.6 * vDoppler, 0.35, 1.6), 1.5);
   float clear = 1.0 - haze(vDist);
   // Dust between the hot lanes dims what lies behind, so the disk keeps its shape against a bright sky.
@@ -194,6 +219,7 @@ varying vec2 vUv;
 varying float vHeat;
 varying float vNear;
 varying float vDist;
+varying float vAngle;
 vec3 at(float ph) {
   float r0 = uReach * aSeed.y;
   float r = uHorizon * 1.3 + (r0 - uHorizon * 1.3) * pow(1.0 - ph, 1.5);
@@ -203,7 +229,9 @@ vec3 at(float ph) {
 }
 void main() {
   float ph = fract(uTime * aSeed.z + aSeed.w);
-  vec4 head = modelViewMatrix * vec4(at(ph), 1.0);
+  vec3 h = at(ph);
+  vAngle = atan(h.z, h.x);
+  vec4 head = modelViewMatrix * vec4(h, 1.0);
   vec4 tail = modelViewMatrix * vec4(at(max(0.0, ph - 0.045)), 1.0);
   vec2 axis = head.xy - tail.xy;
   float len = length(axis);
@@ -223,17 +251,20 @@ void main() {
 
 const INFALL_FRAG = /* glsl */ `
 ${FOG}
-uniform vec3 uColor;
+${TINT}
 uniform float uGlow;
 varying vec2 vUv;
 varying float vHeat;
 varying float vNear;
 varying float vDist;
+varying float vAngle;
 void main() {
   float across = 1.0 - abs(vUv.y * 2.0 - 1.0);
   float a = across * across * vUv.x * smoothstep(0.0, 0.12, vHeat) * (1.0 - smoothstep(0.86, 1.0, vHeat));
-  vec3 col = mix(vec3(0.75, 0.88, 0.95), uColor * 2.0, smoothstep(0.25, 0.75, vHeat));
-  col = mix(col, vec3(2.2, 2.1, 2.0), smoothstep(0.8, 0.97, vHeat));
+  // Spray torn off the sea catches the field's colour early and only flashes pale at the horizon.
+  vec3 c = tint(vAngle);
+  vec3 col = mix(vec3(0.75, 0.88, 0.95), c * 2.2, smoothstep(0.08, 0.45, vHeat));
+  col = mix(col, c * 1.6 + vec3(0.7), smoothstep(0.84, 0.98, vHeat));
   gl_FragColor = vec4(col * a * vNear * uGlow * 0.6 * (1.0 - haze(vDist)), 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -244,7 +275,7 @@ void main() {
 const SWIRL_FRAG = /* glsl */ `
 ${FOG}
 ${NOISE}
-uniform vec3 uColor;
+${TINT}
 uniform float uTime, uGlow, uSpin;
 varying vec2 vP;
 varying float vDist;
@@ -256,8 +287,10 @@ void main() {
   float grain = noise3(vec3(vP * 16.0, uTime * 0.3));
   float foam = arms * (0.45 + 0.75 * grain) * smoothstep(0.03, 0.22, r) * (1.0 - smoothstep(0.55, 1.0, r));
   float throat = 1.0 - smoothstep(0.0, 0.3, r);
-  vec3 col = mix(vec3(0.015, 0.04, 0.06), vec3(0.86, 0.93, 0.97), foam);
-  col += uColor * throat * throat * 0.35;
+  // Foam arms lit by the hole above, and a throat glowing in the mode colour.
+  vec3 c = tint(a / 4.0);
+  vec3 col = mix(vec3(0.015, 0.04, 0.06), mix(vec3(0.86, 0.93, 0.97), c, 0.4), foam);
+  col += c * (throat * throat * 0.6 + foam * 0.15);
   float alpha = clamp(foam * 0.8 + throat * 0.7, 0.0, 1.0) * uGlow;
   gl_FragColor = vec4(mix(col, uFogColor, fogAt(vDist)), alpha);
   #include <colorspace_fragment>
@@ -291,7 +324,7 @@ class Singularity {
 
   constructor(infall: number, seed: number) {
     const quad = new PlaneGeometry(1, 1);
-    const shared = { uTime: { value: 0 }, uGlow: { value: 0 }, uColor: { value: new Color() }, uSpin: { value: 1 } };
+    const shared = { uTime: { value: 0 }, uGlow: { value: 0 }, uColor: { value: new Color() }, uSpin: { value: 1 }, uRainbow: { value: 0 } };
     const horizon = new ShaderMaterial({ uniforms: { ...fog(), uSize: { value: HORIZON } }, vertexShader: BILLBOARD, fragmentShader: HORIZON_FRAG });
     const halo = new ShaderMaterial({
       uniforms: { ...fog(), ...shared, uSize: { value: HORIZON * HALO }, uRatio: { value: HALO }, uNormal: { value: this.normal } },
@@ -382,8 +415,8 @@ class Singularity {
     this.tilt.rotation.set(0.38, Math.atan2(dx, dz), 0, 'YXZ');
   }
 
-  /** Lays the hole out for one frame. `size` scales the horizon; `glow` its light; `spin` the gas. */
-  set(x: number, z: number, reach: number, size: number, glow: number, spin: number, time: number, color: Color, heightPx: number): void {
+  /** Lays the hole out for one frame. `size` scales the horizon; `glow` its light; `spin` the gas; `rainbow` bands it in all six modes. */
+  set(x: number, z: number, reach: number, size: number, glow: number, spin: number, time: number, color: Color, rainbow: boolean, heightPx: number): void {
     this.group.position.set(x, SINGULARITY_Y, z);
     this.group.scale.setScalar(1);
     this.swirl.position.set(x, 2.6, z);
@@ -406,6 +439,7 @@ class Singularity {
     shared.uGlow.value = glow;
     shared.uSpin.value = spin;
     shared.uColor.value.copy(color);
+    shared.uRainbow.value = rainbow ? 1 : 0;
     // The whirlpool builds up with the pull, ahead of the disk lighting.
     u(4).uGlow.value = Math.min(1, glow * 1.4);
   }
@@ -499,7 +533,7 @@ export class TungstenSingularities {
     const glow = form * (1 + squeeze * 0.6) * (1 - out * 0.6);
     const time = this.reduce ? 0 : look.hold;
     this.color.copy(modeColor(look.mode));
-    hole.view.set(look.x, look.z, C.radius * scale, size, glow, 1.6 + squeeze * 3, time, this.color, heightPx);
+    hole.view.set(look.x, look.z, C.radius * scale, size, glow, 1.6 + squeeze * 3, time, this.color, look.merged, heightPx);
     if (!this.reduce && size > 0.01)
       this.distortions.push({ x: look.x, y: SINGULARITY_Y, z: look.z, radius: HORIZON * size * LENS, strength: 0.75 * form * (1 - out), priority: 6, kind: 'lens' });
   }

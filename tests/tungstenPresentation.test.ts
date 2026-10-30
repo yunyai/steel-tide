@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Box3, InstancedBufferAttribute, Mesh, Scene, type Object3D } from 'three';
+import { Box3, InstancedBufferAttribute, Mesh, Scene, type Object3D, type ShaderMaterial } from 'three';
 import { ShipView } from '../src/render/ShipModel';
 import { DAIS, HORN_TIPS, TungstenModel } from '../src/render/TungstenModel';
 import { TungstenCubeFx } from '../src/render/TungstenCubeFx';
@@ -435,6 +435,38 @@ describe('Tungsten ultimate effects', () => {
     expect(hole(again.scene)).toBeUndefined();
     again.fx.dispose();
     expect(again.scene.children).toHaveLength(0);
+  });
+
+  const disk = (scene: Scene) => ((scene.getObjectByName('tungsten-disk') as Mesh).material as ShaderMaterial).uniforms;
+
+  it("colours the hole by the collapsing cube's own mode, not the ship's", () => {
+    const { g, s, scene, fx } = collapsing();
+    const t = s.tungsten!;
+    t.cubes[0].mode = CRUSH;
+    t.mode = MEND;
+    play(g, fx, CUBE.collapse.travel + 1, [s]);
+    fx.prepare(0, 720);
+    expect(disk(scene).uColor.value.getHex()).toBe(modeColor(CRUSH).getHex());
+    expect(disk(scene).uRainbow.value).toBe(0);
+    fx.dispose();
+  });
+
+  it('turns the Overdrive singularity through all six mode colours', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    place(g, 'yamato', 1, 300, -2000);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    cast(s, OVERDRIVE);
+    play(g, fx, 0.5, [s]);
+    s.control.aimX = 0;
+    s.control.aimZ = -2000;
+    cast(s, COLLAPSE);
+    expect(s.tungsten!.ult?.merged).toBe(true);
+    play(g, fx, CUBE.collapse.travel + 1, [s]);
+    fx.prepare(0, 720);
+    expect(disk(scene).uRainbow.value).toBe(1);
+    fx.dispose();
   });
 
   it('keeps the hole but drops its lens under reduced motion', () => {
