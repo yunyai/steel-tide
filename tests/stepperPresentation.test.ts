@@ -103,3 +103,26 @@ it('keeps refraction viewport-specific and disables it under reduced motion',asy
   vi.stubGlobal('matchMedia',()=>({matches:true}));const reduced=new StepperFx(new Scene(),g);
   g.events.emit('blink',{ship:s,fromX:300,fromZ:1500});reduced.update(.08);reduced.prepare(1,720);expect(reduced.distortions).toHaveLength(0);expect(reduced.spatial.tears.count).toBeGreaterThan(0);reduced.dispose();
 });
+it('swings a Flicker arrival onto its target before the slash shows, and skips the swing under reduced motion',async()=>{
+  const {StepperFx,FLICKER_TURN}=await import('../src/render/StepperFx');
+  const g=emptyGame('open',7,'freeplay'),s=place(g,'stepper',0,0,1500),foe=place(g,'leviathan',1,0,0);
+  foe.colossus=false;foe.hp=foe.maxHp=1e8;s.speed=foe.speed=0;s.throttle=foe.throttle=2;s.control.aimX=s.control.aimZ=0;s.meter=1;
+  const fx=new StepperFx(new Scene(),g);
+  expect(s.activateSkill(6)).toBe(true);
+  while(!s.stepper!.flicker!.count)g.step();
+  g.interpolate();const before=stateHash(g);
+  const turn=fx.turnOffset(s);expect(Math.abs(turn)).toBeGreaterThan(.05);expect(Math.abs(turn)).toBeLessThanOrEqual(Math.PI);
+  fx.update(FLICKER_TURN*.5,[s]);expect(Math.abs(fx.turnOffset(s))).toBeLessThan(Math.abs(turn));
+  fx.update(FLICKER_TURN*.5+.001,[s]);expect(fx.turnOffset(s)).toBe(0);
+  fx.prepare(0,720);expect(stateHash(g)).toBe(before);fx.dispose();
+  // The slash blade waits for the swing.
+  const slash=new StepperFx(new Scene(),g);
+  g.events.emit('stepImpact',{ship:s,x:0,z:0,radius:150,kind:'flicker'});
+  slash.update(0,[s]);slash.prepare(0,720);const early=slash.spatial.tears.count;
+  slash.update(FLICKER_TURN+.01,[s]);slash.prepare(0,720);expect(slash.spatial.tears.count).toBeGreaterThan(early);slash.dispose();
+  vi.stubGlobal('matchMedia',()=>({matches:true}));
+  const reduced=new StepperFx(new Scene(),g);
+  g.events.emit('stepImpact',{ship:s,x:0,z:0,radius:150,kind:'flicker'});reduced.update(0,[s]);reduced.prepare(0,720);
+  expect(reduced.spatial.tears.count).toBeGreaterThan(early);
+  g.events.emit('blink',{ship:s,fromX:900,fromZ:900,fromHeading:0});expect(reduced.turnOffset(s)).toBe(0);reduced.dispose();
+});

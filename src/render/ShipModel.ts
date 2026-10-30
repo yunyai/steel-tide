@@ -1058,6 +1058,8 @@ export class ShipView {
   private wasAlive = true;
   private architectModel: ArchitectModel | null = null;
   stepFold=0;
+  /** Presentation-only yaw added to the hull, used by Stepper's turn-to-face on Flicker strikes. */
+  stepYaw=0;
   private stepModel: StepperModel | null = null;
 
   constructor(readonly spec: ShipSpec, shadows = true) {
@@ -1455,7 +1457,7 @@ export class ShipView {
     }
     const spec = this.spec;
     const L = spec.length;
-    const h = ship.renderHeading;
+    const h = ship.renderHeading + this.stepYaw;
     const fx = Math.sin(h);
     const fz = -Math.cos(h);
     const px = ship.renderPos.x;

@@ -4,6 +4,7 @@ import type { GameEventMap } from '../core/Events';
 import type { Team } from '../core/types';
 import type { Ship } from '../ships/Ship';
 import { contactVisible } from '../core/Targeting';
+import { wrapAngle } from '../core/math';
 import { audio } from '../fx/Audio';
 import { waveHeight } from '../world/Waves';
 import { reducedMotion, smooth } from './ArchitectPose';
@@ -17,6 +18,8 @@ import { Ribbons } from './Projectiles';
 const VIOLET=new Color(0xb699ff).multiplyScalar(1.6),BLUE=new Color(0x8dbaff).multiplyScalar(1.4),RED=new Color(0xff567c).multiplyScalar(1.5);
 const WHITE=new Color(0xf4ecff).multiplyScalar(2),DARK=new Color(0x100d20),REPAIR=new Color(0xb6ffe0);
 const CAPACITY=64;
+/** Flicker arrives along its path, then swings to face the target; the slash lands as the turn completes. */
+export const FLICKER_TURN=.07;
 const echoStrength=(s:Ship)=>s.stepper?.copy?.35:.85;
 type Kind='flash'|'ram'|'broad'|'over'|'back'|'side'|'flicker'|'cross'|'birth';
 interface Blink { ship:Ship; x:number;y:number;z:number;h:number; tx:number;tz:number;th:number;kind:Kind;age:number;life:number }
@@ -57,7 +60,7 @@ export class StepperFx {
       ev.on('blink',e=>this.blink(e)),
       ev.on('stepImpact',e=>{
         if(e.kind==='flicker'){
-          this.pulse({ship:e.ship,x:e.x,y:12,z:e.z,h:e.ship.heading,kind:'flicker',age:0,life:e.ship.stepper?.flicker?.count===19?.7:.42,final:e.ship.stepper?.flicker?.count===19});
+          this.pulse({ship:e.ship,x:e.x,y:12,z:e.z,h:e.ship.heading,kind:'flicker',age:this.reduce?0:-FLICKER_TURN,life:e.ship.stepper?.flicker?.count===19?.7:.42,final:e.ship.stepper?.flicker?.count===19});
           audio.play('hit',e.x,10,e.z,300,.6);
         }else{
           for(const c of game.ships.filter(s=>s.summonOwner===e.ship&&s.alive)){
@@ -76,7 +79,8 @@ export class StepperFx {
   private blink(e:GameEventMap['blink']):void{
     const s=e.ship;if(s.spec.id!=='stepper'||this.game.over)return;
     const kind:Kind=e.dodge?'side':s.stepper?.cross?'cross':s.stepper?.flicker?'flicker':e.step??'flash';
-    this.blinks.push({ship:s,x:e.fromX,y:s.pos.y+3,z:e.fromZ,h:e.fromHeading??s.heading,tx:s.pos.x,tz:s.pos.z,th:s.heading,kind,age:0,life:kind==='side'?.3:kind==='cross'||kind==='flicker'?.38:.55});this.trim();
+    // Dodge trails outlive about two rearms (0.09 s) so rapid evasions stay readable instead of stacking.
+    this.blinks.push({ship:s,x:e.fromX,y:s.pos.y+3,z:e.fromZ,h:e.fromHeading??s.heading,tx:s.pos.x,tz:s.pos.z,th:s.heading,kind,age:0,life:kind==='side'?.22:kind==='cross'||kind==='flicker'?.38:.55});this.trim();
     if(e.dodge)audio.cue('sideStep','activate','slash',s.pos.x,10,s.pos.z,this.locals.includes(s));
     else audio.play('zap',s.pos.x,10,s.pos.z,100,1);
   }
@@ -98,6 +102,16 @@ export class StepperFx {
   }
   foldPhase(s:Ship):number {
     for(let i=this.blinks.length-1;i>=0;i--){const b=this.blinks[i];if(b.ship===s)return Math.sin(Math.PI*Math.min(1,b.age/b.life));}
+    return 0;
+  }
+  /** Yaw to add to the hull just after a Flicker arrival: it starts along the travel path and eases onto the target. */
+  turnOffset(s:Ship):number {
+    if(this.reduce)return 0;
+    for(let i=this.blinks.length-1;i>=0;i--){
+      const b=this.blinks[i];if(b.ship!==s)continue;
+      if(b.kind!=='flicker'||b.age>=FLICKER_TURN||Math.hypot(b.tx-b.x,b.tz-b.z)<1)return 0;
+      return wrapAngle(Math.atan2(b.tx-b.x,-(b.tz-b.z))-b.th)*(1-smooth(b.age/FLICKER_TURN));
+    }
     return 0;
   }
   private visible(s:Ship,team:Team|-1):boolean{return s.alive&&!s.withdrawn&&!s.mods.banished&&(team===-1||contactVisible(s,team));}
@@ -132,12 +146,15 @@ export class StepperFx {
           this.distortions.push({x:b.tx,y:b.y+35,z:b.tz,radius:230,strength:k*(echo?.22:.8),priority});
           if(!echo)this.distortions.push({x:b.x,y:b.y+35,z:b.z,radius:200,strength:k*.5,priority});
         }
+        // A faint cut along each Flicker approach shows the strikes arriving from shifting sides.
+        if(b.kind==='flicker'&&!echo&&Math.hypot(b.tx-b.x,b.tz-b.z)<1500)this.cut(b.x,b.y+8,b.z,b.tx,b.y+8,b.tz,color,k*.45,2);
         if(b.kind==='over'){
           const fx=Math.sin(b.th),fz=-Math.cos(b.th);
           this.spatial.blade(b.tx-fx*160,b.y+12,b.tz-fz*160,b.tx-fx*360,b.y+12,b.tz-fz*360,65,1-k,color,b.tx*.01,.7,Math.PI/2);
         }
       }
       for(const p of this.pulses){
+        if(p.age<0)continue;
         if(p.kind==='dissolve'?(team!==-1&&!p.visible?.[team]):!this.visible(p.ship,team))continue;
         const color=this.color(p.ship,team),k=1-p.age/p.life;
         if(p.kind==='birth'||p.kind==='dissolve'){
@@ -161,16 +178,17 @@ export class StepperFx {
       }
       for(const t of this.game.torps.torps)if(t.alive&&t.skill?.id==='overStep'&&(team===-1||t.team===team||t.seen)){
         const color=this.color(t.owner,team),y=waveHeight(t.x,t.z,this.game.renderTime)+3,fx=Math.sin(t.heading),fz=-Math.cos(t.heading);
-        this.spatial.blade(t.x-fx*100,y+1,t.z-fz*100,t.x,y+1,t.z,14,.3,color,t.x*.01,.38,Math.PI/2);
-        this.light.push(t.x-fx*110,y,t.z-fz*110,t.x,y,t.z,color,.75,3,1.5);
-        this.light.push(t.x-fx*22,y+.2,t.z-fz*22,t.x,y+.2,t.z,WHITE,.8,1,1);
+        // Wakes scale with the 320-knot run so the fan still reads from a battle camera.
+        this.spatial.blade(t.x-fx*220,y+1,t.z-fz*220,t.x,y+1,t.z,18,.3,color,t.x*.01,.42,Math.PI/2);
+        this.light.push(t.x-fx*240,y,t.z-fz*240,t.x,y,t.z,color,.85,4,2.5);
+        this.light.push(t.x-fx*40,y+.2,t.z-fz*40,t.x,y+.2,t.z,WHITE,1,1.6,1.6);
       }
     }
     this.light.end();this.dark.end();this.spatial.end();this.water.end();this.ghosts.instanceMatrix.needsUpdate=true;this.fade.needsUpdate=true;this.folds.needsUpdate=true;
     if(this.ghosts.instanceColor)this.ghosts.instanceColor.needsUpdate=true;
   }
   private ship(s:Ship,color:Color):void{
-    const st=s.stepper;if(!st)return;const now=this.game.time,x=s.renderPos.x,z=s.renderPos.z,y=s.renderPos.y+18,h=s.renderHeading;
+    const st=s.stepper;if(!st)return;const now=this.game.time,x=s.renderPos.x,z=s.renderPos.z,y=s.renderPos.y+18,h=s.renderHeading+this.turnOffset(s);
     const fx=Math.sin(h),fz=-Math.cos(h),rx=Math.cos(h),rz=Math.sin(h);
     const line=(ax:number,ay:number,az:number,bx:number,by:number,bz:number,c:Color,k:number,w=1.5)=>this.light.push(x+fx*ax+rx*az,y+ay,z+fz*ax+rz*az,x+fx*bx+rx*bz,y+by,z+fz*bx+rz*bz,c,k,w,1);
     if(st.rush){

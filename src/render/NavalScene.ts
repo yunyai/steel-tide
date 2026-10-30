@@ -204,7 +204,7 @@ export class NavalScene implements BattleScene {
     const built = this.syncShips();
     this.warmUp(dt, built);
     const t = g.renderTime;
-    for (const [s, v] of this.views) {v.stepFold=this.stepperFx.foldPhase(s);v.update(s,t);}
+    for (const [s, v] of this.views) {v.stepFold=this.stepperFx.foldPhase(s);v.stepYaw=this.stepperFx.turnOffset(s);v.update(s,t);}
     for (const w of this.wrecks) {
       w.t += dt;
       w.obj.position.y -= (4 + w.t * 7) * dt;
