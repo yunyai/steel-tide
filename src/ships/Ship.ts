@@ -1110,8 +1110,13 @@ export class Ship {
   skillReady(i: number): boolean {
     const st = this.skills[i];
     if (this.architect?.ultimate && ![1,4,5].includes(i)) return false;
-    if (!st || !this.alive || st.active || this.mods.stunned || this.mods.silenced) return false;
+    if (!st || !this.alive || st.active || this.controlBlocks(st.spec)) return false;
     return st.spec.ult ? st.meter >= 1 && !this.isSummon : st.cooldown <= 0;
+  }
+
+  /** Stuns and silences stop skills, except an always-usable one outside banishment. */
+  private controlBlocks(spec: SkillSpec): boolean {
+    return (this.mods.stunned || this.mods.silenced) && !(spec.alwaysUsable && !this.mods.banished);
   }
 
   /** Charge of the first ultimate; setting it sets every ultimate's meter. */
@@ -1151,9 +1156,9 @@ export class Ship {
     if (this.stepper?.flicker || this.stepper?.cross || this.stepper?.rush) return this.failSkill('Step sequence already active');
     const echo = mirrored && this.stepper?.copy && this.summonOwner?.alive && i !== 8;
     if (this.stepper?.copy && !echo) return false;
-    if (!echo && !this.skillReady(i) || echo && (!this.alive || this.mods.stunned || this.mods.silenced || this.skills[i]?.active)) {
+    if (!echo && !this.skillReady(i) || echo && (!this.alive || !this.skills[i] || this.controlBlocks(this.skills[i].spec) || this.skills[i].active)) {
       const st = this.skills[i];
-      return this.failSkill(!this.alive ? 'Ship sunk' : this.mods.stunned ? 'Stunned' : this.mods.silenced ? 'Silenced' : st?.active ? 'Ability already active' : st?.spec.ult ? 'Ultimate charge not ready' : 'Ability reloading');
+      return this.failSkill(!this.alive ? 'Ship sunk' : this.mods.banished ? 'Banished' : st && this.controlBlocks(st.spec) ? (this.mods.stunned ? 'Stunned' : 'Silenced') : st?.active ? 'Ability already active' : st?.spec.ult ? 'Ultimate charge not ready' : 'Ability reloading');
     }
     const st = this.skills[i];
     const origin = {x:this.pos.x,z:this.pos.z,aimX:this.control.aimX,aimZ:this.control.aimZ};

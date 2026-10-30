@@ -208,7 +208,8 @@ export const STEPPER_SKILLS: SkillDef[] = [
   def(
     {
       ...spec('backStep', 'Backstep', 20, 8, 'heal'),
-      description: 'Retreat 2 km from the nearest detected enemy, phase for 2 s and heal 20% maximum HP, then repair another 20% over 8 s. Hull damage cancels the repair.',
+      description: 'Retreat 2 km from the nearest detected enemy, phase for 2 s and heal 20% maximum HP, then repair another 20% over 8 s. Hull damage cancels the repair. Usable while stunned, silenced or rooted.',
+      alwaysUsable: true,
     },
     {
       activate(s, g) {
@@ -257,7 +258,7 @@ export const STEPPER_SKILLS: SkillDef[] = [
     {
       ...spec('sideStep', 'Sidestep', 18, 8, 'shield'),
       description:
-        `For 8 s, react before incoming projectiles hit with a step up to ${SIDESTEP.distance} m to a random side. Phase for ${SIDESTEP.phase} s and dodge again every ${SIDESTEP.retrigger} s.`,
+        `For 8 s, react before incoming projectiles hit with a step up to ${SIDESTEP.distance} m to a random side. Phase for ${SIDESTEP.phase} s and dodge again every ${SIDESTEP.retrigger} s. Once started, it keeps working through stuns, silences and roots.`,
     },
     {
       activate(s, g) {

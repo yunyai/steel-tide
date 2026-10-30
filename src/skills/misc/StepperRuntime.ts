@@ -218,9 +218,7 @@ export function evadeIncoming(s: Ship): void {
     st.rush ||
     st.flicker ||
     st.cross ||
-    s.mods.invulnerable ||
-    s.mods.stunned ||
-    s.mods.silenced
+    s.mods.invulnerable
   )
     return;
   const horizon = SIDESTEP.lookAhead;
@@ -271,8 +269,8 @@ export function incomingStep(
     now = s.game.time;
   if (!st || !attacker || attacker.team === s.team || pierce || periodic || reflected) return false;
   if (st.phaseUntil > now) return true;
-  if (st.sideUntil <= now || st.dodgeReady > now || st.rush || st.flicker || st.cross || s.mods.stunned || s.mods.silenced)
-    return false;
+  // Crowd control never stops a dodge; only banishment, which already keeps every hit away, does.
+  if (st.sideUntil <= now || st.dodgeReady > now || st.rush || st.flicker || st.cross || s.mods.banished) return false;
   // A random side and a random angle within 45 degrees of square to the shot, so dodges never settle into one direction.
   const side = s.game.rng() < 0.5 ? Math.PI : 0,
     spread = (s.game.rng() - 0.5) * (Math.PI / 2);

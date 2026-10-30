@@ -3,6 +3,8 @@ import { SHIP_BY_ID, SHIPS } from '../src/data/ships';
 import { eraOf } from '../src/data/factions';
 import { emptyGame, place, run } from './helpers';
 import { safeStep, snapStep } from '../src/skills/misc/StepperRuntime';
+import { banish, buff, root, silence } from '../src/skills/kit';
+import type { Ship } from '../src/ships/Ship';
 import { Game } from '../src/core/Game';
 import { navalRules } from '../server/rules';
 import { TurnApplier } from '../src/net/navalTurns';
@@ -695,5 +697,94 @@ describe('Stepper polish', () => {
     expect(g.torps.torps.every((t) => t.speed === OVERSTEP.knots * KNOT * SPEED_SCALE)).toBe(true);
     run(g, 3);
     expect(hits).toBeGreaterThanOrEqual(6);
+  });
+});
+
+describe('Stepper defenses through crowd control', () => {
+  const stun = (s: Ship, time: number) => buff(s, 'debuff:stun', time, (m) => (m.stunned = true));
+  it.each([
+    ['stunned', stun],
+    ['silenced', silence],
+    ['rooted', root],
+  ] as const)('keeps dodging when %s after it started', (_, cc) => {
+    const { g, me, foe } = duel();
+    expect(me.activateSkill(5)).toBe(true);
+    cc(me, 5);
+    g.step();
+    expect(me.skills[5].active).toBe(true);
+    const before = me.pos.clone();
+    expect(me.takeDamage(10000, foe)).toBe(0);
+    expect(me.pos.distanceTo(before)).toBeCloseTo(100);
+  });
+  it('steps out from under a falling shell after a stun and silence land', () => {
+    const { g, me, foe } = duel();
+    expect(me.activateSkill(5)).toBe(true);
+    stun(me, 5);
+    silence(me, 5);
+    g.step();
+    const shell = g.shells.dropBomb(foe, foe.spec.main!.he!, me.pos.x, me.pos.z, 25);
+    const start = me.pos.clone();
+    g.step();
+    expect(shell.alive).toBe(true);
+    expect(me.pos.distanceTo(start)).toBeCloseTo(100);
+    expect(me.stats.received).toBe(0);
+  });
+  it('still cannot be started while stunned or silenced', () => {
+    for (const cc of [stun, silence]) {
+      const { g, me } = duel();
+      cc(me, 5);
+      g.step();
+      expect(me.skillReady(5)).toBe(false);
+      expect(me.activateSkill(5)).toBe(false);
+      expect(me.skills[5].cooldown).toBe(0);
+    }
+  });
+  it.each([
+    ['stunned', stun],
+    ['silenced', silence],
+    ['rooted', root],
+  ] as const)('starts Backstep while %s', (_, cc) => {
+    const { g, me } = duel();
+    cc(me, 5);
+    g.step();
+    me.hp = me.maxHp * 0.5;
+    expect(me.skillReady(4)).toBe(true);
+    expect(me.skillReady(0)).toBe(cc === root);
+    const before = me.pos.clone();
+    expect(me.activateSkill(4)).toBe(true);
+    expect(me.pos.distanceTo(before)).toBeCloseTo(2000);
+    expect(me.hp).toBeCloseTo(me.maxHp * 0.7);
+  });
+  it('takes Backstep from the skill key through a stun', () => {
+    const { g, me } = duel();
+    stun(me, 5);
+    g.step();
+    me.control.skill = 4;
+    g.step();
+    expect(me.skills[4].active).toBe(true);
+  });
+  it('keeps Backstep blocked during its own step sequences and while banished', () => {
+    const { g, me } = duel();
+    me.meter = 1;
+    expect(me.activateSkill(6)).toBe(true);
+    expect(me.activateSkill(4)).toBe(false);
+    expect(me.skillFailure).toBe('Step sequence already active');
+    run(g, 3.2);
+    banish(me, 5);
+    g.step();
+    const before = me.pos.clone();
+    expect(me.activateSkill(4)).toBe(false);
+    expect(me.skillFailure).toBe('Banished');
+    expect(me.skills[4].cooldown).toBe(0);
+    expect(me.pos.equals(before)).toBe(true);
+  });
+  it('stays out of reach without dodging while banished', () => {
+    const { g, me, foe } = duel();
+    expect(me.activateSkill(5)).toBe(true);
+    banish(me, 5);
+    g.step();
+    const before = me.pos.clone();
+    expect(me.takeDamage(10000, foe)).toBe(0);
+    expect(me.pos.equals(before)).toBe(true);
   });
 });

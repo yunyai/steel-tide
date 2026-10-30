@@ -278,6 +278,8 @@ export interface SkillSpec {
   icon: SkillIcon;
   /** Radius (m) of the area the skill holds around the ship while active; drawn as a dome. */
   zone?: number;
+  /** Can be started while stunned or silenced. Banishment and the caster's own step sequences still block it. */
+  alwaysUsable?: boolean;
 }
 
 export interface ArmorSpec {
