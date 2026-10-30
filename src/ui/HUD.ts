@@ -290,14 +290,13 @@ export class HUD {
       const head = el('div', 'tp-head', root);
       const mode = el('b', '', head);
       const where = el('span', '', head);
-      const gauge = (label: string) => {
-        const g = el('div', 'tp-gauge', root);
+      const gauge = (key: string, label: string) => {
+        const g = el('div', `tp-gauge ${key}`, root);
         el('span', 'tp-label', g).textContent = label;
         const text = el('span', 'num', g);
         return { root: g, fill: el('i', '', el('div', 'tp-bar', g)), text };
       };
-      const gauges = { energy: gauge('Energy'), cube: gauge('Cube'), store: gauge('Store') };
-      gauges.energy.root.classList.add('segmented');
+      const gauges = { energy: gauge('energy', 'Energy'), cube: gauge('cube', 'Cube'), store: gauge('store', 'Store') };
       const row = el('div', 'tp-cubes', gauges.cube.root);
       this.tungstenEls = { root, mode, where, gauges, cubes: Array.from({ length: 6 }, () => el('i', '', row)) };
     }

@@ -4081,20 +4081,20 @@ select {
 .tp-head span { font-size:10px; color:#a9c4d8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; }
 .tp-gauge { --bar:var(--mode); display:grid; grid-template-columns:auto minmax(0,1fr); gap:4px 6px; align-items:baseline; min-width:0; }
 .tp-gauge[hidden] { display:grid; visibility:hidden; }
-.tp-gauge:nth-of-type(2) { --bar:#dfe9f2; }
-.tp-gauge:nth-of-type(3) { --bar:var(--gold); }
+.tp-gauge.cube { --bar:#dfe9f2; }
+.tp-gauge.store { --bar:var(--gold); }
 .tp-label { font-size:8.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); }
 .tp-gauge .num { justify-self:end; max-width:100%; font-size:10.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-variant-numeric:tabular-nums; }
 .tp-bar { grid-column:1/-1; position:relative; height:4px; background:rgba(169,196,216,.14); overflow:hidden; }
 .tp-bar i { display:block; height:100%; background:var(--bar); box-shadow:0 0 6px var(--bar); }
 /* One notch per throw. */
-.tp-gauge.segmented .tp-bar::after { content:''; position:absolute; inset:0; background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 2px),var(--abyss) calc(25% - 2px) 25%); }
+.tp-gauge.energy .tp-bar::after { content:''; position:absolute; inset:0; background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 2px),var(--abyss) calc(25% - 2px) 25%); }
 .tp-gauge.low { --bar:var(--red); }
 .tp-gauge.low .num { color:var(--amber); }
 .tp-cubes { display:none; }
 .tungsten-panel.overdrive .tp-cubes { grid-column:1/-1; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:2px; }
 .tp-cubes i { --type:var(--cyan); --health:1; height:3px; background:linear-gradient(90deg,var(--type) calc(var(--health) * 100%),rgba(169,196,216,.14) 0); box-shadow:0 0 4px color-mix(in srgb,var(--type) 60%,transparent); }
-@media(max-width:1350px) { .tungsten-panel { grid-template-columns:minmax(80px,auto) repeat(3,minmax(0,1fr)); gap:4px 8px; } .tp-label { display:none; } }
+@media(max-width:1350px) { .tungsten-panel { grid-template-columns:minmax(80px,auto) repeat(3,minmax(0,1fr)); gap:4px 8px; } }
 
 /* Tungsten mode guide, at the foot of the dossier: a hex chip per mode and the detail of the one picked. */
 .tungsten-codex { margin:16px 0; padding:14px; background:#0c1721e8; border:1px solid #60778166; border-radius:6px; min-width:0; }
