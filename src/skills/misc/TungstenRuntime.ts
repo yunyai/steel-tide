@@ -449,7 +449,8 @@ export function cubeIntercept(game: Ship['game'], team: number, ox: number, oy: 
 export function absorbCube(hit: CubeHitInfo, damage: number, attacker: Ship | null, x: number, y: number, z: number): void {
   const t = hit.owner.tungsten!;
   if (hit.capture) {
-    t.charge = Math.min(CUBE.chargeCap * (overdriveOn(hit.owner) ? CUBE.orbit.cap : 1), t.charge + damage);
+    // A store kept from Overdrive stays over the plain cap; it just takes no more.
+    t.charge = Math.max(t.charge, Math.min(CUBE.chargeCap * (overdriveOn(hit.owner) ? CUBE.orbit.cap : 1), t.charge + damage));
     damageCube(hit.owner, hit.cube, damage * CUBE.guard.taken, attacker);
     emit(hit.owner, 'capture', hit.cube, x, y, z, damage);
   } else {

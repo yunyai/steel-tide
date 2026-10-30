@@ -800,6 +800,21 @@ describe('Overdrive', () => {
     run(g, 3);
     expect(t.cubes.some((c) => c.state === 'orbit')).toBe(false);
   });
+  it('keeps a store built in Overdrive when the Shield captures fire after it ends', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 15);
+    expect(me.activateSkill(V)).toBe(true);
+    t.charge = 1_100_000;
+    run(g, 6);
+    expect(t.overdriveUntil).toBeLessThan(g.time);
+    expect(t.cubes[0].state).toBe('orbit');
+    const before = t.charge;
+    absorbCube({ owner: me, cube: t.cubes[0], t: 0, capture: true }, 5000, null, 0, 0, 0);
+    expect(t.charge).toBe(before);
+  });
 });
 
 describe('Collapse', () => {

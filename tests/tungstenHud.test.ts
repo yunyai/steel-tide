@@ -142,6 +142,12 @@ describe('Tungsten HUD panel', () => {
     expect(panel(t, time).store).toEqual({ frac: 0.2, text: '240k / 1.2M', low: false });
   });
 
+  it('shows a store kept from Overdrive as full, not over its cap', () => {
+    const { t, time } = tungsten();
+    t.charge = 1_100_000;
+    expect(panel(t, time).store).toEqual({ frac: 1, text: '1.1M / 1.1M', low: false });
+  });
+
   it('gives every Overdrive cube a health bar in its own colour', () => {
     const { s, t } = tungsten();
     t.mode = t.cubes[0].mode = 2;
@@ -181,20 +187,36 @@ describe('Tungsten cube reticle', () => {
     Object.assign(c, { state: 'broken', reform: 4.5 });
     expect(cubeReticle(t, time, 0, -900)).toEqual({ text: 'Cube re-forming · 5s', out: true });
   });
+
+  it('times the other cubes in Overdrive while the main cube re-forms', () => {
+    const { s, t } = tungsten();
+    overdrive(s);
+    Object.assign(t.cubes[0], { state: 'broken', reform: 9 });
+    const { text, out } = cubeReticle(t, s.game.time, 0, -1800);
+    expect(out).toBe(false);
+    expect(text).toMatch(/^Throw /);
+  });
 });
 
 describe('Tungsten fire button slot', () => {
   it('shows the throw reload, and why a throw is not ready', () => {
-    const { t } = tungsten();
-    expect(cubeSlot(t)).toEqual({ frac: 1, info: 'Ready' });
+    const { t, time } = tungsten();
+    expect(cubeSlot(t, time)).toEqual({ frac: 1, info: 'Ready' });
     t.reload = CUBE.shot.reload / 2;
-    expect(cubeSlot(t)).toEqual({ frac: 0.5, info: `${(CUBE.shot.reload / 2).toFixed(1)}s` });
+    expect(cubeSlot(t, time)).toEqual({ frac: 0.5, info: `${(CUBE.shot.reload / 2).toFixed(1)}s` });
     t.reload = 0;
     t.spent = true;
-    expect(cubeSlot(t)).toEqual({ frac: 0, info: 'Spent' });
+    expect(cubeSlot(t, time)).toEqual({ frac: 0, info: 'Spent' });
     t.spent = false;
     t.cubes[0].state = 'broken';
-    expect(cubeSlot(t)).toEqual({ frac: 0, info: 'Re-forming' });
+    expect(cubeSlot(t, time)).toEqual({ frac: 0, info: 'Re-forming' });
+  });
+
+  it('stays ready in Overdrive while the main cube re-forms', () => {
+    const { s, t } = tungsten();
+    overdrive(s);
+    t.cubes[0].state = 'broken';
+    expect(cubeSlot(t, s.game.time)).toEqual({ frac: 1, info: 'Ready' });
   });
 });
 

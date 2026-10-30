@@ -341,8 +341,9 @@ export class TungstenCubeFx {
       v.mode = c.mode;
       const p = this.renderPos(c, this.v);
       const moved = Math.hypot(p.x - v.lastX, p.z - v.lastZ);
-      if (moved > 0.5) {
+      if (moved > 0.5 && c.state === 'flying') {
         // The roll axis in the cube's own frame, so it comes to rest on a face however it turns afterwards.
+        // Only a throw rolls it: turning the axis under a settled cube would tip it onto an edge.
         const ax = (p.z - v.lastZ) / moved,
           az = -(p.x - v.lastX) / moved;
         const cy = Math.cos(c.yaw),
@@ -429,8 +430,8 @@ export class TungstenCubeFx {
       const t = s.tungsten!;
       const p = this.renderPos(c, this.v);
       const parked = c.state === 'hover' || c.state === 'guard' || c.state === 'orbit';
-      // A spent cube sits low and dark in the water until it docks or recharges.
-      const spent = t.spent && c === t.cubes[0];
+      // A spent cube sits low and dark in the water until it docks or recharges; it flies and guards lit.
+      const spent = t.spent && c === t.cubes[0] && c.state === 'hover';
       const bob = parked && !spent && !this.paint.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
       const ult = this.ult.cubeLook(s, c);
       const lift = slamLift(t, c.id) + (ult?.lift ?? 0);

@@ -1,5 +1,5 @@
 import { CUBE, TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
-import type { CubeState, TungstenState } from '../skills/misc/TungstenRuntime';
+import type { Cube, CubeState, TungstenState } from '../skills/misc/TungstenRuntime';
 import type { Team } from '../core/types';
 import type { Ship } from '../ships/Ship';
 
@@ -102,7 +102,8 @@ function panel(t: TungstenState, time: number, x: number, z: number): TungstenPa
       ? { frac: 1 - c.reform / CUBE.reform, text: `Re-forming ${secs(c.reform)}s`, low: true }
       : { frac: c.hp / c.maxHp, text: `${amount(c.hp)} / ${amount(c.maxHp)}`, low: c.hp / c.maxHp < 0.3 };
 
-  const cap = CUBE.chargeCap * (t.overdriveUntil > time ? CUBE.orbit.cap : 1);
+  // A store kept from Overdrive reads as full.
+  const cap = Math.max(t.charge, CUBE.chargeCap * (t.overdriveUntil > time ? CUBE.orbit.cap : 1));
   const store = t.guardUntil > time || t.charge > 0 ? { frac: t.charge / cap, text: `${amount(t.charge)} / ${amount(cap)}`, low: false } : null;
 
   const cubes =
@@ -116,9 +117,16 @@ function panel(t: TungstenState, time: number, x: number, z: number): TungstenPa
   return { where, energy: { frac: t.energy, text: energy, low: !free && (t.spent || t.energy < CUBE.shot.cost) }, cube, store, cubes };
 }
 
+/** The cube a throw is timed from: the main cube, or in Overdrive the first of the six that can be thrown. */
+function thrower(t: TungstenState, time: number): Cube {
+  const c = primary(t);
+  if (t.overdriveUntil <= time || c.state === 'docked' || c.state === 'hover') return c;
+  return t.cubes.find((k) => !k.gone && (k.state === 'docked' || k.state === 'hover')) ?? c;
+}
+
 /** The reticle's line for the fire button: how far and how long the throw is, or why there is none. */
 export function cubeReticle(t: TungstenState, time: number, aimX: number, aimZ: number): { text: string; out: boolean } {
-  const c = primary(t);
+  const c = thrower(t, time);
   if (c.state === 'broken') return { text: `Cube re-forming · ${secs(c.reform)}s`, out: true };
   if (t.spent) return { text: 'Spent: Dock or Surge to throw', out: true };
   if (c.state !== 'docked' && c.state !== 'hover') return { text: c.state === 'flying' ? 'Cube in flight' : 'Cube busy', out: true };
@@ -129,8 +137,8 @@ export function cubeReticle(t: TungstenState, time: number, aimX: number, aimZ: 
 }
 
 /** The cube's weapon slot: its throw reload, or why it cannot throw. */
-export function cubeSlot(t: TungstenState): { frac: number; info: string } {
-  if (primary(t).state === 'broken') return { frac: 0, info: 'Re-forming' };
+export function cubeSlot(t: TungstenState, time: number): { frac: number; info: string } {
+  if (thrower(t, time).state === 'broken') return { frac: 0, info: 'Re-forming' };
   if (t.spent) return { frac: 0, info: 'Spent' };
   return t.reload > 0 ? { frac: 1 - t.reload / CUBE.shot.reload, info: `${t.reload.toFixed(1)}s` } : { frac: 1, info: 'Ready' };
 }

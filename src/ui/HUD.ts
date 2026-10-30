@@ -633,7 +633,7 @@ export class HUD {
         fracR = 1 - r / (me.spec.missiles.reload * me.mods.missileReloadMul);
         info = r <= 0 ? `${me.spec.missiles.salvo + (me.trait?.vlsExtra ?? 0)} ready` : `${r.toFixed(0)}s`;
       } else if (s.kind === 'cube' && me.tungsten) {
-        ({ frac: fracR, info } = cubeSlot(me.tungsten));
+        ({ frac: fracR, info } = cubeSlot(me.tungsten, this.game.time));
       }
       setText(se.info, info);
       setWidth(se.bar, fracR);

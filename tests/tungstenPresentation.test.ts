@@ -16,6 +16,7 @@ const SWITCH = 1;
 const SIGNATURE = 2;
 const SURGE = 3;
 const DOCK = 4;
+const SHIELD = 5;
 const COLLAPSE = 6;
 const METEOR = 7;
 const OVERDRIVE = 8;
@@ -383,6 +384,60 @@ describe('Tungsten throw effects', () => {
     const up = Math.max(...[new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)].map((e) => Math.abs(e.applyQuaternion(mesh.quaternion).y)));
     expect(up).toBeGreaterThan(0.999);
     fx.dispose();
+  });
+
+  it('keeps a thrown cube flat on a face while it guards', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    const c = s.tungsten!.cubes[0];
+    // Settles five quarter-turns over, as above; the Shield then carries it off across its roll.
+    s.control.aimX = 900;
+    s.control.aimZ = -1830;
+    s.control.fire = true;
+    play(g, fx, 1 / 60, [s]);
+    s.control.fire = false;
+    play(g, fx, 3, [s]);
+    s.control.aimX = -1500;
+    s.control.aimZ = 400;
+    cast(s, SHIELD);
+    const mesh = scene.getObjectByName(`tungsten-free-cube-${s.id}:${c.id}`)!;
+    let worst = 1;
+    for (let i = 0; i < 8; i++) {
+      play(g, fx, 0.5, [s]);
+      fx.prepare(0, 720);
+      worst = Math.min(worst, Math.max(...[new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)].map((e) => Math.abs(e.applyQuaternion(mesh.quaternion).y))));
+    }
+    expect(c.state).toBe('guard');
+    expect(worst).toBeGreaterThan(0.999);
+    fx.dispose();
+  });
+
+  it('flies the throw that empties the magnet lit, and dims it only once it settles', () => {
+    const flight = (last: boolean) => {
+      const g = emptyGame('open', 7, 'freeplay');
+      const s = place(g, 'tungsten', 0, 0, 0);
+      const fx = new TungstenCubeFx(new Scene(), g);
+      const t = s.tungsten!;
+      if (last) t.energy = CUBE.shot.cost;
+      s.control.aimX = 0;
+      s.control.aimZ = -3000;
+      s.control.fire = true;
+      play(g, fx, 1 / 60, [s]);
+      s.control.fire = false;
+      play(g, fx, 0.3, [s]);
+      expect(t.spent).toBe(last);
+      expect(t.cubes[0].state).toBe('flying');
+      fx.prepare(0, 720);
+      const look = { power: fx.skin(s, t.cubes[0].id)!.uPower.value, flat: fx.particles.stats.flat.count };
+      fx.dispose();
+      return look;
+    };
+    const spent = flight(true),
+      lit = flight(false);
+    expect(spent.power).toBeGreaterThan(1);
+    expect(spent.flat).toBe(lit.flat);
   });
 
   it('flares the docked cube when Magnet Surge fires', () => {
