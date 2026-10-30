@@ -36,9 +36,8 @@ export function stateHash(g: Game): number {
     h = mix(h, s.shield);
     h = mix(h, s.alive ? 1 : 0);
     h = mix(h, s.form ? 1 : 0);
-    for(const n of [s.vectorMobility.dashCharges,s.vectorMobility.dashRechargeAt,s.vectorMobility.mobileReadyAt,s.vectorMobility.mobileUntil,s.vectorMobility.mobileDuration])h=mix(h,n);
+    for(const n of [s.vectorMobility.dashCharges,s.vectorMobility.dashRecharge.length,...s.vectorMobility.dashRecharge,s.vectorMobility.mobileReadyAt,s.vectorMobility.mobileUntil,s.vectorMobility.mobileDuration])h=mix(h,n);
     for(const n of s.architectReveal)h=mix(h,n);
-    for(const a of s.architectSupport)for(const n of [a.owner,a.slot,a.until])h=mix(h,n);
     for(const a of s.architectLoadout){h=mix(h,ARCHITECT_TYPES.indexOf(a.type));h=mix(h,a.skill);}
     if(s.architectDrone){h=mix(h,s.architectDrone.owner.id);h=mix(h,s.architectDrone.slot);h=mix(h,s.expiresAt);}
     if (s.architect) {

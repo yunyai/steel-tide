@@ -97,7 +97,7 @@ describe('Vector manual utility',()=>{
   const {g,s}=arena();setArchitectLoadout(s,Array.from({length:10},(_,i)=>({type:'vector',skill:i%2 as 0|1})));
   const casts:string[]=[];g.events.on('architectElement',e=>{if(e.attack==='skill'&&e.phase==='cast')casts.push(e.type??'');});
   const p=s.pos.clone();s.meter=1;expect(s.activateSkill(8)).toBe(true);run(g,2);
-  expect(casts).toEqual([]);expect(s.vectorMobility.dashRechargeAt).toBe(0);expect(s.pos.distanceTo(p)).toBeCloseTo(0);
+  expect(casts).toEqual([]);expect(s.vectorMobility.dashRecharge).toEqual([]);expect(s.pos.distanceTo(p)).toBeCloseTo(0);
   expect(s.architect!.slots.some(a=>a.entity!.stats.shotsFired>0)).toBe(true);
  });
  it('does not let its own Brood drones push the source platform',()=>{

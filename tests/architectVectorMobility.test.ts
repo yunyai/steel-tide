@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { emptyGame, place, run } from './helpers';
 import { defaultLoadout } from '../src/data/architectLoadout';
 import { activateConsumable } from '../src/ships/Consumables';
-import { clearArchitect, dashLift, materialize, refitArchitect, setArchitectLoadout, updateArchitect, vectorTuning, VECTOR_THRUST } from '../src/skills/misc/ArchitectRuntime';
+import { clearArchitect, dashLift, materialize, refitArchitect, RESONANCE_TEMPO, setArchitectLoadout, updateArchitect, vectorTuning, VECTOR_THRUST } from '../src/skills/misc/ArchitectRuntime';
 import type { ArchitectSelection } from '../src/data/architectLoadout';
 import { stateHash } from '../src/net/hash';
 
@@ -35,14 +35,15 @@ describe('independent Vector mobility',()=>{
   dash(s);run(g,.55);expect(s.pos.x).toBeCloseTo(distance);expect(s.architect!.drive).toBeNull();
   expect(s.control.architectHullDash).toBe(false);expect(s.control.architectMobileBattery).toBe(false);
  });
- it('spends two charges then restores them sequentially while rejected overlapping casts consume nothing',()=>{
+ it('spends two charges then restores each on its own clock while rejected overlapping casts consume nothing',()=>{
   const {g,s}=arena();dash(s);g.step();const started=g.time;
   dash(s);g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(1);
-  run(g,.55);s.control.aimX=3000;dash(s);run(g,.55);
-  expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(0);const x=s.pos.x;dash(s);g.step();expect(s.pos.x).toBe(x);
+  run(g,.55);s.control.aimX=3000;dash(s);run(g,.55);const second=s.vectorMobility.dashRecharge[1];
+  expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(0);expect(s.vectorMobility.dashRecharge).toHaveLength(2);const x=s.pos.x;dash(s);g.step();expect(s.pos.x).toBe(x);
   while(g.time<started+10-1e-8)g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(1);
-  expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeCloseTo(10,4);
-  while(g.time<started+20-1e-8)g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);
+  // Both charges were recharging at once: the second is back well before a sequential 20 s.
+  expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeCloseTo(second-g.time,4);expect(second-started).toBeLessThan(11.2);
+  while(g.time<second-1e-8)g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);expect(s.vectorMobility.dashRecharge).toEqual([]);
  });
  it('caps at a closer reticle and stacks duplicate specializations without a cap',()=>{
   const {g,s}=arena();const picks=defaultLoadout();for(let i=0;i<4;i++)picks[i]={type:'vector',skill:i%2 as 0|1};setArchitectLoadout(s,picks);escorts(s,1);
@@ -65,7 +66,7 @@ describe('independent Vector mobility',()=>{
   const {g,s}=arena();const picks=defaultLoadout();picks[0]={type:'vector',skill:0};picks[1]={type:'vector',skill:0};setArchitectLoadout(s,picks);
   expect(s.vectorMobility.dashCharges).toBe(3);s.refreshModifiers();expect(s.mods.speedMul).toBeCloseTo(1.12);
   const lost=s.architect!.slots[1];lost.state='destroyed';lost.hp=0;lost.rebuild=60;g.step();
-  expect(s.mods.speedMul).toBeCloseTo(1.06);expect(s.vectorMobility.dashCharges).toBe(2);expect(s.vectorMobility.dashRechargeAt).toBe(0);
+  expect(s.mods.speedMul).toBeCloseTo(1.06);expect(s.vectorMobility.dashCharges).toBe(2);expect(s.vectorMobility.dashRecharge).toEqual([]);
   lost.state='docked';lost.hp=5000;g.step();
   expect(s.getVectorMobilityStatus()?.hullDash).toMatchObject({charges:2,maxCharges:3});expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeGreaterThan(9.9);
  });
@@ -97,15 +98,47 @@ describe('independent Vector mobility',()=>{
   g.map.heightAt=()=>-100;s.meter=1;s.activateSkill(6);dash(s);mobile(s);g.step();
   expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);expect(s.getVectorMobilityStatus()?.mobileBattery.cooldownRemaining).toBe(0);
  });
- it('sweeps narrow terrain, wall and same-height ship obstacles',()=>{
-  for(const obstacle of ['terrain','wall','ship']){
+ it('stops at a wall but flies over thin terrain and allied hulls',()=>{
+  {const {g,s}=arena();s.control.aimX=0;s.control.aimZ=3500;g.walls.push({team:1,x0:-500,z0:1900,x1:500,z1:1900,age:0,life:100} as typeof g.walls[number]);
+   dash(s);run(g,.55);expect(s.pos.z).toBeGreaterThan(1500);expect(s.pos.z).toBeLessThan(1900);expect(s.architect!.drive).toBeNull();}
+  for(const obstacle of ['terrain','ally']){
    const {g,s}=arena();s.control.aimX=0;s.control.aimZ=3500;
    if(obstacle==='terrain')g.map.heightAt=(_x,z)=>z>=1900&&z<=1910?50:-100;
-   if(obstacle==='wall')g.walls.push({team:1,x0:-500,z0:1900,x1:500,z1:1900,age:0,life:100} as typeof g.walls[number]);
-   if(obstacle==='ship'){const block=place(g,'iowa',0,0,2000);block.throttle=2;block.secondaries=[];}
-   dash(s);run(g,.55);expect(s.pos.z,obstacle).toBeGreaterThan(1500);expect(s.pos.z,obstacle).toBeLessThan(1900);
-   expect(s.architect!.drive).toBeNull();
+   else {const block=place(g,'iowa',0,0,2000);block.throttle=2;block.secondaries=[];}
+   dash(s);run(g,.6);expect(s.pos.z,obstacle).toBeCloseTo(2600);expect(s.pos.y,obstacle).toBe(0);
   }
+ });
+ it('climbs over an island to open water beyond it',()=>{
+  const {g,s,t}=arena();t.withdraw();g.map.heightAt=(x,z)=>Math.abs(z-1500)<600&&x>300&&x<800?180:-100;
+  let peak=0;dash(s);for(let i=0;i<36;i++){g.step();if(s.pos.x>300&&s.pos.x<800)peak=Math.max(peak,s.pos.y);}
+  expect(peak).toBeGreaterThan(180+s.spec.draft);expect(s.pos.x).toBeCloseTo(1100);expect(s.pos.y).toBe(0);expect(g.map.heightAt(s.pos.x,s.pos.z)).toBeLessThan(0);
+ });
+ it('sets down on the open water nearest a reticle placed on an island',()=>{
+  const {g,s,t}=arena();t.withdraw();g.map.heightAt=(x,z)=>Math.abs(z-1500)<600&&x>500&&x<1000?120:-100;
+  s.control.aimX=900;dash(s);run(g,.6);
+  expect(s.pos.y).toBe(0);expect(s.pos.x).toBeGreaterThan(1000);expect(s.pos.x).toBeLessThan(1000+s.spec.length/2+60);
+  const {g:g2,s:s2,t:t2}=arena();t2.withdraw();g2.map.heightAt=(x,z)=>Math.abs(z-1500)<600&&x>500&&x<1000?120:-100;
+  s2.control.aimX=560;dash(s2);run(g2,.6);expect(s2.pos.x).toBeLessThan(500-s2.spec.length/2);expect(s2.pos.x).toBeGreaterThan(500-s2.spec.length/2-40);expect(s2.pos.y).toBe(0);
+ });
+ it('backs off to open water when a wall stops it over an island',()=>{
+  const {g,s,t}=arena();t.withdraw();g.map.heightAt=(x,z)=>Math.abs(z-1500)<600&&x>400&&x<1500?120:-100;
+  g.walls.push({team:1,x0:900,z0:1000,x1:900,z1:2000,age:0,life:100} as typeof g.walls[number]);
+  s.control.aimX=1800;s.vectorMobility.dashCharges=2;dash(s);run(g,.6);
+  expect(s.architect!.drive).toBeNull();expect(s.pos.y).toBe(0);expect(s.pos.x).toBeLessThan(400);
+ });
+ it('rejects a dash with no open water anywhere along the line',()=>{
+  const {g,s}=arena();g.map.heightAt=(x,z)=>Math.abs(z-1500)<600&&x>100?120:-100;s.control.aimX=2000;dash(s);g.step();
+  expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);expect(s.skillFailure).toContain('no open water');
+ });
+ it('drops an interrupted dash back onto water rather than an island',()=>{
+  const {g,s,t}=arena();t.withdraw();g.map.heightAt=(x,z)=>Math.abs(z-1500)<600&&x>300&&x<800?120:-100;
+  dash(s);run(g,.3);expect(s.pos.x).toBeGreaterThan(300);s.mods.stunned=true;updateArchitect(s,1/60);
+  expect(s.architect!.drive).toBeNull();expect(s.pos.y).toBe(0);expect(g.map.heightAt(s.pos.x,s.pos.z)).toBeLessThan(0);
+ });
+ it.each([0,1,4,10])('shortens every reload for %i living Resonance turrets with no cap',n=>{
+  const {s}=arena();const picks:ArchitectSelection[]=defaultLoadout().map((p,i)=>i<n?{type:'resonance',skill:(i%2) as 0|1}:p.type==='resonance'?{type:'storm',skill:0}:p);
+  setArchitectLoadout(s,picks);s.refreshModifiers();expect(s.mods.reloadMul).toBeCloseTo(1/(1+RESONANCE_TEMPO*n));
+  if(n){const lost=s.architect!.slots[0];lost.state='destroyed';lost.hp=0;s.refreshModifiers();expect(s.mods.reloadMul).toBeCloseTo(1/(1+RESONANCE_TEMPO*(n-1)));}
  });
  it('keeps hull spans separated vertically while sweeping under a raised carrier',()=>{
   const {g,s}=arena(),slot=s.architect!.slots[0],block=materialize(s,slot);slot.state='deployed';block.pos.set(0,200,2000);
@@ -196,7 +229,8 @@ describe('independent Vector mobility',()=>{
  });
  it('hashes persistent charges, recharge, cooldown and activity as well as current movement',()=>{
   const {g,s}=arena();dash(s);mobile(s);g.step();
-  for(const key of ['dashCharges','dashRechargeAt','mobileReadyAt','mobileUntil','mobileDuration'] as const){const h=stateHash(g),value=s.vectorMobility[key];s.vectorMobility[key]++;expect(stateHash(g),key).not.toBe(h);s.vectorMobility[key]=value;}
+  {const h=stateHash(g);s.vectorMobility.dashRecharge.push(g.time+5);expect(stateHash(g)).not.toBe(h);s.vectorMobility.dashRecharge.pop();}
+  for(const key of ['dashCharges','mobileReadyAt','mobileUntil','mobileDuration'] as const){const h=stateHash(g),value=s.vectorMobility[key];s.vectorMobility[key]++;expect(stateHash(g),key).not.toBe(h);s.vectorMobility[key]=value;}
   const h=stateHash(g);s.architect!.drive!.elapsed+=.1;expect(stateHash(g)).not.toBe(h);
   const h2=stateHash(g);s.architect!.drive!.hit.push(99);expect(stateHash(g)).not.toBe(h2);
  });

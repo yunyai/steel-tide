@@ -56,7 +56,7 @@ export interface Landing {
   heading: number;
 }
 
-/** Footprint samples include the beam and both ends, not just the hull centre. */
+/** Footprint samples include the beam and both ends, not just the hull centre. `ignoreTerrain` keeps only the map edge (airborne hulls). */
 export function safeStep(
   s: Ship,
   x: number,
@@ -65,6 +65,7 @@ export function safeStep(
   ignoreEnemies = false,
   reservations: Landing[] = [],
   ignoreShip: (other: Ship) => boolean = () => false,
+  ignoreTerrain = false,
 ): boolean {
   if (!Number.isFinite(x + z + heading)) return false;
   const fx = forwardX(heading),
@@ -80,7 +81,7 @@ export function safeStep(
       if (
         Math.abs(px) > MAP_HALF - 150 ||
         Math.abs(pz) > MAP_HALF - 150 ||
-        s.game.map.heightAt(px, pz) > -Math.max(6, s.spec.draft)
+        (!ignoreTerrain && s.game.map.heightAt(px, pz) > -Math.max(6, s.spec.draft))
       )
         return false;
     }

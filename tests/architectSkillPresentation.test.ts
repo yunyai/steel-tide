@@ -61,7 +61,7 @@ it('shows selected Vector specialization as a manual action independent of Searc
  const g=emptyGame('open',1,'freeplay'),s=place(g,'architect',0,0,3000);s.architect!.slots[0].type='vector';s.architect!.slots[0].skill=0;
  s.consumables.find(c=>c.spec.type==='search')!.cooldown=50;
  expect(architectModuleSkillPresentation(s,0)).toMatchObject({name:'Hull Dash',phase:'ready',label:expect.stringMatching(/manual Hull Dash.*2\/2/)});
- s.vectorMobility.dashCharges=0;s.vectorMobility.dashRechargeAt=g.time+9;
+ s.vectorMobility.dashCharges=0;s.vectorMobility.dashRecharge=[g.time+9,g.time+9];
  expect(architectModuleSkillPresentation(s,0)).toMatchObject({eta:9,phase:'recharging',label:expect.stringMatching(/9.0s/)});
  expect(architectModuleSkillPresentation(s,0).progress).toBeCloseTo(.1);
  s.vectorMobility.dashCharges=1;s.mods.rooted=true;
@@ -70,6 +70,6 @@ it('shows selected Vector specialization as a manual action independent of Searc
 
 it('never displays retained Search recharge as a destroyed Vector timer',()=>{
  const g=emptyGame('open',1,'freeplay'),s=place(g,'architect',0,0,3000),slot=s.architect!.slots[0];slot.type='vector';slot.state='destroyed';slot.hp=0;
- s.vectorMobility.dashCharges=0;s.vectorMobility.dashRechargeAt=g.time+9;s.consumables.find(c=>c.spec.type==='search')!.cooldown=50;
+ s.vectorMobility.dashCharges=0;s.vectorMobility.dashRecharge=[g.time+9,g.time+9];s.consumables.find(c=>c.spec.type==='search')!.cooldown=50;
  expect(architectModuleSkillPresentation(s,0)).toMatchObject({eta:9,phase:'disabled',label:expect.stringMatching(/Platform destroyed/)});
 });

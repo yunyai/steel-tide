@@ -58,5 +58,5 @@ it('replays Vector drive, following offsets, Recall and ordinary capacitor cycle
   for(let tick=0;tick<TURN_TICKS;tick++){x.applyTick(turn,tick);y.applyTick(structuredClone(turn),tick);expect(x.hash()).toBe(y.hash());}
   const ar=a.humans()[0].architect!;followed ||= ar.slots.some(slot=>!!slot.follow);charged ||= ar.slots.some(slot=>slot.capacitorCycles>0||slot.capacitorCharged);
  }
- expect(followed).toBe(true);expect(charged).toBe(true);expect(a.humans()[0].vectorMobility.dashRechargeAt).toBeCloseTo(12+1/60);
+ expect(followed).toBe(true);expect(charged).toBe(true);expect(a.humans()[0].vectorMobility.dashRecharge).toHaveLength(1);expect(a.humans()[0].vectorMobility.dashRecharge[0]).toBeCloseTo(12+1/60);
 });

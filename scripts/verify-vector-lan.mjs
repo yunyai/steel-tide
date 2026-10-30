@@ -35,7 +35,7 @@ try {
     sim.applyTick = (turn, tick) => {
       apply(turn, tick);
       const s = sim.ship(0), k = turn.k * 2 + tick;
-      review.checkpoints[k] = { hash: sim.hash(), charges: s.vectorMobility.dashCharges, rechargeAt: s.vectorMobility.dashRechargeAt, mobileUntil: s.vectorMobility.mobileUntil, mobileReadyAt: s.vectorMobility.mobileReadyAt, x: s.pos.x, z: s.pos.z };
+      review.checkpoints[k] = { hash: sim.hash(), charges: s.vectorMobility.dashCharges, recharge: [...s.vectorMobility.dashRecharge], mobileUntil: s.vectorMobility.mobileUntil, mobileReadyAt: s.vectorMobility.mobileReadyAt, x: s.pos.x, z: s.pos.z };
       for (const [player, edgeTick, edge] of turn.e ?? []) if (player === 0 && edgeTick === tick && (edge.hd || edge.mb || edge.co !== undefined)) review.casts.push({ k, edge, dashActive: !!s.architect.drive, ...review.checkpoints[k] });
     };
   });
@@ -73,7 +73,7 @@ try {
     const s = window.steel.battle.pcs[0].ship;
     return { vector: { ...s.vectorMobility }, loadout: s.architectLoadout, searchCharges: s.consumables[1].charges, turns: window.steel.net.lan.lockstep.played };
   });
-  for (const field of ['dashRechargeAt', 'mobileUntil', 'mobileReadyAt', 'mobileDuration']) if (replay.vector[field] !== beforeReplay.vector[field]) throw Error(`Replay lost ${field}`);
+  for (const field of ['dashRecharge', 'mobileUntil', 'mobileReadyAt', 'mobileDuration']) if (JSON.stringify(replay.vector[field]) !== JSON.stringify(beforeReplay.vector[field])) throw Error(`Replay lost ${field}`);
   if (JSON.stringify(replay.loadout) !== JSON.stringify(beforeReplay.loadout) || replay.searchCharges !== beforeReplay.search.charges) throw Error('Replay lost independent action state');
   await install(host); await host.waitForFunction(() => Object.keys(window.vectorLanReview.checkpoints).length > 90);
   const postReplayLedgers = await Promise.all(pages.map(page => page.evaluate(() => window.vectorLanReview.checkpoints)));

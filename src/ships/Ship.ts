@@ -1,7 +1,6 @@
-import type { SupportAdmission } from '../skills/misc/ArchitectSupport';
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
-import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, activateArchitectHullDash, activateArchitectMobileBattery, applyVectorThrusters, getVectorMobilityStatus, updateVectorMobilityTimers, architectDashDamageReduction, type VectorMobilityState, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
+import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, activateArchitectHullDash, activateArchitectMobileBattery, applyArsenalPassives, getVectorMobilityStatus, updateVectorMobilityTimers, architectDashDamageReduction, type VectorMobilityState, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
 import { clearStepper, incomingStep, mirrorStep, newStepperState, type StepperState } from '../skills/misc/StepperRuntime';
 import { canTrack } from '../core/Targeting';
@@ -493,12 +492,11 @@ export interface FormState {
 export class Ship {
   architect: ArchitectState | null = null;
   architectPlatform: ArchitectPlatform | null = null;
-  architectSupport:SupportAdmission[]=[];
   architectReveal:[number,number]=[0,0];
   architectDrone:{owner:Ship;slot:number}|null=null;
   architectLoadout:ArchitectLoadout=copyLoadout(undefined);
   /** Captain-owned clocks survive loadout refits, Architect rebuilds and temporary hull forms. */
-  vectorMobility:VectorMobilityState={dashCharges:2,dashRechargeAt:0,mobileReadyAt:0,mobileUntil:0,mobileDuration:10};
+  vectorMobility:VectorMobilityState={dashCharges:2,dashRecharge:[],mobileReadyAt:0,mobileUntil:0,mobileDuration:10};
   getVectorMobilityStatus(){return getVectorMobilityStatus(this);}
   readonly id: number;
   /** The hull as it sails now: the base hull, or its titan form during a Titan Shift. */
@@ -1044,7 +1042,7 @@ export class Ship {
     }
     // Buffs first, then debuffs, so an unstoppable ship can keep its pace through slows and stuns.
     for (const e of this.effects) if (!e.id.startsWith('debuff:')) e.apply(m);
-    if (this.architect) applyVectorThrusters(this, m);
+    if (this.architect) applyArsenalPassives(this, m);
     const { speedMul, traverseMul, turnMul } = m;
     for (const e of this.effects) if (e.id.startsWith('debuff:')) e.apply(m);
     if (m.unstoppable) {

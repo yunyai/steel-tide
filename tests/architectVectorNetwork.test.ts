@@ -29,7 +29,8 @@ it('replays both mobility clocks, charge depletion, refits and Search identicall
   if(k===420){const e=a.humans()[0].architect!.slots[1];between=[e.state,e.follow,e.entity?.pos.y,e.path];}
  }
  const s=a.humans()[0];expect(s.pos.x).toBeCloseTo(3000); // 1100 + 1100 + the base 800 after the refit.
- expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(1);expect(s.vectorMobility.mobileReadyAt).toBeCloseTo(29+1/60);
+ // Spent charges recharge in parallel, so both are back 10 s after the last dash.
+ expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);expect(s.vectorMobility.dashRecharge).toEqual([]);expect(s.vectorMobility.mobileReadyAt).toBeCloseTo(29+1/60);
  expect(s.consumables[1].charges).toBe(s.consumables[1].spec.charges-1);
  // The escort flew, settled on the water between windows, and lifts again for the second cast.
  expect(peak).toBeGreaterThan(80);expect(between).toEqual(['deployed',null,0,null]);expect(s.architect!.slots[1].follow).not.toBeNull();

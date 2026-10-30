@@ -1,11 +1,13 @@
 import { expect,it } from 'vitest';
 import { emptyGame,place,run } from './helpers';
-import { supportFactor,grantSupportShield } from '../src/skills/misc/ArchitectSupport';
+import { grantSupportShield,supportHeal } from '../src/skills/misc/ArchitectSupport';
 import { ARCHETYPES } from '../src/data/architectLoadout';
 import { startElementAttack,updateElements } from '../src/skills/misc/ArchitectElements';
 function setup(){const g=emptyGame('open',713,'freeplay'),s=place(g,'architect',0,0,2000),t=place(g,'leviathan',1,0,-1000);t.hp=t.maxHp=1e8;t.colossus=false;s.control.aimZ=0;s.throttle=t.throttle=2;s.secondaries.length=t.secondaries.length=0;return {g,s,t};}
-it('keeps four distinct support emitters full strength across rapid casts and owners',()=>{const {g,s,t}=setup();const ally=place(g,'architect',0,100,2000);for(let i=0;i<4;i++)expect(supportFactor(t,s,i)).toBe(1);expect(supportFactor(t,s,4)).toBe(.5);expect(supportFactor(t,ally,0)).toBe(.5);expect(supportFactor(t,ally,1)).toBe(.25);for(let i=0;i<20;i++)expect(supportFactor(t,s,0)).toBe(1);g.time+=6.1;expect(supportFactor(t,ally,1)).toBe(1);});
-it('weak repeated grants do not extend a stronger shield',()=>{const {s,t}=setup();t.shield=500000;t.shieldTime=1;grantSupportShield(s,s.architect!.slots[0],t,120000,5);expect(t.shield).toBe(500000);expect(t.shieldTime).toBe(1);});
+it('heals at full strength from every support emitter and owner with no diminishing returns',()=>{const {g,s}=setup();const ally=place(g,'architect',0,100,2000),hurtShip=place(g,'iowa',0,0,1000);hurtShip.hp=hurtShip.maxHp=1e8;hurtShip.hp=1e7;
+ for(let i=0;i<10;i++)for(const owner of [s,ally]){const before=hurtShip.hp;supportHeal(owner,hurtShip,20000);expect(hurtShip.hp-before).toBeCloseTo(20000);}
+ expect(hurtShip.hp).toBeCloseTo(1e7+20*20000);});
+it('weak repeated grants do not extend a stronger shield',()=>{const {s,t}=setup();t.shield=500000;t.shieldTime=1;grantSupportShield(s,t,120000,5);expect(t.shield).toBe(500000);expect(t.shieldTime).toBe(1);});
 it('Hunt focuses a tracked enemy without firing a free salvo and adds 40% once',()=>{const {g,s,t}=setup();s.control.targetId=t.id;expect(s.activateSkill(1)).toBe(true);expect(g.shells.shells).toHaveLength(0);expect(s.architect!.huntTarget).toBe(t.id);expect(s.skills[1].cooldown).toBe(18);expect(t.takeDamage(100,s)).toBeCloseTo(140);const other=place(g,'iowa',1,1000,0);expect(other.takeDamage(100,s)).toBeCloseTo(100);});
 it('Fortify uses the agreed shields duration and cooldown',()=>{const {s}=setup();s.activateSkill(5);expect(s.shield).toBe(300000);expect(s.shieldTime).toBe(8);expect(s.skills[5].cooldown).toBe(16);});
 it('Citadel readies one selected skill and recharges fivefold',()=>{const {g,s,t}=setup();t.withdraw();s.meter=1;s.activateSkill(8);run(g,1.6);const a=s.architect!.slots[0];expect(a.skillTimer).toBe(0);a.skillTimer=8;updateElements(s,1);expect(a.skillTimer).toBe(3);expect(s.shield).toBeGreaterThan(490000);expect(s.mods.citadelDR).toBeCloseTo(.6);expect(a.reloadScale).toBeCloseTo(1/6);});
