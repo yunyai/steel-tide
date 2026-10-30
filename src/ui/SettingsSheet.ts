@@ -1,6 +1,6 @@
 import { audio } from '../fx/Audio';
 import { ACTIONS, type ActionId, type ActionInfo, DEFAULT_BINDINGS, bindable, bindings, keyName, rebind, setBindings } from '../input/Keybinds';
-import { type ShakeLevel, controls, display, setControls, setDisplay, setSound, sound } from '../input/Settings';
+import { DAMAGE_SCALES, type ShakeLevel, controls, display, setControls, setDisplay, setSound, sound } from '../input/Settings';
 import { QUALITIES, type QualityId, quality, setQuality } from '../render/Quality';
 import { field, h, seg } from './dom';
 import { applyPalette } from './palette';
@@ -79,6 +79,15 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
         (v) => setDisplay({ perf: v === 1 }),
       ),
       'Frame time, draw calls and what is afloat, in a corner of the battle. F3 shows or hides it too.',
+    ),
+    field(
+      'Damage numbers',
+      pick(
+        DAMAGE_SCALES.map((v) => ({ value: v, label: `${Math.round(v * 100)}%` })),
+        () => display().damageScale,
+        (v) => setDisplay({ damageScale: v }),
+      ),
+      'Size of the numbers that float over ships you hit. Crowded salvos still spread out so they never stack.',
     ),
   ];
 

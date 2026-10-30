@@ -17,7 +17,7 @@ try{
    for(const a of s.architect.slots)a.dockedFor=3;s.architect.slots[0].capacitorCharged=true;s.architect.slots[1].capacitorCycles=1;
    const f=window.uiReview={b,g,s,pc,input};f.draw=()=>{g.interpolate();pc.camera.position.set(-700,700,3500);pc.camera.lookAt(200,40,2300);pc.camera.updateMatrixWorld(true);window.steel.renderer.update(0,[pc.camera]);b.huds[0].update(0);window.steel.renderer.render(b.viewports);};f.draw();
    const utility=document.querySelector('[data-action="architectHullDash"]');
-   return{summary:document.querySelector('.architect-docking').textContent,utility:utility.title,ready:utility.dataset.state==='ready',buttons:b.huds[0].skillEls.length,storedSearch:{charges:search.charges,cooldown:search.cooldown},overflow:document.documentElement.scrollWidth>innerWidth};
+   return{summary:document.querySelector('.architect-battery').getAttribute('aria-label'),utility:utility.title,ready:utility.dataset.state==='ready',buttons:b.huds[0].skillEls.length,storedSearch:{charges:search.charges,cooldown:search.cooldown},overflow:document.documentElement.scrollWidth>innerWidth};
   });
   if(!docked.ready||!docked.summary.includes('DR 20%')||!docked.summary.includes('CAP 1 ready / 1 half')||!docked.utility.includes('1100m toward reticle')||docked.buttons!==9||docked.overflow)throw Error(JSON.stringify(docked));
   await page.screenshot({path:`${out}/docked-drive-${width}.jpg`,quality:88});
@@ -25,10 +25,10 @@ try{
    const f=window.uiReview,{s,g,pc,input,b}=f;
    window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyH'}));pc.control(1/60,input);const command=pc.out.architectHullDash;g.step();input.endFrame();window.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyH'}));f.draw();
    const active=document.querySelector('[data-action="architectHullDash"]'),started=!!s.architect.drive;
-   s.architect.drive=null;s.vectorMobility.mobileUntil=0;s.vectorMobility.dashCharges=0;s.vectorMobility.dashRechargeAt=g.time+8;s.mods.rooted=true;f.draw();
-   const blocked={title:active.title,cool:active.dataset.state==='blocked',text:active.querySelector('.vector-detail').textContent};
-   s.mods.rooted=false;s.vectorMobility.dashCharges=2;s.vectorMobility.dashRechargeAt=0;s.control.aimZ=1500;s.activateSkill(0);for(let i=0;i<240;i++)g.step();f.draw();
-   return{command,started,blocked,rings:[...document.querySelectorAll('.module-cooldowns')].map(e=>e.children.length),manual:[...document.querySelectorAll('.module-skill-cooldown')].map(e=>e.getAttribute('aria-label')||e.title).filter(s=>s.includes('manual')),summary:document.querySelector('.architect-docking').textContent,search:{charges:s.consumables[1].charges,cooldown:s.consumables[1].cooldown}};
+   s.architect.drive=null;s.vectorMobility.mobileUntil=0;s.vectorMobility.dashCharges=0;s.vectorMobility.dashRecharge=[g.time+8,g.time+8];s.mods.rooted=true;f.draw();
+   const blocked={title:active.title,cool:active.dataset.state==='blocked',text:active.title};
+   s.mods.rooted=false;s.vectorMobility.dashCharges=2;s.vectorMobility.dashRecharge=[];s.control.aimZ=1500;s.activateSkill(0);for(let i=0;i<240;i++)g.step();f.draw();
+   return{command,started,blocked,rings:[...document.querySelectorAll('.module-cooldowns')].map(e=>e.children.length),manual:[...document.querySelectorAll('.module-skill-cooldown')].map(e=>e.getAttribute('aria-label')||e.title).filter(s=>s.includes('manual')),summary:document.querySelector('.architect-battery').getAttribute('aria-label'),search:{charges:s.consumables[1].charges,cooldown:s.consumables[1].cooldown}};
   });
   if(!drive.command||!drive.started||!drive.blocked.title.includes('Rooted')||!drive.blocked.text.includes('8.0s')||!drive.blocked.cool||drive.rings.some(n=>n!==1)||drive.rings.length!==2||drive.manual.length!==2)throw Error(JSON.stringify(drive));
   await page.screenshot({path:`${out}/deployed-drive-${width}.jpg`,quality:88});

@@ -455,14 +455,6 @@ export class PlayerController {
     const spec = s.spec;
     const cam = this.camera;
     const t = this.game.renderTime;
-    const citadel=s.architect?.ultimate?.kind==='citadel';
-    if(own&&s.alive&&!this.game.over&&citadel){
-      this.stepCamera=true;
-      this.stepView.set(s.renderPos.x-Math.sin(this.yaw)*1900,Math.max(1050,s.renderPos.y+1050),s.renderPos.z+Math.cos(this.yaw)*1900);
-      this.stepView.y=Math.max(this.stepView.y,this.game.map.heightAt(this.stepView.x,this.stepView.z)+200);
-      cam.position.copy(this.stepView);this.camPos.copy(this.stepView);cam.lookAt(s.renderPos.x,120,s.renderPos.z);
-      cam.fov=65;this.mag=1;cam.updateProjectionMatrix();cam.updateMatrixWorld();this.assist=null;return;
-    }
     const f = s.stepper?.cross ?? s.stepper?.flicker;
     if (f && own && s.alive && !this.game.over) {
       if (this.stepPan?.state !== f) {

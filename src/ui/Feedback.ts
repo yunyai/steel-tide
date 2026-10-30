@@ -6,6 +6,7 @@ import type { PlayerController } from '../player/PlayerController';
 import type { Ship } from '../ships/Ship';
 import { accentCss } from '../data/accents';
 import { audio } from '../fx/Audio';
+import { display } from '../input/Settings';
 import { captainName } from './names';
 import { palette } from './palette';
 import { feedbackDamageText,layoutFeedbackPopups,type FeedbackRect } from './FeedbackLayout';
@@ -132,6 +133,9 @@ export class Feedback {
   private impact: HTMLElement;
   private off: (() => void)[] = [];
   private rowH = 38;
+  /** Damage-number size from Settings, applied to the popup layer as `--damage-scale`. */
+  private scale = 0;
+  private layer: HTMLElement;
   private protectedUi: HTMLElement[];
 
   constructor(
@@ -149,7 +153,7 @@ export class Feedback {
     this.vignette = el('div', 'hurt', root);
     root.prepend(this.scope, this.vignette);
 
-    const layer = el('div', 'pops', root);
+    const layer = (this.layer = el('div', 'pops', root));
     for (let i = 0; i < POOL; i++) {
       const p = el('div', 'pop', layer);
       p.style.display = 'none';
@@ -300,6 +304,8 @@ export class Feedback {
       p.el.style.visibility = '';
       visible.push({p,x:sp.x,y:sp.y,age:t});
     }
+    const scale=display().damageScale;
+    if(scale!==this.scale){this.scale=scale;this.layer.style.setProperty('--damage-scale',String(scale));for(const p of this.pops)p.dirty=true;}
     const dense=visible.length>=4;
     // Apply density/text together, then measure all popups and protected HUD regions before moving any.
     for(const {p} of visible){
@@ -321,7 +327,7 @@ export class Feedback {
         if(box.width&&box.height)guards.push({left:box.left-origin.left-8,top:box.top-origin.top-8,right:box.right-origin.left+8,bottom:box.bottom-origin.top+8});
       }
     }
-    const positions=layoutFeedbackPopups(visible.map(({p,x,y})=>({x,y:y-(dense?28+Math.min(18,(now-p.born)*15):this.rowH*(.8+p.row)+Math.min(50,(now-p.born)*30)),width:p.w*1.35,height:p.h*1.35})),width,height,guards);
+    const positions=layoutFeedbackPopups(visible.map(({p,x,y})=>({x,y:y-(dense?28*scale+Math.min(18,(now-p.born)*15):this.rowH*scale*(.8+p.row)+Math.min(50,(now-p.born)*30)),width:p.w*1.35,height:p.h*1.35})),width,height,guards);
     visible.forEach(({p,age},i)=>{
       const {x,y}=positions[i];
       p.el.style.transform=`translate(${x.toFixed(0)}px, ${y.toFixed(0)}px) translate(-50%, -100%)`;

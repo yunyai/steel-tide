@@ -20,15 +20,15 @@ try {
       const f = window.vectorReview = { b, g, s, pc, input };
       f.draw = () => { g.interpolate(); pc.camera.position.set(-700, 700, 3500); pc.camera.lookAt(200, 40, 2300); pc.camera.updateMatrixWorld(true); window.steel.renderer.update(0, [pc.camera]); b.huds[0].update(0); window.steel.renderer.render(b.viewports); };
       f.key = code => { window.dispatchEvent(new KeyboardEvent('keydown', { code })); pc.control(1 / 60, input); input.endFrame(); window.dispatchEvent(new KeyboardEvent('keyup', { code })); };
-      f.snapshot = () => ({ mobilityHidden: document.querySelector('.vector-mobility').hidden, actions: [...document.querySelectorAll('.vector-action')].map(e => ({ action: e.dataset.action, state: e.dataset.state, text: e.textContent, title: e.title, key: e.querySelector('kbd').textContent })), search: { charges: search.charges, cooldown: search.cooldown, title: document.querySelector('[data-utility="search"]').title }, overflow: document.documentElement.scrollWidth > innerWidth, clipped: [...document.querySelectorAll('.vector-action')].some(e => e.scrollWidth > e.clientWidth || e.getBoundingClientRect().top < 0) });
+      f.snapshot = () => ({ mobilityHidden: [...document.querySelectorAll('.sk.vector')].every(e => e.hidden && getComputedStyle(e).display === 'none'), actions: [...document.querySelectorAll('.sk.vector')].map(e => ({ action: e.dataset.action, state: e.dataset.state, text: e.title, title: e.title, timer: e.querySelector('.t').textContent, charges: e.querySelector('.ch').textContent, key: e.querySelector('kbd').textContent, box: e.getBoundingClientRect().toJSON() })), search: { charges: search.charges, cooldown: search.cooldown, title: document.querySelector('[data-utility="search"]').title }, overflow: document.documentElement.scrollWidth > innerWidth, clipped: [...document.querySelectorAll('.sk.vector')].some(e => e.getBoundingClientRect().top < 0 || e.getBoundingClientRect().right > innerWidth), rows: new Set([...document.querySelectorAll('.skillbar .sk:not([hidden])')].map(e => Math.round(e.getBoundingClientRect().bottom))).size });
       f.draw(); return f.snapshot();
     });
-    if(!noVector.mobilityHidden)throw Error('Unfitted Vector strip is visible');
+    if(!noVector.mobilityHidden)throw Error('Unfitted Vector tiles are visible');
     await page.screenshot({ path: `${out}/no-vector-${width}.jpg`, quality: 88 });
     // Mobile Battery lifts deployed platforms, so one escort waits on the water.
     const ready=await page.evaluate(async()=>{const {refitArchitect,materialize}=await import('/src/skills/misc/ArchitectRuntime.ts'),f=window.vectorReview;if(!refitArchitect(f.s,0,{type:'vector',skill:0}))throw Error('Vector refit failed');
       const escort=f.s.architect.slots[1],m=materialize(f.s,escort);escort.state='deployed';m.pos.set(1500,0,3000);f.draw();return f.snapshot();});
-    if (ready.actions.length !== 2 || ready.actions.some(a => a.state !== 'ready') || ready.actions[0].key !== 'H' || ready.actions[1].key !== 'J' || ready.overflow || ready.clipped) throw Error(JSON.stringify(ready));
+    if (ready.actions.length !== 2 || ready.actions.some(a => a.state !== 'ready') || ready.actions[0].key !== 'H' || ready.actions[1].key !== 'J' || ready.overflow || ready.clipped || ready.rows !== 1) throw Error(JSON.stringify(ready));
     await page.screenshot({ path: `${out}/ready-${width}.jpg`, quality: 88 });
     const active = await page.evaluate(() => {
       const f = window.vectorReview, { s, g, pc } = f;
@@ -90,10 +90,10 @@ try {
       }
       reset(); frame([15]); const plainSearch = pad.out.consumable; frame([]); reset(); frame([5]); frame([]); const shoulderTap = pad.out.slot;
       reset(); frame([4, 2]); const simultaneousFace = pad.out.skill; frame([]); const faceReleaseSlot = pad.out.slot;
-      reset(); const targetSlot = s.architect.slots[0]; targetSlot.state = 'destroyed'; targetSlot.hp = 0; f.draw();
+      reset(); const targetSlot = s.architect.slots[0]; targetSlot.state = 'destroyed'; targetSlot.hp = 0; targetSlot.rebuild = 5; f.draw();
       return { old, rebound, search, padCases, plainSearch, shoulderTap, simultaneousFace, faceReleaseSlot, lost: f.snapshot() };
     }) : null;
-    if (controls && (controls.old.dash || controls.old.mobile || !controls.rebound.dash || !controls.rebound.mobile || controls.search.command !== 1 || controls.search.used !== 1 || !controls.search.active || controls.padCases.some((c, i) => c.command.dash !== (i !== 1) || c.command.mobile !== (i === 1) || c.command.consumable !== -1 || c.command.slot !== null || c.firstRelease !== null || c.slotAfterRelease !== null) || controls.plainSearch !== 1 || controls.shoulderTap !== 1 || controls.simultaneousFace !== 2 || controls.faceReleaseSlot !== null || controls.lost.actions.some(a => !a.text.includes('Requires a living Vector')))) throw Error(JSON.stringify(controls));
+    if (controls && (controls.old.dash || controls.old.mobile || !controls.rebound.dash || !controls.rebound.mobile || controls.search.command !== 1 || controls.search.used !== 1 || !controls.search.active || controls.padCases.some((c, i) => c.command.dash !== (i !== 1) || c.command.mobile !== (i === 1) || c.command.consumable !== -1 || c.command.slot !== null || c.firstRelease !== null || c.slotAfterRelease !== null) || controls.plainSearch !== 1 || controls.shoulderTap !== 1 || controls.simultaneousFace !== 2 || controls.faceReleaseSlot !== null || controls.lost.actions.some(a => a.state !== 'off' || !a.text.includes('rebuild in')))) throw Error(JSON.stringify(controls));
     if (controls) await page.screenshot({ path: `${out}/custom-keys-vector-lost-1280.jpg`, quality: 88 });
     if (errors.length) throw Error(errors.join('\n'));
     rows.push({ width, height, noVector, ready, active, blocked, keys, controls, errors });

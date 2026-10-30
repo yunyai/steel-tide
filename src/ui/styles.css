@@ -1869,6 +1869,11 @@ select {
   background: rgba(4, 10, 18, 0.7);
   border: 1px solid var(--edge);
 }
+.cockpit > .click-hint {
+  top: auto;
+  bottom: calc(100% + 8px);
+  white-space: nowrap;
+}
 
 /* ------------------------------------------------------- bottom: helm */
 .helm {
@@ -2502,6 +2507,11 @@ select {
   pointer-events: none;
 }
 
+/* Settings > Graphics > Damage numbers. */
+.pops {
+  font-size: calc(1em * var(--damage-scale, 1));
+}
+
 .scope {
   opacity: 0;
   background: radial-gradient(ellipse 64% 74% at 50% 50%, transparent 72%, rgba(2, 8, 14, 0.6) 88%, rgba(2, 8, 14, 0.94) 100%);
@@ -2605,21 +2615,6 @@ select {
     0 0 14px var(--accent),
     0 0 4px var(--accent),
     0 2px 2px #000;
-}
-
-/* Crowded salvos keep their labels and accents without filling the battle view. */
-.pop.dense {
-  font-size: 0.9rem;
-}
-
-.pop.dense small {
-  font-size: 0.75em;
-  letter-spacing: 0.03em;
-}
-
-.pop.dense b {
-  font-size: 1.5em;
-  font-style: normal;
 }
 
 .hitmark,
@@ -3898,23 +3893,37 @@ select {
   .title-actions .go { padding-top: 10px; padding-bottom: 10px; }
 }
 
-/* Architect's ten-slot arsenal is a compact status instrument, not a second action bar. */
-.architect-battery { display:flex; justify-content:center; gap:4px; margin:4px 0 7px; }
-.architect-slot { --health:1; position:relative; display:flex; align-items:center; gap:5px; min-width:45px; padding:4px 6px 7px; background:#102330e8; color:#d9e8ec; border:1px solid #67818d75; font-size:10px; line-height:1; }
-.architect-slot b { font-size:12px; font-variant-numeric:tabular-nums; }
-.architect-slot span { font-size:8px; letter-spacing:.03em; }
-.architect-slot i { position:absolute; height:3px; bottom:2px; left:3px; right:3px; transform:scaleX(var(--health)); transform-origin:left; background:currentColor; }
-.architect-slot[data-state="deployed"],.architect-slot[data-state="citadel"] { color:#86e9ff; border-color:#59c6e6; }
-.architect-slot[data-state="launching"],.architect-slot[data-state="moving"],.architect-slot[data-state="returning"],.architect-slot[data-state="assembling"] { color:#ffd18a; border-color:#e0ab5b; }
-.architect-slot[data-state="destroyed"] { color:#ff8d9d; border-color:#d15c77; background:#3e1d2be8; }
+/* Architect's ten turret sockets: a strip of chamfered glass chips above the hull block. Each chip
+   glows in its platform type's colour; the state word and the 2px health line carry deploy state. */
+.architect-battery { display:grid; grid-template-columns:repeat(10,minmax(0,1fr)); gap:3px; margin:0 0 1px; }
+.architect-slot { --type:var(--cyan); --state:var(--mute); --health:1; position:relative; display:flex; align-items:baseline; gap:4px; min-width:0; height:24px; padding:6px 5px 0 6px; overflow:hidden;
+  font-family:var(--display); line-height:1; color:var(--ice);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--type) 24%,transparent),var(--glass) 80%);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--type) 38%,transparent), inset 0 1px color-mix(in srgb,var(--type) 70%,transparent);
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px); }
+.architect-slot b { color:var(--mute); font-size:9px; font-weight:600; font-variant-numeric:tabular-nums; }
+.architect-slot em { font-style:normal; font-weight:700; font-size:12px; letter-spacing:.02em; color:var(--type); text-shadow:0 0 7px color-mix(in srgb,var(--type) 70%,transparent); }
+.architect-slot span { margin-left:auto; font-size:8.5px; font-weight:600; letter-spacing:.05em; color:var(--state); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.architect-slot i { position:absolute; left:0; right:0; bottom:0; height:2px; transform:scaleX(var(--health)); transform-origin:left; background:var(--state); box-shadow:0 0 6px var(--state); }
+/* A charged capacitor: a lit pip in the chamfered corner. */
+.architect-slot::after { content:''; position:absolute; top:3px; right:3px; width:5px; height:5px; transform:rotate(45deg); background:transparent; box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--type) 35%,transparent); }
+.architect-slot[data-capacitor="half"]::after { box-shadow:inset 0 0 0 1px var(--type); }
+.architect-slot[data-capacitor="charged"]::after { background:var(--ice); box-shadow:0 0 6px var(--type), 0 0 2px var(--ice); }
+.architect-slot[data-state="docked"] { --state:#a9c4d8; }
+.architect-slot[data-state="deployed"],.architect-slot[data-state="citadel"] { --state:var(--cyan); }
+.architect-slot[data-state="launching"],.architect-slot[data-state="moving"],.architect-slot[data-state="returning"],.architect-slot[data-state="assembling"] { --state:var(--amber); }
+.architect-slot[data-state="destroyed"] { --state:var(--red); background:linear-gradient(180deg,rgba(255,59,78,.22),var(--glass) 80%); box-shadow:inset 0 0 0 1px var(--red-dim); }
+.architect-slot[data-state="destroyed"] em { color:var(--mute); text-shadow:none; }
+.architect-slot[data-health="mid"] { --state:var(--amber); }
+.architect-slot[data-health="low"]:not([data-state="destroyed"]) i { background:var(--red); box-shadow:0 0 6px var(--red); }
+@media(max-width:1350px) { .architect-slot { gap:2px; padding:6px 3px 0 4px; } .architect-slot b { display:none; } .architect-slot span { font-size:7.5px; letter-spacing:.02em; } }
 .marker.module-contact.compact { font-size:11px; opacity:.85; }
 .marker.module-contact.compact .ci,.marker.module-contact.compact .sh { display:none; }
 .marker.module-contact.compact { min-width:60px; }
 .marker.module-contact.compact .nm { justify-content:center; }
 .marker.module-contact.compact .hp { width:60px; height:5px; background:#061018e8; box-shadow:0 0 0 1px #91a4ae80; }
-.marker.module-contact[data-health="mid"] .hp i,.architect-slot[data-health="mid"] i { background:var(--amber); }
-.marker.module-contact[data-health="low"] .hp i,.architect-slot[data-health="low"] i { background:var(--red); }
-@media(max-width:1350px) { .architect-battery {gap:3px;margin:3px 0 5px;} .architect-slot {min-width:35px;padding:3px 4px 6px;gap:3px;} .architect-slot span {font-size:7px;} }
+.marker.module-contact[data-health="mid"] .hp i { background:var(--amber); }
+.marker.module-contact[data-health="low"] .hp i { background:var(--red); }
 
 .turret-dots i.remote { background:#77deee; opacity:.55; }
 
@@ -3967,21 +3976,30 @@ select {
 .arsenal-omissions { display:flex; flex-wrap:wrap; gap:8px 14px; margin:0 0 12px; }
 .arsenal-omissions label { display:flex; align-items:center; gap:7px; color:#a7bdc8; font-size:12px; min-width:0; }
 .arsenal-omissions select { min-width:0; max-width:100%; }
-.architect-docking { display:flex; justify-content:center; flex-wrap:wrap; gap:3px 12px; color:#d7e9f1; background:#07131ee8; padding:4px 7px; font-size:11px; line-height:1.35; margin:1px 0 5px; font-variant-numeric:tabular-nums; }
-.architect-docking b { color:#91e2f0; font-weight:600; }
-.architect-slot[data-capacitor="charged"] { box-shadow:inset 0 2px #91e2f0; }
-.vector-mobility { display:flex; justify-content:center; gap:8px; margin:0 0 3px; }
-.vector-mobility[hidden] { display:none; }
-.vector-action { --progress:1; position:relative; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; column-gap:8px; row-gap:2px; width:calc(50% - 4px); min-width:0; padding:6px 10px 8px; background:#07131ef2; color:#d7e9f1; font-size:12px; line-height:1.25; }
-.vector-action::after { content:''; position:absolute; bottom:0; left:0; width:100%; height:2px; background:#91e2f0; transform:scaleX(var(--progress)); transform-origin:left; }
-.vector-action kbd { grid-row:1 / 3; min-width:20px; padding:3px 5px; color:#07131e; background:#eaf6ff; border:1px solid #7896a8; font:600 11px var(--display); text-align:center; }
-.vector-action kbd.unbound { background:#ffd18a; font-size:10px; }
-.vector-name { font-weight:600; }
-.vector-count { color:#91e2f0; font-variant-numeric:tabular-nums; font-weight:700; }
-.vector-detail { grid-column:2 / 4; min-width:0; font-size:11px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
-.vector-action[data-state="ready"] .vector-detail { color:#91e2f0; }
-.vector-action[data-state="active"] { background:#103341f2; }
-.vector-action[data-state="blocked"] .vector-detail { color:#ffd18a; }
-.vector-action[data-state="blocked"]::after { background:#b3cbd8; }
-@media(max-width:1350px) { .vector-action { padding:4px 7px 6px; column-gap:6px; font-size:11px; } .vector-detail { font-size:10px; } }
+/* Vector: Hull Dash and Mobile Battery as two consumable-sized hexes after the consumables. */
+.sk.vector { --accent:#77b8ff; }
+.sk[hidden],.skillbar .gap[hidden] { display:none; }
+.sk.vector .ch { background:#77b8ff; }
+.sk.vector.active .hx::before { background:#cfe6ff; }
+.sk.vector.off { --accent:#5d6f7f; }
+.sk.vector.off .hx { filter:grayscale(1) brightness(.7); }
+.sk.vector.off .nm { color:#5d6f7f; text-decoration:line-through; text-decoration-color:var(--red-dim); }
+.sk.vector[data-state="blocked"] .nm { color:var(--amber); }
+.sk.vector kbd.unbound { background:var(--amber); color:var(--abyss); }
+/* An Architect with Vectors carries thirteen buttons: tighten the titan bar so it stays one row. */
+.skillbar.titan:has(.vector:not([hidden])) { gap:4px; }
+.skillbar.titan:has(.vector:not([hidden])) .sk { width:56px; }
+.skillbar.titan:has(.vector:not([hidden])) .sk.ult { width:86px; }
+.skillbar.titan:has(.vector:not([hidden])) .sk.cons { width:44px; }
+.skillbar.titan:has(.vector:not([hidden])) .gap { width:6px; }
+@media (max-width:1300px) {
+  .skillbar.titan:has(.vector:not([hidden])) { gap:3px; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk { width:50px; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk .hx { width:46px; height:52px; font-size:1.3rem; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.ult { width:66px; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.ult .hx { width:62px; height:70px; font-size:1.8rem; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.cons { width:42px; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.cons .hx { width:40px; height:45px; font-size:1.1rem; }
+  .skillbar.titan:has(.vector:not([hidden])) .sk.cons .ch { top:29px; }
+}
 @media(max-width:520px) { .arsenal-omissions label { flex:1 1 130px; } .arsenal-omissions select { flex:1; } }
