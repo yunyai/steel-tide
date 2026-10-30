@@ -19,7 +19,7 @@ import { Ocean } from './Ocean';
 import { Projectiles } from './Projectiles';
 import { quality } from './Quality';
 import type { BattleScene, Renderer, Viewport } from './Renderer';
-import { ShipView, warmGeometry } from './ShipModel';
+import { ShipView, warmGeometry, platformSunkAfter } from './ShipModel';
 import { SkillFx } from './SkillFx';
 import { shipViewMode } from './Visibility';
 
@@ -160,7 +160,7 @@ export class NavalScene implements BattleScene {
     let built = false;
     for (const s of g.ships) {
       const had = this.views.get(s);
-      if(!s.alive&&(s.architectPlatform||s.architectDrone)&&s.deathTime>=3){
+      if(!s.alive&&(s.architectPlatform||s.architectDrone)&&s.deathTime>=(s.architectPlatform?platformSunkAfter(s):3)){
         if(had){this.scene.remove(had.root);if(had.dome)this.scene.remove(had.dome);had.dispose();this.views.delete(s);}continue;
       }
       // A Titan Shift (or its revert) swaps the hull's spec: build the new body in place of the old.

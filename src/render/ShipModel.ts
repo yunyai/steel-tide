@@ -1,7 +1,6 @@
 import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import { addFleetDetails, FLEET_DETAILS } from './FleetDetails';
 import { ArchitectModel, architectTurretGeometry, elementalTurretGeometry, architectGlowMaterial } from './ArchitectModel';
-import { reducedMotion } from './ArchitectPose';
 import { StepperModel } from './StepperModel';
 import { stepperHullGeometry, stepperTurretGeometry } from './StepperGeometry';
 import {
@@ -42,6 +41,12 @@ import { type ColorFn, Parts, loft } from './Geometry';
 export const shipMaterial = new MeshStandardMaterial({ vertexColors: true, color: 0xb4b4b4, roughness: 0.7, metalness: 0.3, envMapIntensity: 0.8 });
 /** Hulls take this share of the haze the sea and islands get, so a ship at gun range still reads. */
 const SHIP_FOG = 0.5;
+/** A destroyed platform falls at this acceleration (m/s²) and is gone this long after it reaches the water. */
+const PLATFORM_FALL = 150, PLATFORM_SINK = 3;
+/** Seconds after death before a platform's sinking hull can be dropped from the scene. */
+export function platformSunkAfter(ship: { renderPos: { y: number } }): number {
+  return PLATFORM_SINK + Math.sqrt(Math.max(0, ship.renderPos.y) / PLATFORM_FALL);
+}
 const FOG_FRAGMENT = `#ifdef USE_FOG
   #ifdef FOG_EXP2
     float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
@@ -1540,11 +1545,11 @@ export class ShipView {
     if (!ship.alive) {
       const t = ship.deathTime;
       if(ship.architectPlatform){
-        // Withdrawal belongs to docking/refit. Only actual destruction folds into an energy rupture.
-        const f=Math.min(1,t/.85),motion=reducedMotion()?.2:1;
-        this.root.visible=!ship.withdrawn&&t<.85;
-        this.root.scale.set(1-f*.82,Math.max(.015,(1-f)**1.7),1-f*.82);
-        y=ship.renderPos.y+f*18;roll+=f*.35*motion;pitch-=f*.22*motion;
+        // A destroyed platform tumbles into the sea and goes under; a hovering one drops out of the air first.
+        // Withdrawal belongs to docking/refit and simply vanishes.
+        const h=Math.max(0,ship.renderPos.y),land=platformSunkAfter(ship)-PLATFORM_SINK,f=Math.min(1,t/2.2),under=Math.max(0,t-land);
+        y=h-Math.min(h,PLATFORM_FALL*t*t)-Math.min(30,under*under*12);roll+=f*1.8;pitch+=f*.65;
+        this.root.visible=!ship.withdrawn&&t<platformSunkAfter(ship);
       }
       else if(ship.architectDrone){const f=Math.min(1,t/2.2);y=ship.renderPos.y*(1-f)-Math.min(30,t*t*12);roll+=f*1.8;pitch+=f*.65;this.root.visible=t<3;}
       else if (ship.withdrawn) {

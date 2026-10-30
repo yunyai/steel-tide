@@ -3,12 +3,12 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 
 const out=process.env.FEEDBACK_OUT??'docs/verification/architect-polish-feedback';mkdirSync(out,{recursive:true});
 // The Graphics "Damage numbers" size; the layout must stay readable and unclipped at every offered scale.
-const damageScale=Number(process.env.DAMAGE_SCALE??1);
+const damageScale=Number(process.env.DAMAGE_SCALE??1),shortDamage=process.env.SHORT_DAMAGE==='1';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:1280,height:720}}),errors=[];
   page.on('pageerror',error=>errors.push(String(error)));
-  await page.addInitScript(scale=>{window.requestAnimationFrame=()=>1;localStorage.setItem('steel-tide.display',JSON.stringify({damageScale:scale}));},damageScale);
+  await page.addInitScript(([scale,short])=>{window.requestAnimationFrame=()=>1;localStorage.setItem('steel-tide.display',JSON.stringify({damageScale:scale,shortDamage:short}));},[damageScale,shortDamage]);
   await page.goto(process.env.STEEL_URL??'http://127.0.0.1:5192/?q=ultralow');
   await page.waitForFunction(()=>window.steel);
   await page.evaluate(async()=>{

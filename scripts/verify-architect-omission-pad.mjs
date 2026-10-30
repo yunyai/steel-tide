@@ -16,7 +16,7 @@ try{
   // At Vector's lower boundary, focus leaves the selector. Moving back re-enters
   // it, then crosses Swarm (disabled by the first omission) to Resonance.
   press(13);press(12);press(12);const reverse={omissions:omissions(),focusedSecond:document.activeElement===selectors[1]};
-  root.querySelectorAll('.arsenal-skill')[1].focus();press(13);const wrapped=document.activeElement===root.querySelector('.arsenal-presets button');
+  root.querySelectorAll('.arsenal-skill')[1].focus();press(13);const wrapped=document.activeElement===root.querySelector('button');
   selectors[0].value='resonance';selectors[0].dispatchEvent(new Event('change',{bubbles:true}));const rejectedDuplicate=omissions();
   const unique=[...root.querySelectorAll('button')].find(b=>b.textContent==='One of each');unique.focus();press(0);
   const actual=accepted.map(s=>s.type);editor.dispose();return{start,forward,reverse,wrapped,rejectedDuplicate,actual};

@@ -89,6 +89,18 @@ export function buildSettings(hooks: SettingsHooks): HTMLElement {
       ),
       'Size of the numbers that float over ships you hit. Crowded salvos still spread out so they never stack.',
     ),
+    field(
+      'Damage format',
+      pick(
+        [
+          { value: 0, label: 'Full 12,500' },
+          { value: 1, label: 'Short 12.5K' },
+        ],
+        () => (display().shortDamage ? 1 : 0),
+        (v) => setDisplay({ shortDamage: v === 1 }),
+      ),
+      'Short shows every hit in thousands or millions. Hover a number for the exact total.',
+    ),
   ];
 
   const volume = (label: string, key: 'master' | 'effects' | 'weapons' | 'abilities' | 'ambience' | 'ui', note?: string) =>

@@ -17,6 +17,8 @@ export interface DisplaySettings {
   perf: boolean;
   /** Size of the floating damage numbers, as a multiple of the default. */
   damageScale: number;
+  /** Damage numbers in thousands and millions (12.5K, 1.4M) instead of full digits. */
+  shortDamage: boolean;
 }
 
 export const DAMAGE_SCALES = [0.75, 1, 1.25, 1.5, 2] as const;
@@ -67,10 +69,11 @@ const controlStore = store<ControlSettings>('steel-tide.controls', { sens: 1, in
   shake: v.shake === 0 || v.shake === 0.5 ? v.shake : 1,
 }));
 
-const displayStore = store<DisplaySettings>('steel-tide.display', { colourBlind: false, perf: false, damageScale: 1 }, (v) => ({
+const displayStore = store<DisplaySettings>('steel-tide.display', { colourBlind: false, perf: false, damageScale: 1, shortDamage: false }, (v) => ({
   colourBlind: v.colourBlind === true,
   perf: v.perf === true,
   damageScale: (DAMAGE_SCALES as readonly unknown[]).includes(v.damageScale) ? (v.damageScale as number) : 1,
+  shortDamage: v.shortDamage === true,
 }));
 
 const soundStore = store<SoundSettings>('steel-tide.sound', { master: 0.75, effects: 1, weapons: 1, abilities: 1, ambience: 1, ui: 1 }, (v) => ({

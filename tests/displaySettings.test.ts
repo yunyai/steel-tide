@@ -25,6 +25,15 @@ it('round-trips every offered damage number size', async () => {
 it('rejects sizes the sheet does not offer and keeps the other display fields', async () => {
   for (const bad of [0, 3, '2', null, 1.1]) {
     const { settings } = await load({ colourBlind: true, perf: true, damageScale: bad });
-    expect(settings.display()).toEqual({ colourBlind: true, perf: true, damageScale: 1 });
+    expect(settings.display()).toEqual({ colourBlind: true, perf: true, damageScale: 1, shortDamage: false });
   }
+});
+it('defaults to full damage digits and round-trips the short format',async()=>{
+  const { settings, data } = await load();
+  expect(settings.display().shortDamage).toBe(false);
+  settings.setDisplay({ shortDamage: true });
+  const { settings: again } = await load(JSON.parse(data.get('steel-tide.display')!));
+  expect(again.display().shortDamage).toBe(true);
+  const { settings: bad } = await load({ shortDamage: 'yes' });
+  expect(bad.display().shortDamage).toBe(false);
 });

@@ -1,9 +1,10 @@
 export interface FeedbackRect {left:number;top:number;right:number;bottom:number}
 export interface FeedbackPopup {x:number;y:number;width:number;height:number}
 
-export function feedbackDamageText(damage:number,dense:boolean):{text:string;full:string}{
+/** Full digits by default; the short setting writes every total of 1,000 or more in thousands or millions. */
+export function feedbackDamageText(damage:number,short=false):{text:string;full:string}{
   const amount=Math.round(damage),full=amount.toLocaleString();
-  if(!dense||amount<10000)return {text:full,full};
+  if(!short||amount<1000)return {text:full,full};
   const millions=amount>=999950,unit=millions?1e6:1e3;
   return {text:`${(Math.round(amount/unit*10)/10).toLocaleString(undefined,{maximumFractionDigits:1})}${millions?'M':'K'}`,full};
 }

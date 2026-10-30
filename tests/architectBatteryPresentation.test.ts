@@ -302,9 +302,7 @@ it.each([false,true])('bounds gravity distortion to public impact cells and supp
  }finally{vi.unstubAllGlobals();}
 });
 
-it('creates elemental destruction only on true platform loss and clears it on match end',()=>{
- const {g,owner,fx}=fixture();run(g,1.6);const before=stateHash(g);
- g.events.emit('architectCommand',{ship:owner,kind:'recall'});fx.prepare(0);expect(fx.stats.activeDeaths).toBe(0);expect(stateHash(g)).toBe(before);
- owner.architect!.slots[0].entity!.takeDamage(1e9,null,null,false,true);fx.prepare(0);expect(fx.stats.activeDeaths).toBe(1);
- g.finish(-1,'test');fx.prepare(0);expect(fx.stats.activeDeaths).toBe(0);fx.dispose();
+it('leaves platform destruction to the sinking hull instead of a Battery burst',()=>{
+ const {g,owner,fx}=fixture();run(g,1.6);fx.prepare(0);const drawn=fx.count;
+ owner.architect!.slots[0].entity!.takeDamage(1e9,null,null,false,true);fx.prepare(0);expect(fx.count).toBeLessThanOrEqual(drawn);fx.dispose();
 });

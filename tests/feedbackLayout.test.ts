@@ -32,10 +32,16 @@ it('leaves one unobstructed ordinary hit at its target anchor',()=>{
   expect(layoutFeedbackPopups([{x:640,y:400,width:200,height:60}],1280,720)).toEqual([{x:640,y:400}]);
 });
 
-it('compacts crowded totals while retaining exact accessible damage',()=>{
-  expect(feedbackDamageText(1400000,false)).toEqual({text:'1,400,000',full:'1,400,000'});
+it('keeps every damage total in full digits',()=>{
+  expect(feedbackDamageText(1400000)).toEqual({text:'1,400,000',full:'1,400,000'});
+  expect(feedbackDamageText(900000)).toEqual({text:'900,000',full:'900,000'});
+  expect(feedbackDamageText(12000)).toEqual({text:'12,000',full:'12,000'});
+  expect(feedbackDamageText(4432.4)).toEqual({text:'4,432',full:'4,432'});
+});
+it('writes every total in thousands or millions when the short setting is on',()=>{
   expect(feedbackDamageText(1400000,true)).toEqual({text:'1.4M',full:'1,400,000'});
   expect(feedbackDamageText(900000,true)).toEqual({text:'900K',full:'900,000'});
   expect(feedbackDamageText(999950,true)).toEqual({text:'1M',full:'999,950'});
-  expect(feedbackDamageText(4432.4,true)).toEqual({text:'4,432',full:'4,432'});
+  expect(feedbackDamageText(4432.4,true)).toEqual({text:'4.4K',full:'4,432'});
+  expect(feedbackDamageText(950,true)).toEqual({text:'950',full:'950'});
 });

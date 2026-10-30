@@ -17,7 +17,6 @@ export const BATTERY_FX_CAPS={shells:128,lobes:384,fragments:384,skirts:96,hot:2
 type PoolName=keyof typeof BATTERY_FX_CAPS|'pressure';
 interface Pool {mesh:InstancedMesh;capacity:number;count:number;peak:number;drops:number}
 interface Contact {launch:ArchitectBatteryLaunch;recipient:ArchitectBatteryRecipient;time:number}
-interface Death {owner:Ship;generation:number;target:Ship;type:ArchitectType;slot:number;point:ArchitectBatteryPoint;time:number;large:boolean}
 type BurstSource=Pick<ArchitectBatteryLaunch,'type'|'stage'|'slot'>;
 interface Danger {owner:Ship;generation:number;castId:number;center:ArchitectBatteryPoint;radius:number;until:number}
 const matrix=new Matrix4(),rotation=new Quaternion(),euler=new Euler(),position=new Vector3(),scale=new Vector3(),color=new Color(),direction=new Vector3(),axis=new Vector3(1,0,0);
@@ -51,7 +50,7 @@ export class ArchitectBatteryFx {
  readonly hazard=new Ribbons(2400,false,false);
  readonly pools:Record<PoolName,Pool>;
  readonly distortions:SpatialDistortion[]=[];
- private deaths:Death[]=[];private flights:ArchitectBatteryLaunch[]=[];private impacts:ArchitectBatteryImpact[]=[];private contacts:Contact[]=[];private dangers=new Map<string,Danger>();
+ private flights:ArchitectBatteryLaunch[]=[];private impacts:ArchitectBatteryImpact[]=[];private contacts:Contact[]=[];private dangers=new Map<string,Danger>();
  private off:(()=>void)[]=[];private reduced=reducedMotion();private detail=quality().particles;
  private counts={mergedContacts:0,contactDrops:0,committedLaunches:0,committedImpacts:0};
  constructor(private scene:Scene,private game:Game){
@@ -74,20 +73,14 @@ export class ArchitectBatteryFx {
     if(this.contacts.length>=128){this.counts.contactDrops++;continue;}
     this.contacts.push({launch:impact.launch,recipient,time:impact.resolvedAt});
    }
-  }),game.events.on('shipSunk',({ship})=>{
-   const tag=ship.architectPlatform;if(!tag||ship.withdrawn||game.over)return;
-   const slot=tag.owner.architect?.slots[tag.index];if(!slot)return;
-   if(this.deaths.length>=64)this.deaths.shift();
-   this.deaths.push({owner:tag.owner,generation:game.battery.generation(tag.owner),target:ship,type:slot.type,slot:tag.index,point:{x:ship.pos.x,y:ship.pos.y+20,z:ship.pos.z},time:game.time,large:tag.owner.architect?.ultimate?.kind==='killbox'});
   }),game.events.on('gameOver',()=>this.clear()));
  }
- get stats(){return {machinery:this.machinery.stats,pools:Object.fromEntries(Object.entries(this.pools).map(([name,p])=>[name,{capacity:p.capacity,count:p.count,peak:p.peak,drops:p.drops}])),batches:Object.values(this.pools).filter(p=>p.count>0).length+(this.hazard.count?1:0),activeDeaths:this.deaths.length,activeFlights:this.flights.length,activeImpacts:this.impacts.length,activeContacts:this.contacts.length,activeHazards:this.dangers.size,...this.counts};}
+ get stats(){return {machinery:this.machinery.stats,pools:Object.fromEntries(Object.entries(this.pools).map(([name,p])=>[name,{capacity:p.capacity,count:p.count,peak:p.peak,drops:p.drops}])),batches:Object.values(this.pools).filter(p=>p.count>0).length+(this.hazard.count?1:0),activeFlights:this.flights.length,activeImpacts:this.impacts.length,activeContacts:this.contacts.length,activeHazards:this.dangers.size,...this.counts};}
  get count(){return Object.values(this.pools).reduce((n,p)=>n+p.count,0);}
  private valid(r:{owner:Ship;generation:number}){return !this.game.over&&r.owner.alive&&!r.owner.withdrawn&&!!r.owner.architect&&this.game.battery.generation(r.owner)===r.generation;}
  update(_dt=0){
   this.machinery.update();
   this.flights=this.flights.filter(r=>this.valid(r)&&this.game.time<r.arrivalTime+.3);
-  this.deaths=this.deaths.filter(d=>this.valid(d)&&this.game.time-d.time<1.25);
   this.impacts=this.impacts.filter(e=>this.valid(e.launch)&&this.game.time-e.resolvedAt<(e.launch.stage===3?1.65:1.25));
   this.contacts=this.contacts.filter(c=>this.valid(c.launch)&&this.game.time-c.time<.6);
   for(const [key,d] of this.dangers)if(!this.valid(d)||this.game.time>d.until+.02)this.dangers.delete(key);
@@ -244,10 +237,6 @@ export class ArchitectBatteryFx {
     }
    }
   }
-  for(const d of this.deaths){
-   const target=d.target;if(team!==-1&&target.team!==team&&(target.mods.untargetable||target.submerged||this.game.inSmoke(d.point.x,d.point.z)))continue;
-   this.burst({type:d.type,slot:d.slot,stage:0},d.point,this.game.time-d.time,0,false,false,d.large?.7:.3);
-  }
   for(const charge of this.machinery.charges)this.put('hot',charge.point.x,charge.point.y,charge.point.z,8+charge.strength*8,6+charge.strength*6,8+charge.strength*8,charge.color,.4+charge.strength*.6);
   // Shared finale pressure gets priority over secondary decorative skirts/fragments.
   const pressureDone=new Set<string>();for(const impact of this.impacts){const launch=impact.launch,key=`${launch.owner.id}:${launch.castId}`;if(launch.stage===3&&!pressureDone.has(key)){pressureDone.add(key);this.pressure(launch,this.game.time-impact.resolvedAt);}}
@@ -267,6 +256,6 @@ export class ArchitectBatteryFx {
   }
   this.hazard.end();this.hazard.mesh.visible=this.hazard.count>0;
  }
- private clear(){this.deaths=[];this.flights=[];this.impacts=[];this.contacts=[];this.dangers.clear();this.distortions.length=0;}
+ private clear(){this.flights=[];this.impacts=[];this.contacts=[];this.dangers.clear();this.distortions.length=0;}
  dispose(){for(const off of this.off)off();this.clear();this.machinery.dispose();for(const p of Object.values(this.pools)){this.scene.remove(p.mesh);p.mesh.dispose();p.mesh.geometry.dispose();(p.mesh.material as MeshStandardMaterial).dispose();}this.scene.remove(this.hazard.mesh);this.hazard.dispose();}
 }

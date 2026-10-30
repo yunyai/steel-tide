@@ -5,6 +5,7 @@ import { h,html } from './dom';
 import { ELEMENT_STYLE } from '../skills/misc/ArchitectElements';
 import { menuFeedback } from './MenuFeedback';
 import { bindings,keyName } from '../input/Keybinds';
+import { RESONANCE_TEMPO } from '../skills/misc/ArchitectRuntime';
 const KEY='steel-tide.architect-loadout.v1';
 const hex=(color:number)=>`#${color.toString(16).padStart(6,'0')}`;
 /** Top-down Architect plan, bow to the right. Stern x=18 and bow x=990 span the 500 m hull, so the socket grid lines up with the real turret stations. */
@@ -29,8 +30,8 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
   let lastSyncKey=JSON.stringify(value)+editable.join();
   const root=h('section',{class:'arsenal-editor','aria-label':'Architect turret loadout'});
   const stopFeedback=menuFeedback(root);
-  const title=h('h3',{},'Platform arsenal'),note=h('p',{class:'arsenal-note'},`Pick a socket on the hull, then one of ${ARCHITECT_TYPES.length} types and its skill. Elemental guns fire while docked; skills fire automatically once deployed. Any living Vector unlocks Hull Dash and Mobile Battery.`);
-  const presets=h('div',{class:'arsenal-presets'}),plan=h('div',{class:'arsenal-plan'},html(HULL_PLAN)),slots=h('div',{class:'arsenal-slots',role:'group','aria-label':'Platform sockets, stern to bow'}),detail=h('div',{class:'arsenal-detail'});
+  const title=h('h3',{},'Platform arsenal'),note=h('p',{class:'arsenal-note'},`Pick a socket on the hull, then one of ${ARCHITECT_TYPES.length} types and its skill. Guns fire while docked; skills fire on their own once the platform deploys.`);
+  const presets=h('div',{class:'arsenal-presets',role:'group','aria-label':'Quick fill, replaces every socket'}),plan=h('div',{class:'arsenal-plan'},html(HULL_PLAN)),slots=h('div',{class:'arsenal-slots',role:'group','aria-label':'Platform sockets, stern to bow'}),detail=h('div',{class:'arsenal-detail'});
   plan.append(slots);
   const result=h('p',{class:'arsenal-result',role:'status','aria-live':'polite','aria-atomic':'true'});
   const disclosure=h('button',{type:'button',class:'arsenal-disclosure','aria-expanded':'false'},'Import / export');
@@ -87,7 +88,7 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
   const close=h('button',{type:'button','data-menu-back':'transfer'},'Close');close.onclick=closeTransfer;
   transfer.append(transferNote,h('div',{class:'arsenal-transfer-actions'},copy,download),h('label',{class:'arsenal-json-label'},'Loadout JSON',text),h('div',{class:'arsenal-transfer-actions'},choose,applyImport,close),file,transferStatus);
   for(const [id,label] of [['balanced','Balanced'],['elemental','Elemental'],['support','Support'],['shuffle','Shuffle'],['unique','One of each']] as [ArsenalPreset,string][]){const b=h('button',{type:'button'},label);b.onclick=()=>commit(loadoutPreset(id,omitted,Math.random));presets.append(b);}
-  const omissions=h('div',{class:'arsenal-omissions',role:'group','aria-label':'One of each omissions'});
+  const omissions=h('div',{class:'arsenal-omissions',role:'group','aria-label':'One of each omissions'},h('span',{},'One of each leaves out'));
   const omitSelectors=[0,1].map(index=>{
     const omit=h('select',{'aria-label':`Omitted type ${index+1} for One of each`});
     for(const t of ARCHITECT_TYPES)omit.append(h('option',{value:t},ARCHETYPES[t].name));
@@ -97,7 +98,8 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
       if(ARCHITECT_TYPES.includes(next)&&next!==omitted[1-index])omitted[index]=next;
       syncOmissions();
     };
-    omissions.append(h('label',{},`Omit ${index+1}`,omit));return omit;
+    if(index)omissions.append(h('span',{},'and'));
+    omissions.append(omit);return omit;
   });
   function syncOmissions():void {omitSelectors.forEach((select,index)=>{select.value=omitted[index];for(const option of select.options)option.disabled=option.value===omitted[1-index];});}
   syncOmissions();
@@ -116,11 +118,24 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
     types.append(b);return b;
   });
   const slotLabel=h('b',{},'Platform 1'),typeLabel=h('span'),lockNote=h('p',{class:'arsenal-note'});
+  const passive=h('p',{class:'arsenal-passive'},h('b',{},'Passive'),h('span'));
   const cards=[0,1].map(i=>{
-    const b=h('button',{type:'button',class:'arsenal-skill','data-arsenal-key':`skill-${i}`},h('b'),h('span'),h('small'));
-    b.onclick=()=>{const next=copyLoadout(state.accepted);next[slot]={...state.selection(slot),skill:i as 0|1};commit(next);};return b;
+    const name=h('b'),text=h('span',{class:'arsenal-skill-text'}),meta=h('span',{class:'arsenal-skill-meta'});
+    const b=h('button',{type:'button',class:'arsenal-skill','data-arsenal-key':`skill-${i}`},h('span',{class:'arsenal-skill-head'},name,h('i',{'aria-hidden':'true'})),text,meta);
+    b.onclick=()=>{const next=copyLoadout(state.accepted);next[slot]={...state.selection(slot),skill:i as 0|1};commit(next);};return {b,name,text,meta};
   });
-  detail.append(h('div',{class:'arsenal-detail-head'},slotLabel,typeLabel),types,h('div',{class:'arsenal-choices'},...cards),lockNote);
+  detail.append(h('div',{class:'arsenal-detail-head'},slotLabel,typeLabel),types,passive,h('div',{class:'arsenal-choices'},...cards.map(c=>c.b)),lockNote);
+  const seconds=(v:number)=>`${Math.round(v*10)/10} s`;
+  /** Recharge chips for the selected card. Vector timings follow the whole loadout: its specializations and every Resonance. */
+  function skillMeta(type:ArchitectType,i:number):(string|HTMLElement)[]{
+    if(type!=='vector')return ['Automatic',`${seconds(ARCHETYPES[type].skills[i].cooldown)} recharge`];
+    const picks=state.accepted,count=(t:ArchitectType,k?:number)=>picks.filter(p=>p.type===t&&(k===undefined||p.skill===k)).length;
+    const tempo=1+RESONANCE_TEMPO*count('resonance'),key=keyName(i===0?bindings().architectHullDash:bindings().architectMobileBattery);
+    const manual=h('span',{},'Manual ',h('kbd',{class:key?'':'unbound'},key||'Unbound'),` or ${i===0?'LB':'RB'} + D-pad right`);
+    if(i===0)return [manual,`${2+Math.max(0,count('vector',0)-1)} charges`,`${seconds(10/tempo)} each`];
+    let cooldown=14;for(let n=1;n<count('vector',1);n++)cooldown*=.85;
+    return [manual,`${seconds(cooldown/tempo)} recharge`];
+  }
   function render():void {
     slotButtons.forEach((b,i)=>{
       const p=state.selection(i),a=ARCHETYPES[p.type];b.setAttribute('aria-pressed',String(i===slot));
@@ -132,10 +147,14 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
     slotLabel.textContent=`Platform ${slot+1}`;typeLabel.textContent=`${a.name} · ${ELEMENT_STYLE[a.element].name}`;typeLabel.style.setProperty('--type-color',hex(a.color));
     types.setAttribute('aria-label',`Platform ${slot+1} type`);
     typeButtons.forEach((b,i)=>{b.setAttribute('aria-pressed',String(ARCHITECT_TYPES[i]===pick.type));b.disabled=!state.canEdit(slot);});
-    cards.forEach((b,i)=>{const skill=a.skills[i];b.setAttribute('aria-pressed',String(pick.skill===i));b.disabled=!state.canEdit(slot);b.children[0].textContent=skill.name;b.children[1].textContent=skill.description;b.children[2].textContent=pick.type==='vector'?i===0?`Manual ${keyName(bindings().architectHullDash)||'Unbound'} / LB + D-pad right · 2 charges · 10s each`:`Manual ${keyName(bindings().architectMobileBattery)||'Unbound'} / RB + D-pad right · 14s recharge`:`${skill.cooldown}s recharge · automatic when deployed`;});
+    passive.hidden=!a.passive;passive.style.setProperty('--type-color',hex(a.color));passive.lastElementChild!.textContent=a.passive??'';
+    cards.forEach(({b,name,text,meta},i)=>{
+      const skill=a.skills[i];b.setAttribute('aria-pressed',String(pick.skill===i));b.disabled=!state.canEdit(slot);b.style.setProperty('--type-color',hex(a.color));
+      name.textContent=skill.name;text.textContent=skill.description;meta.replaceChildren(...skillMeta(pick.type,i).map(c=>typeof c==='string'?h('span',{},c):c));
+    });
     lockNote.hidden=state.canEdit(slot);lockNote.textContent=state.isPending(slot)?'Refit pending. Waiting for battle confirmation.':'Refitting requires a living captain, a docked platform and no transformation. Refits start the selected skill’s cooldown.';
     if(candidate&&!transfer.hidden&&previewing)preview();
   }
-  root.append(title,note,presets,omissions,disclosure,transfer,plan,detail,result);render();
+  root.append(h('div',{class:'arsenal-head'},title,disclosure),note,transfer,h('p',{class:'arsenal-fill-label'},'Quick fill'),presets,omissions,plan,detail,result);render();
   return {el:root,sync(accepted,editable){const key=JSON.stringify(accepted)+editable.join();if(key===lastSyncKey)return;lastSyncKey=key;state.sync(accepted,editable);if(hasResult)report(state.result);render();},resolve(index,pick,accepted,reason){state.resolve(index,pick,accepted,reason);if(hasResult)report(state.result);render();},dispose(){disposed=true;stopFeedback();}};
 }

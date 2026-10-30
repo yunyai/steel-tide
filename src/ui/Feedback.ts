@@ -135,6 +135,7 @@ export class Feedback {
   private rowH = 38;
   /** Damage-number size from Settings, applied to the popup layer as `--damage-scale`. */
   private scale = 0;
+  private shortDamage = false;
   private layer: HTMLElement;
   private protectedUi: HTMLElement[];
 
@@ -304,14 +305,14 @@ export class Feedback {
       p.el.style.visibility = '';
       visible.push({p,x:sp.x,y:sp.y,age:t});
     }
-    const scale=display().damageScale;
-    if(scale!==this.scale){this.scale=scale;this.layer.style.setProperty('--damage-scale',String(scale));for(const p of this.pops)p.dirty=true;}
+    const {damageScale:scale,shortDamage}=display();
+    if(scale!==this.scale||shortDamage!==this.shortDamage){this.scale=scale;this.shortDamage=shortDamage;this.layer.style.setProperty('--damage-scale',String(scale));for(const p of this.pops)p.dirty=true;}
     const dense=visible.length>=4;
     // Apply density/text together, then measure all popups and protected HUD regions before moving any.
     for(const {p} of visible){
       if(p.el.classList.contains('dense')!==dense){p.el.classList.toggle('dense',dense);p.dirty=true;}
       if(!p.dirty)continue;
-      const damage=feedbackDamageText(p.damage,dense),text=p.damage>0?damage.text:'';
+      const damage=feedbackDamageText(p.damage,shortDamage),text=p.damage>0?damage.text:'';
       if(p.num.textContent!==text){p.num.textContent=text;p.dirty=true;}
       const description=`${p.label.textContent}${p.damage>0?`: ${damage.full} damage`:''}`;
       p.el.title=description;p.el.setAttribute('role','img');p.el.setAttribute('aria-label',description);
