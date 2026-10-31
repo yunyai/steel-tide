@@ -670,9 +670,10 @@ function staticGeometry(spec: ShipSpec): BufferGeometry {
     return p.merge();
   }
 
-  // Superstructure blocks, stacked unless an explicit base is given.
+  // Superstructure blocks, stacked unless an explicit base is given. The Tungsten's mass-driver model draws its own
+  // bridge and reactor over them (TungstenModel); here they only set the hit box.
   let stack = 0;
-  for (const b of m.blocks) {
+  for (const b of spec.id === 'tungsten' ? [] : m.blocks) {
     const base = b.y ?? stack;
     stack = base + b.h;
     const y0 = fb + base - 0.3;
@@ -1097,7 +1098,7 @@ export class ShipView {
     if(spec.id==='architect'||spec.id==='architectPlatform'){this.architectModel=new ArchitectModel((g,m)=>this.mesh(g,shadows,m),spec);this.body.add(this.architectModel.root);}
     if(spec.id==='stepper'){this.stepModel=new StepperModel((g,m)=>this.mesh(g,shadows,m));this.body.add(this.stepModel.root);}
     if (spec.id === 'tungsten') {
-      this.tungstenModel = new TungstenModel((g, m) => this.mesh(g, shadows, m));
+      this.tungstenModel = new TungstenModel((g, m) => this.mesh(g, shadows, m), spec);
       this.body.add(this.tungstenModel.root);
     }
 

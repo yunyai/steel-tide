@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Box3, InstancedBufferAttribute, Mesh, Scene, Vector3, type Object3D, type ShaderMaterial } from 'three';
+import { Box3, Color, InstancedBufferAttribute, Mesh, Scene, Vector3, type MeshBasicMaterial, type Object3D, type ShaderMaterial } from 'three';
 import { ShipView } from '../src/render/ShipModel';
 import { DAIS, HORN_TIPS, TungstenModel } from '../src/render/TungstenModel';
 import { TungstenCubeFx } from '../src/render/TungstenCubeFx';
-import { dieFaceNormal, modeColor } from '../src/render/TungstenLook';
+import { dieFaceNormal, modeColor, storeLook } from '../src/render/TungstenLook';
 import { CUBE, dockLift } from '../src/skills/misc/TungstenModes';
 import { SHIP_BY_ID } from '../src/data/ships';
 import { stateHash } from '../src/net/hash';
@@ -102,7 +102,7 @@ describe('Tungsten model', () => {
   it("floats the cube over a dais, with nothing above the cube's base", () => {
     const spec = SHIP_BY_ID.tungsten;
     expect(DAIS.deck).toBe(spec.freeboard);
-    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat));
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat), SHIP_BY_ID.tungsten);
     m.pose(1);
     const base = dockLift(spec) - CUBE.edge / 2;
     expect(Math.abs(m.cubes[0].mesh.position.y - dockLift(spec))).toBeLessThanOrEqual(2.5);
@@ -116,10 +116,76 @@ describe('Tungsten model', () => {
     m.dispose();
   });
 
+  it('runs a mass-driver spine bow to stern, merged into a few meshes, all under the cube', () => {
+    const spec = SHIP_BY_ID.tungsten;
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat), spec);
+    m.pose(1);
+    m.root.updateMatrixWorld(true);
+    const spine = m.root.getObjectByName('tungsten-spine') as Mesh;
+    expect(spine).toBeTruthy();
+    const box = new Box3().setFromObject(spine);
+    expect(box.min.x).toBeLessThan(-spec.length * 0.4);
+    expect(box.max.x).toBeGreaterThan(spec.length * 0.4);
+    expect(box.max.y).toBeLessThan(dockLift(spec) - CUBE.edge / 2);
+    // Every steel part is one draw, every glowing part another.
+    const meshes: Mesh[] = [];
+    m.root.traverse((o) => {
+      if (o instanceof Mesh && !m.cubes.some((c) => c.mesh === o)) meshes.push(o);
+    });
+    expect(meshes.length).toBeLessThanOrEqual(8);
+    m.dispose();
+  });
+
+  it('leaves the hit box to blocks matched to the bridge and reactor, with no generic fittings', () => {
+    const model = SHIP_BY_ID.tungsten.model;
+    expect(model.fins).toBeUndefined();
+    expect(model.domes).toBeUndefined();
+    expect(model.panels).toBeUndefined();
+    expect(model.blocks.every((b) => b.y !== undefined)).toBe(true);
+    expect(Math.max(...model.blocks.map((b) => (b.y ?? 0) + b.h))).toBeLessThan(CUBE.float);
+  });
+
+  it('lights the deck-edge veins in the mode colour, and walks them round the six in Overdrive', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat), s.spec);
+    const veins = (m.root.getObjectByName('tungsten-veins') as Mesh).material as MeshBasicMaterial;
+    const hue = (c: Color) => c.getHSL({ h: 0, s: 0, l: 0 }).h;
+    s.tungsten!.mode = 3;
+    g.interpolate();
+    m.pose(1, s);
+    // Once the mode's colour wipe has run.
+    run(g, 1);
+    g.interpolate();
+    m.pose(2, s);
+    expect(hue(veins.color)).toBeCloseTo(hue(modeColor(3)), 2);
+    cast(s, OVERDRIVE);
+    run(g, 0.5);
+    g.interpolate();
+    m.pose(1, s);
+    const first = veins.color.clone();
+    m.pose(2.3, s);
+    expect(veins.color.equals(first)).toBe(false);
+    m.dispose();
+  });
+
+  it('heats the docked cube with the Shield store', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat), s.spec);
+    g.interpolate();
+    m.pose(1, s);
+    expect(m.cubes[0].u.uStore.value).toBe(0);
+    s.tungsten!.charge = CUBE.chargeCap / 2;
+    m.pose(1, s);
+    expect(m.cubes[0].u.uStore.value).toBeCloseTo(storeLook(0.5).heat);
+    m.dispose();
+  });
+
   it('spins and bobs the docked cube, and holds it still under reduced motion', () => {
-    const moving = new TungstenModel((geo, m) => new Mesh(geo, m));
+    const moving = new TungstenModel((geo, m) => new Mesh(geo, m), SHIP_BY_ID.tungsten);
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
-    const still = new TungstenModel((geo, m) => new Mesh(geo, m));
+    const still = new TungstenModel((geo, m) => new Mesh(geo, m), SHIP_BY_ID.tungsten);
     const pose = (m: TungstenModel, time: number) => {
       m.pose(time);
       const c = m.cubes[0].mesh;
@@ -134,7 +200,7 @@ describe('Tungsten model', () => {
   it("turns the docked cube with the sim's yaw, so it leaves the dais without a snap", () => {
     const g = emptyGame('open', 7, 'freeplay');
     const s = place(g, 'tungsten', 0, 0, 0);
-    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat));
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat), SHIP_BY_ID.tungsten);
     run(g, 3);
     g.interpolate();
     m.pose(g.renderTime, s);
@@ -180,9 +246,9 @@ describe('Tungsten model', () => {
     cast(s, OVERDRIVE);
     run(g, 1);
     g.interpolate();
-    const moving = new TungstenModel((geo, m) => new Mesh(geo, m));
+    const moving = new TungstenModel((geo, m) => new Mesh(geo, m), SHIP_BY_ID.tungsten);
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
-    const still = new TungstenModel((geo, m) => new Mesh(geo, m));
+    const still = new TungstenModel((geo, m) => new Mesh(geo, m), SHIP_BY_ID.tungsten);
     // The ring cubes assemble over half a second after they first appear.
     moving.pose(0, s);
     still.pose(0, s);
@@ -204,6 +270,48 @@ describe('Tungsten model', () => {
 });
 
 describe('Tungsten cube effects', () => {
+  it('heats a cube from its mode colour toward white as the store fills, with more and longer arcs', () => {
+    expect(storeLook(0)).toEqual({ heat: 0, arcs: 0, reach: 0, strike: false });
+    const half = storeLook(0.5),
+      full = storeLook(1);
+    expect(half.heat).toBeGreaterThan(0);
+    expect(full.heat).toBeGreaterThan(half.heat);
+    expect(half.arcs).toBeGreaterThan(0);
+    expect(full.arcs).toBeGreaterThan(half.arcs);
+    expect(full.reach).toBeGreaterThan(half.reach);
+    expect(storeLook(0.89).strike).toBe(false);
+    expect(storeLook(0.9).strike).toBe(true);
+  });
+
+  it('crackles over a shielding cube that holds a store, and strikes the sea when nearly full', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const t = s.tungsten!;
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    park(s, 0, -900);
+    play(g, fx, 0.2, [s]);
+    t.cubes[0].state = 'guard';
+    const look = (charge: number) => {
+      t.charge = charge;
+      const before = stateHash(g);
+      fx.prepare(0, 720);
+      expect(stateHash(g)).toBe(before);
+      return { lines: fx.lines.count, heat: fx.skin(s, t.cubes[0].id)!.uStore.value };
+    };
+    const empty = look(0);
+    expect(empty.heat).toBe(0);
+    const most = look(CUBE.chargeCap * 0.89);
+    expect(most.heat).toBeGreaterThan(0.5);
+    expect(most.lines).toBeGreaterThan(empty.lines);
+    expect(look(CUBE.chargeCap * 0.9).lines).toBeGreaterThan(most.lines);
+    // A hovering cube shows its store too; with none it stays cool.
+    t.cubes[0].state = 'hover';
+    expect(look(CUBE.chargeCap * 0.5).heat).toBeGreaterThan(0);
+    expect(look(0).heat).toBe(0);
+    fx.dispose();
+  });
+
   it('draws a flying cube with its trail, then dissolves its view once the cube docks', () => {
     const g = emptyGame('open', 7, 'freeplay');
     const s = place(g, 'tungsten', 0, 0, 0);

@@ -55,11 +55,9 @@ export const MISC: ShipSpec[] = [
       palette: { hull: 0x3b4149, upper: 0x59616b, deck: 0x464c54, accent: 0x3ff0ff, boot: 0x15181c },
       bow: 'straight', stern: 'transom', sheer: 0.15,
       // A low angular bridge forward and the reactor aft, clear of the cube turning over the dais amidships.
-      blocks: [{x:118,len:48,w:30,h:8},{x:122,len:26,w:20,h:7},{x:-122,len:54,w:36,h:10}],
+      // The hit box only: TungstenModel draws the stepped bridge and the reactor over these footprints.
+      blocks: [{x:118,len:48,w:30,h:8,y:0},{x:122,len:26,w:20,h:7,y:8},{x:-122,len:54,w:36,h:10,y:0}],
       funnels: [], masts: [],
-      domes: [{x:126,r:6}],
-      panels: [{x:116,y:3,w:16}],
-      fins: [{x:-122,h:12,len:22,z:-10},{x:-122,h:12,len:22,z:10}],
       lightStrip: 0x3ff0ff,
     },
   },

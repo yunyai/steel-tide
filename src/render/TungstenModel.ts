@@ -1,10 +1,12 @@
 import { AdditiveBlending, BoxGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, Group, MeshBasicMaterial, MeshStandardMaterial, TorusGeometry, type BufferGeometry, type Material, type Mesh } from 'three';
+import type { ShipSpec } from '../core/types';
 import type { Ship } from '../ships/Ship';
+import { deckHeight, hullHalfWidth } from '../ships/HullShape';
 import { CUBE, dockLift, haloAngle } from '../skills/misc/TungstenModes';
 import { overdriveOn } from '../skills/misc/TungstenRuntime';
 import { Parts } from './Geometry';
 import { reducedMotion } from './ArchitectPose';
-import { MODE_COLORS, ModeSweep, cubeGeometry, cubeSkin, type CubeSkinUniforms } from './TungstenLook';
+import { MODE_COLORS, ModeSweep, cubeGeometry, cubeSkin, storeLook, type CubeSkinUniforms } from './TungstenLook';
 
 /** Layout of the levitation dais amidships, in hull space (x forward, y up from the waterline, z starboard). */
 export const DAIS = {
@@ -34,6 +36,30 @@ export const HORN_TIPS: readonly { x: number; y: number; z: number }[] = [1, 3, 
   return { x: Math.cos(a) * r, y: DAIS.deck + DAIS.rimH + DAIS.hornH * Math.cos(DAIS.hornLean), z: Math.sin(a) * r };
 });
 
+/**
+ * The mass-driver spine: twin magnetic rails on pylons, bow to stern, that pass either side of the dais (bridging it
+ * without a pylon), wound with coils fore and aft. Heights are above the waterline; everything stays under the
+ * floating cube's base.
+ */
+export const SPINE = {
+  /** Rails' underside above the deck, their size and how far inboard of the hull side they run. */
+  lift: 15,
+  railH: 3,
+  railW: 2.6,
+  inset: 5,
+  /** Furthest out from the centreline: clear of the dais's field column. */
+  maxZ: 35,
+  from: -186,
+  to: 178,
+  /** Pylons every `pitch`, none within `gap` of the dais. */
+  pitch: 20,
+  gap: 26,
+  /** Coils: rings round each rail at these stations (both ends), radius and tube. */
+  coils: [40, 60, 80, 100],
+  coilR: 4.2,
+  coilTube: 1.1,
+} as const;
+
 const STEEL = 0x59616b,
   DARK = 0x2c3138,
   PLATE_STEEL = 0x3a4048,
@@ -62,6 +88,8 @@ export class TungstenModel {
   private metal = new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.78, roughness: 0.36 });
   /** Horn tips, seams and capacitor collars: the mode colour. */
   private glow = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  /** Field veins along the deck edge: the mode colour, walking round all six in Overdrive. */
+  readonly veins = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   /** The plate's field rings, inner to outer, each pulsing in turn. */
   private rings = DAIS.rings.map(() => new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
   /** A faint column of field between the plate and the cube's base. */
@@ -69,7 +97,7 @@ export class TungstenModel {
   private sweep = new ModeSweep();
   private reduce = reducedMotion();
 
-  constructor(make: (g: BufferGeometry, m: Material) => Mesh) {
+  constructor(make: (g: BufferGeometry, m: Material) => Mesh, spec: ShipSpec) {
     this.root.name = 'tungsten-dais';
     const add = (g: BufferGeometry, m: Material) => {
       this.owned.push(g);
@@ -133,8 +161,11 @@ export class TungstenModel {
       }
     }
 
-    add(frame.merge(), this.metal);
-    add(glow.merge(), this.glow);
+    const veins = new Parts();
+    massDriver(spec, frame, glow, veins);
+    add(frame.merge(), this.metal).name = 'tungsten-spine';
+    add(glow.merge(), this.glow).name = 'tungsten-glow';
+    add(veins.merge(), this.veins).name = 'tungsten-veins';
     this.rings.forEach((m, i) => {
       add(new TorusGeometry(D.rings[i], 0.75, 4, 64).rotateX(Math.PI / 2).translate(0, PLATE + 0.5, 0), m).name = `tungsten-field-ring-${i}`;
     });
@@ -194,6 +225,9 @@ export class TungstenModel {
     const held = !over && (!lead || lead.state === 'docked');
     const column = over ? modeWheel((anim * 0.6) % 6, tmpColor2) : tmpColor2.copy(base);
     this.column.color.copy(column).multiplyScalar(power * (held ? 0.16 + (this.reduce ? 0 : 0.05 * Math.sin(anim * 3)) : 0.04));
+    // The veins carry the mode colour; in Overdrive they walk round all six.
+    (over ? modeWheel((anim * 0.7) % 6, this.veins.color) : this.veins.color.copy(base)).multiplyScalar(0.6 + 0.5 * Math.min(power, 3) / 3);
+    const store = t ? storeLook(t.charge / (CUBE.chargeCap * (over ? CUBE.orbit.cap : 1))).heat : 0;
 
     for (let slot = 0; slot < this.cubes.length; slot++) {
       const v = this.cubes[slot];
@@ -229,6 +263,7 @@ export class TungstenModel {
       v.u.uAssemble.value = solid;
       v.u.uFlicker.value = c && c.hp < c.maxHp * 0.3 ? 1 - c.hp / (c.maxHp * 0.3) : 0;
       v.u.uHeat.value = 0;
+      v.u.uStore.value = store;
     }
   }
 
@@ -237,7 +272,122 @@ export class TungstenModel {
     for (const c of this.cubes) c.material.dispose();
     this.metal.dispose();
     this.glow.dispose();
+    this.veins.dispose();
     for (const m of this.rings) m.dispose();
     this.column.dispose();
+  }
+}
+
+/** Where a rail runs at hull station x: inboard of the side, out to SPINE.maxZ amidships. */
+const railZ = (spec: ShipSpec, x: number) => Math.min(hullHalfWidth(spec, x) - SPINE.inset, SPINE.maxZ);
+const railY = (spec: ShipSpec, x: number) => deckHeight(spec, x) + SPINE.lift;
+
+/**
+ * The Tungsten's hull fittings, in hull space: the mass-driver spine and its coils, the stepped bridge forward, the
+ * reactor aft with its radiators and capacitor banks, plating seams, bow and stern work, and the field veins along
+ * the deck edge. Steel goes in `frame`, mode-coloured light in `glow`, the veins in `veins`.
+ */
+function massDriver(spec: ShipSpec, frame: Parts, glow: Parts, veins: Parts): void {
+  const S = SPINE;
+  const fb = spec.freeboard;
+  const segment = (p: Parts, x0: number, x1: number, side: number, h: number, w: number, dy: number, dz: number, paint: number) => {
+    const z0 = side * (railZ(spec, x0) + dz),
+      z1 = side * (railZ(spec, x1) + dz);
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    p.box(len + 0.4, h, w, (x0 + x1) / 2, (railY(spec, x0) + railY(spec, x1)) / 2 + dy, (z0 + z1) / 2, paint, { ry: -Math.atan2(z1 - z0, x1 - x0) });
+  };
+  for (const side of [-1, 1]) {
+    // The rails: a dark body, a copper conductor along its crown and a lit seam on its inner face.
+    for (let x = S.from; x < S.to; x += 8) {
+      const x1 = Math.min(S.to, x + 8);
+      segment(frame, x, x1, side, S.railH, S.railW, 0, 0, DARK);
+      segment(frame, x, x1, side, 0.5, 1.1, S.railH, 0, COPPER);
+      segment(glow, x, x1, side, 0.5, 0.3, S.railH * 0.45, -S.railW / 2 - 0.05, 0xffffff);
+    }
+    // Pylons down to the deck, leaving the dais clear: there the rails bridge it.
+    for (let x = S.from + 6; x <= S.to - 6; x += S.pitch) {
+      if (Math.abs(x) < S.gap) continue;
+      const deck = deckHeight(spec, x),
+        z = side * railZ(spec, x);
+      frame.box(4.5, S.lift + 0.4, 3.2, x, deck - 0.2, z, STEEL, { taper: 0.35 });
+      frame.box(6, 1.2, 5, x, deck, z, DARK);
+    }
+    // Coils: copper rings round the rail with a band of field light inside, four forward and four aft.
+    for (const at of S.coils)
+      for (const x of [at, -at]) {
+        const z = side * railZ(spec, x),
+          y = railY(spec, x) + S.railH / 2;
+        const dz = side * (railZ(spec, x + 1) - railZ(spec, x - 1)) / 2;
+        const ry = -Math.atan2(dz, 1);
+        frame.add(new TorusGeometry(S.coilR, S.coilTube, 6, 18).rotateY(Math.PI / 2), COPPER, x, y, z, { ry });
+        frame.add(new CylinderGeometry(S.coilR + 0.6, S.coilR + 0.6, 1.2, 18, 1, true).rotateZ(Math.PI / 2), DARK, x, y, z, { ry });
+        glow.add(new TorusGeometry(S.coilR - S.coilTube - 0.15, 0.35, 4, 18).rotateY(Math.PI / 2), 0xffffff, x, y, z, { ry });
+      }
+  }
+  // The muzzle at the bow, where the rails meet: a ring round the line of fire.
+  const mx = S.to + 2,
+    my = railY(spec, S.to) + S.railH / 2;
+  frame.add(new TorusGeometry(6, 1.4, 8, 24).rotateY(Math.PI / 2), STEEL, mx, my, 0);
+  glow.add(new TorusGeometry(4.4, 0.45, 4, 24).rotateY(Math.PI / 2), 0xffffff, mx, my, 0);
+  frame.box(6, my - deckHeight(spec, mx) - 6, 3, mx, deckHeight(spec, mx) - 0.2, 0, STEEL, { taper: 0.3 });
+  // Bow work: a raked prow cap, bitts and a stem light.
+  frame.box(26, 1.6, 10, S.to - 14, deckHeight(spec, S.to - 14) - 0.4, 0, DARK, { taper: 0.4, slope: 3 });
+  for (const side of [-1, 1]) frame.cyl(0.9, 1, 1.6, 150, deckHeight(spec, 150), side * 8, BRASS, { seg: 8 });
+  glow.sphere(0.8, S.to + 10, deckHeight(spec, S.to + 10) + 1, 0, 0xffffff);
+
+  // The bridge: stepped and angular over the hit-box blocks, with a window strip, a sensor dome and a raked antenna.
+  const [low, high] = spec.model.blocks;
+  frame.box(low.len, low.h + 0.3, low.w, low.x, fb - 0.3, 0, STEEL, { taper: 0.12, slope: 3 });
+  frame.box(low.len * 0.94, 0.4, low.w * 0.92, low.x - 1, fb + low.h, 0, DARK);
+  frame.box(high.len, high.h, high.w, high.x, fb + high.y!, 0, STEEL, { taper: 0.16, slope: 2.4 });
+  glow.box(high.len * 0.86, 1.1, high.w * 0.93 + 0.6, high.x, fb + high.y! + high.h * 0.55, 0, 0xffffff);
+  glow.box(low.len * 0.3, 0.8, low.w + 0.4, low.x + low.len * 0.28, fb + low.h * 0.55, 0, 0xffffff);
+  const roof = fb + high.y! + high.h;
+  frame.box(high.len * 0.6, 0.6, high.w * 0.6, high.x - 2, roof, 0, DARK);
+  frame.sphere(3.6, high.x + 4, roof + 1.4, 0, 0xc9d0d6, { sy: 0.8 });
+  for (const [dx, h, lean] of [
+    [-6, 8, 0.32],
+    [-9, 6.5, 0.4],
+    [-11.5, 5, 0.48],
+  ] as const)
+    frame.cyl(0.22, 0.3, h, high.x + dx, roof + 0.3, 0, STEEL, { seg: 5, rz: lean });
+
+  // The reactor aft: a banded core on its housing, radiator fin stacks fore and aft of it, capacitor banks beside.
+  const r = spec.model.blocks[2];
+  const top = fb + r.h;
+  frame.box(r.len, r.h + 0.3, r.w, r.x, fb - 0.3, 0, DARK, { taper: 0.08 });
+  frame.box(r.len * 0.96, 0.5, r.w * 0.96, r.x, top - 0.2, 0, STEEL);
+  frame.cyl(9, 10, 11, r.x, top, 0, STEEL, { seg: 16 });
+  frame.cyl(6, 9, 1.6, r.x, top + 11, 0, DARK, { seg: 16 });
+  for (const k of [2.5, 5.5, 8.5]) glow.cyl(9.6 - k * 0.06, 9.8 - k * 0.06, 1, r.x, top + k, 0, 0xffffff, { seg: 16 });
+  glow.cyl(3, 3, 0.4, r.x, top + 12.6, 0, 0xffffff, { seg: 12 });
+  for (const fx of [r.x - r.len / 2 + 6, r.x + r.len / 2 - 6])
+    for (let z = -12; z <= 12; z += 2) frame.box(9, 8 - Math.abs(z) * 0.18, 0.5, fx, top, z, z % 4 ? STEEL : PLATE_STEEL);
+  for (const side of [-1, 1])
+    for (let x = -88; x <= -48; x += 8) {
+      const deck = deckHeight(spec, x);
+      frame.cyl(2.3, 2.5, 8, x, deck, side * 25, DARK, { seg: 10 });
+      frame.cyl(2.6, 2.6, 0.8, x, deck + 8, side * 25, BRASS, { seg: 10 });
+      glow.cyl(2.55, 2.55, 0.5, x, deck + 6, side * 25, 0xffffff, { seg: 10 });
+    }
+
+  // Stern: thruster pods through the transom with glowing nozzles, and buffer blocks where the rails end.
+  for (const side of [-1, 1]) {
+    frame.barrel(5, 4.2, 14, -spec.length / 2 - 6, 3, side * 11, DARK, 14);
+    glow.add(new CylinderGeometry(3.4, 3.4, 0.4, 14).rotateZ(Math.PI / 2), 0xffffff, -spec.length / 2 - 6.1, 3, side * 11);
+    frame.box(6, S.lift + S.railH, 5, S.from - 2, deckHeight(spec, S.from) - 0.2, side * railZ(spec, S.from), STEEL, { taper: 0.2 });
+  }
+
+  // Plating seams down both sides, a strake along them, and the field veins at the deck edge.
+  for (const side of [-1, 1]) {
+    for (let x = -spec.length / 2 + 15; x < spec.length / 2 - 15; x += 25) frame.box(0.35, fb - 1.6, 0.25, x, 0.8, side * (hullHalfWidth(spec, x) + 0.04), PLATE_STEEL);
+    for (let x = -spec.length / 2 + 6; x < spec.length / 2 - 12; x += 10) {
+      const x1 = x + 10;
+      const z0 = hullHalfWidth(spec, x),
+        z1 = hullHalfWidth(spec, x1);
+      const ry = -Math.atan2(side * (z1 - z0), 10);
+      frame.box(Math.hypot(10, z1 - z0) + 0.2, 0.5, 0.3, x + 5, fb * 0.42, side * ((z0 + z1) / 2 + 0.05), PLATE_STEEL, { ry });
+      veins.box(Math.hypot(10, z1 - z0) + 0.2, 0.3, 0.9, x + 5, (deckHeight(spec, x) + deckHeight(spec, x1)) / 2 + 0.05, side * ((z0 + z1) / 2 - 1.4), 0xffffff, { ry });
+    }
   }
 }

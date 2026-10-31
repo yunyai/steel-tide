@@ -147,6 +147,8 @@ export interface CubeSkinUniforms {
   uPower: { value: number };
   /** Meteor entry heat on the lower faces. */
   uHeat: { value: number };
+  /** The Shield store's heat, 0..1: the etching runs from the mode colour toward white-hot (see storeLook). */
+  uStore: { value: number };
   /** Solid fraction while re-forming or dissolving (1 is whole). */
   uAssemble: { value: number };
   /** Shattering cube: the etching stutters. */
@@ -154,6 +156,16 @@ export interface CubeSkinUniforms {
   /** A rolling Loaded Die: 1 lights each face in its own mode's colour (`uFaces`, laid out as `dieFaceNormal`). */
   uDie: { value: number };
   uFaces: { value: readonly Color[] };
+}
+
+/**
+ * How a cube shows its Shield store, by fill (store / cap, 0..1): the etching's heat toward white, how many arcs
+ * crackle over its faces and how far they reach (in half-edges), and whether arcs strike the sea (90% and up).
+ */
+export function storeLook(fill: number): { heat: number; arcs: number; reach: number; strike: boolean } {
+  const f = Math.max(0, Math.min(1, fill));
+  if (f <= 0) return { heat: 0, arcs: 0, reach: 0, strike: false };
+  return { heat: f, arcs: 1 + Math.round(f * 7), reach: 0.35 + f * 1.1, strike: f >= 0.9 };
 }
 
 /** Where each die face points in the cube's own frame: face i is mode i, and opposite faces sum to five, as a die's to seven. */
@@ -179,6 +191,7 @@ export function cubeSkin(): { material: MeshStandardMaterial; u: CubeSkinUniform
     uTime: { value: 0 },
     uPower: { value: 1 },
     uHeat: { value: 0 },
+    uStore: { value: 0 },
     uAssemble: { value: 1 },
     uFlicker: { value: 0 },
     uDie: { value: 0 },
@@ -194,7 +207,7 @@ export function cubeSkin(): { material: MeshStandardMaterial; u: CubeSkinUniform
       `uniform sampler2D uEtch;
 uniform vec3 uGlow, uPrev;
 uniform vec3 uFaces[6];
-uniform float uSweep, uTime, uPower, uHeat, uAssemble, uFlicker, uDie;
+uniform float uSweep, uTime, uPower, uHeat, uStore, uAssemble, uFlicker, uDie;
 varying vec3 vCubeObj;
 varying vec2 vEtchUv;
 float cubeHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
@@ -231,13 +244,15 @@ float cubeHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719)))
         : (vCubeObj.z > 0.0 ? uFaces[2] : uFaces[3]);
       glow = mix(glow, face, uDie);
     }
+    // A full Shield store runs the etching white-hot, and brighter.
+    glow = mix(glow, vec3(1.0, 0.94, 0.84), uStore * 0.8);
     // Pulses run outward from the sigil to the rim.
     float pulse = pow(0.5 + 0.5 * sin((etch.g * 3.0 - uTime * 0.9) * 6.2831), 8.0);
     // Far away the fine traces mip away; a floor keeps a distant cube reading in its colour.
     float far = smoothstep(900.0, 4500.0, length(vViewPosition));
     float mask = max(etch.r, far * 0.3);
     float stutter = uFlicker > 0.0 ? mix(1.0, step(0.45, fract(sin(floor(uTime * 22.0) * 91.7) * 47.3)), uFlicker) : 1.0;
-    float lum = uPower * stutter * (mask * (0.55 + 1.6 * pulse) + etch.b * 0.9);
+    float lum = uPower * stutter * (mask * (0.55 + 1.6 * pulse) + etch.b * 0.9) * (1.0 + uStore * 1.2);
     totalEmissiveRadiance = glow * lum + glow * band * 3.0 + uGlow * seam * 4.0;
     // A rim in the mode colour keeps the silhouette against dark water.
     float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 3.0);

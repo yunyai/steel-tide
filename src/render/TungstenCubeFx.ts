@@ -1,5 +1,6 @@
 import { BoxGeometry, Color, DynamicDrawUsage, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, Quaternion, Vector3, type Scene } from 'three';
 import type { Game } from '../core/Game';
+import { clamp } from '../core/math';
 import type { GameEventMap } from '../core/Events';
 import type { Team } from '../core/types';
 import { contactVisible } from '../core/Targeting';
@@ -11,7 +12,7 @@ import { BK, drift, hash01, type BurstParticles } from './BurstParticles';
 import type { Ribbons } from './Projectiles';
 import { quality } from './Quality';
 import { FOAM, SPRAY, TAU, TungstenPaint, WHITE, clamp01, ease, hot } from './TungstenPaint';
-import { ModeSweep, cubeGeometry, cubeSkin, dieFaceNormal, dieHop, modeColor, pileLift, type CubeSkinUniforms } from './TungstenLook';
+import { ModeSweep, cubeGeometry, cubeSkin, dieFaceNormal, dieHop, modeColor, pileLift, storeLook, type CubeSkinUniforms } from './TungstenLook';
 import { HORN_TIPS, type TungstenModel } from './TungstenModel';
 import { INFALL, TungstenSingularities } from './TungstenSingularity';
 import { TungstenUltFx, ULT_LIFE } from './TungstenUltFx';
@@ -131,6 +132,7 @@ export class TungstenCubeFx {
   private v3 = new Vector3();
   private scale = new Vector3();
   private up = new Vector3(0, 1, 0);
+  private storeTint = new Color();
   /** The horn tips of the ship being drawn, in world space. */
   private tips = HORN_TIPS.map(() => new Vector3());
 
@@ -526,6 +528,10 @@ export class TungstenCubeFx {
       v.u.uAssemble.value = 1;
       v.u.uHeat.value = ult?.heat ?? 0;
       const color = modeColor(c.mode);
+      // The Shield store rides every cube: the etching heats toward white and arcs crackle over the faces.
+      const store = !ult && !spent && t.charge > 0 ? storeLook(t.charge / (CUBE.chargeCap * (overdriveOn(s) ? CUBE.orbit.cap : 1))) : null;
+      v.u.uStore.value = store?.heat ?? 0;
+      if (store && v.mesh.visible) this.storeArcs(c, v, store, color, now);
       // Trail: a wide coloured wake with a white-hot core.
       for (let i = 4; i < v.trail.length; i += 4) {
         const age = now - v.trail[i + 3],
@@ -580,6 +586,53 @@ export class TungstenCubeFx {
       v.mesh.visible = k < 1;
       v.u.uAssemble.value = Math.max(0.001, 1 - k);
       v.u.uTime.value = anim;
+    }
+  }
+
+  /**
+   * Arcs over a cube holding a Shield store, re-struck six times a second on random faces; more and longer as it
+   * fills, and from 90% a few leap from its base into the sea.
+   */
+  private storeArcs(c: Cube, v: FreeCube, look: ReturnType<typeof storeLook>, color: Color, now: number): void {
+    const m = v.mesh;
+    const size = m.scale.x;
+    const bucket = this.paint.reduce ? 0 : Math.floor(now * 6);
+    const tint = this.storeTint.copy(color).lerp(WHITE, look.heat * 0.7);
+    const world = (p: Vector3) => p.multiplyScalar(size).applyQuaternion(m.quaternion).add(m.position);
+    const a = this.v2,
+      b = this.v3,
+      n = this.v;
+    for (let i = 0; i < this.paint.n(look.arcs); i++) {
+      const seed = c.id * 131 + i * 17;
+      dieFaceNormal(Math.floor(hash01(seed, bucket) * 6), n);
+      // The face's two in-plane axes.
+      const ux = n.x !== 0 ? 0 : 1,
+        uy = n.x !== 0 ? 1 : 0,
+        uz = 0;
+      const wx = 0,
+        wy = n.z !== 0 ? 1 : 0,
+        wz = n.z !== 0 ? 0 : 1;
+      const s0 = hash01(seed + 1, bucket) * 0.8 - 0.4,
+        t0 = hash01(seed + 2, bucket) * 0.8 - 0.4,
+        ang = hash01(seed + 3, bucket) * TAU,
+        len = look.reach * 0.5;
+      const s1 = clamp(s0 + Math.cos(ang) * len, -0.48, 0.48),
+        t1 = clamp(t0 + Math.sin(ang) * len, -0.48, 0.48);
+      world(a.set(n.x * 0.505 + ux * s0 + wx * t0, n.y * 0.505 + uy * s0 + wy * t0, n.z * 0.505 + uz * s0 + wz * t0));
+      world(b.set(n.x * 0.505 + ux * s1 + wx * t1, n.y * 0.505 + uy * s1 + wy * t1, n.z * 0.505 + uz * s1 + wz * t1));
+      this.paint.arc(a.x, a.y, a.z, b.x, b.y, b.z, seed + bucket, hot(tint, 2 + look.heat * 2), 0.45 + 0.45 * look.heat, 1.2 + look.heat * 1.6, size * len * 0.12, 6);
+    }
+    if (!look.strike) return;
+    for (let i = 0; i < 3; i++) {
+      const seed = c.id * 71 + i * 29;
+      const ox = (hash01(seed, bucket) - 0.5) * size * 0.8,
+        oz = (hash01(seed + 1, bucket) - 0.5) * size * 0.8;
+      const fx = m.position.x + ox,
+        fz = m.position.z + oz,
+        fy = m.position.y - size / 2;
+      const sx = fx + ox * 0.9,
+        sz = fz + oz * 0.9;
+      this.paint.arc(fx, fy, fz, sx, this.paint.surface(sx, sz), sz, seed + bucket, hot(tint, 3.5), 0.9, 2.6, 14, 10);
     }
   }
 
