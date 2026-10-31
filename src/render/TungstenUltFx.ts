@@ -99,11 +99,16 @@ export class TungstenUltFx {
   }
 
   /** Ongoing ult visuals for one Tungsten; the cubes themselves are drawn by the caller. */
-  state(s: Ship, t: TungstenState, team: Team | -1, reduce: boolean): void {
+  state(s: Ship, t: TungstenState, team: Team | -1, reduce: boolean, seen: boolean): void {
     const u = t.ult;
     if (u?.kind === 'meteor') this.meteor(s, t, u, team);
     else if (u?.kind === 'collapse') this.collapse(s, team, reduce);
-    for (const a of t.acts) if (a.kind === 'field') this.mendField(a.x, a.z, a.radius, a.elapsed, a.time, a.cube * 7 + s.id);
+    for (const a of t.acts) {
+      if (a.kind !== 'field') continue;
+      // A Sanctuary raised from the dais rides a hull the viewer may not see.
+      if (!seen && t.cubes.find((k) => k.id === a.cube)?.state === 'docked') continue;
+      this.mendField(a.x, a.z, a.radius, a.elapsed, a.time, a.cube * 7 + s.id, a.taken < 1);
+    }
   }
 
   private meteor(s: Ship, t: TungstenState, u: TungstenUlt, team: Team | -1): void {
@@ -238,8 +243,8 @@ export class TungstenUltFx {
     }
   }
 
-  /** Mend's meteor field: a green ring of light on the crater, healing motes rising off the water. */
-  private mendField(x: number, z: number, radius: number, elapsed: number, time: number, seed: number): void {
+  /** Mend's meteor field or Sanctuary: a green ring of light, healing motes rising off the water; Sanctuary adds a dome. */
+  private mendField(x: number, z: number, radius: number, elapsed: number, time: number, seed: number, dome: boolean): void {
     const p = this.paint;
     const now = this.game.renderTime;
     const fade = clamp01(elapsed / 0.4) * clamp01((time - elapsed) / 0.6);
@@ -254,6 +259,15 @@ export class TungstenUltFx {
       const mx = x + Math.cos(a) * r,
         mz = z + Math.sin(a) * r;
       p.particles.push(BK.Glow, mx, p.surface(mx, mz) + 5 + phase * 160, mz, 12 + 8 * hash01(seed + 3, i), hot(color, 2.2), 0.8 * fade * Math.sin(Math.PI * phase));
+    }
+    if (!dome) return;
+    // A low dome of latitude rings, slowly breathing.
+    const top = radius * 0.35,
+      base = p.surface(x, z);
+    const breathe = p.reduce ? 1 : 1 + 0.03 * Math.sin(now * 2.2);
+    for (let i = 1; i <= 5; i++) {
+      const phi = (i / 6) * (Math.PI / 2);
+      p.loop(x, base + top * Math.sin(phi) * breathe, z, radius * Math.cos(phi), hot(color, 1.4 + 0.15 * i), (0.5 - 0.06 * i) * fade);
     }
   }
 

@@ -8,13 +8,14 @@ import type { Ship } from '../../ships/Ship';
 import { stun } from '../../weapons/StrikeSystem';
 import { buff, hpFrac, hurt, mark } from '../kit';
 import { safeStep } from './StepperRuntime';
-import { CUBE, dockLift, haloAngle, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf } from './TungstenModes';
+import { CUBE, dockLift, haloAngle, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf, type SignatureId } from './TungstenModes';
 
-export type CubeState = 'docked' | 'flying' | 'hover' | 'guard' | 'orbit' | 'meteor' | 'collapse' | 'broken';
-export type CubePathKind = 'shot' | 'dock' | 'ricochet' | 'home' | 'die';
+/** `pin`: perched on a hull it leapt onto (Pile Driver), holding it down. */
+export type CubeState = 'docked' | 'flying' | 'hover' | 'guard' | 'orbit' | 'meteor' | 'collapse' | 'broken' | 'pin';
+export type CubePathKind = 'shot' | 'dock' | 'ricochet' | 'home' | 'die' | 'pile';
 /** Orders for hashing and the HUD. */
-export const CUBE_STATES: readonly CubeState[] = ['docked', 'flying', 'hover', 'guard', 'orbit', 'meteor', 'collapse', 'broken'];
-export const PATH_KINDS: readonly CubePathKind[] = ['shot', 'dock', 'ricochet', 'home', 'die'];
+export const CUBE_STATES: readonly CubeState[] = ['docked', 'flying', 'hover', 'guard', 'orbit', 'meteor', 'collapse', 'broken', 'pin'];
+export const PATH_KINDS: readonly CubePathKind[] = ['shot', 'dock', 'ricochet', 'home', 'die', 'pile'];
 
 export interface CubePath {
   kind: CubePathKind;
@@ -28,7 +29,7 @@ export interface CubePath {
   hit: number[];
   healed: number[];
   dealt: number;
-  /** Ricochet: ship id being chased, and bounces left. */
+  /** Ricochet: ship id being chased, and bounces left. Pile: the ship leapt onto, with `bounces` 1 (0 for the drop beside it). */
   target: number;
   bounces: number;
 }
@@ -63,8 +64,12 @@ export interface Cube {
   gone: boolean;
 }
 
+/**
+ * A Signature's lasting part. `pin`: the cube holds `targets[0]` down. `reel`: hulls dragged to (x, z), the midpoint
+ * of two or the cube for one. `field`: allies within `radius` heal `rate` of max HP a second and take `taken` damage.
+ */
 export interface TungstenAct {
-  kind: 'slam' | 'reel' | 'field';
+  kind: 'pin' | 'reel' | 'field';
   cube: number;
   skill: number;
   x: number;
@@ -73,6 +78,8 @@ export interface TungstenAct {
   time: number;
   radius: number;
   targets: number[];
+  rate: number;
+  taken: number;
 }
 
 export interface TungstenUlt {
@@ -93,6 +100,7 @@ export interface TungstenUlt {
   struck: number[];
 }
 
+/** The magnet hauling the ship along a corridor: a Lunge to its cube, or a Polarity Dash (`cube` -1) away from it. */
 export interface TungstenLunge {
   x0: number;
   z0: number;
@@ -102,6 +110,9 @@ export interface TungstenLunge {
   time: number;
   hit: number[];
   cube: number;
+  /** Damage to each hull in the way, credited to kit index `skill`. */
+  damage: number;
+  skill: number;
 }
 
 export interface Tether {
@@ -433,7 +444,7 @@ export function cubeIntercept(game: Ship['game'], team: number, ox: number, oy: 
     const t = s.tungsten;
     if (!t || !s.alive || s.team === team) continue;
     for (const c of t.cubes) {
-      if (c.gone || !(c.state === 'flying' || parked(c))) continue;
+      if (c.gone || !(c.state === 'flying' || c.state === 'pin' || parked(c))) continue;
       const h = H * c.scale;
       if (c.state === 'guard' || c.state === 'orbit') {
         const F = c.state === 'orbit' ? { radius: CUBE.orbit.field, repel: CUBE.orbit.repelField } : { radius: CUBE.guard.radius, repel: CUBE.guard.repelRadius };
@@ -562,32 +573,37 @@ export function lungeToCube(s: Ship, skill: number): boolean {
   const d = gap(s.pos.x, s.pos.z, c.x, c.z);
   if (d > CUBE.lunge.range) return s.failSkill('Magnet Lunge: the cube is beyond 4 km');
   const h = bearingTo(s.pos.x, s.pos.z, c.x, c.z);
-  const fx = forwardX(h),
-    fz = forwardZ(h);
-  const reach = d - (s.spec.length / 2 + H + 40);
-  const at = (a: number) => [s.pos.x + fx * a, s.pos.z + fz * a] as const;
-  // The corridor runs through enemy hulls (they take the hit) but not land or allies.
+  const land = corridor(s, h, d - (s.spec.length / 2 + H + 40));
+  if (land < 0) return s.failSkill('Magnet Lunge: no clear water toward the cube');
+  haul(s, h, land, CUBE.lunge.speed, c.id, CUBE.lunge.damage, skill);
+  c.state = 'hover';
+  t.guardUntil = Math.min(t.guardUntil, s.game.time);
+  emit(s, 'lunge', c, s.pos.x, 0, s.pos.z, land);
+  return true;
+}
+
+/**
+ * How far the ship can be hauled along bearing `h`, up to `reach`: through enemy hulls (they take the hit) but not
+ * land or allies, to the farthest clear water at least `CUBE.lunge.minDistance` out; -1 when there is none.
+ */
+function corridor(s: Ship, h: number, reach: number): number {
+  const at = (a: number) => [s.pos.x + forwardX(h) * a, s.pos.z + forwardZ(h) * a] as const;
   let clear = 0;
   for (let a = 40; a < reach; a += 40) {
     if (!safeStep(s, ...at(a), h, true)) break;
     clear = a;
   }
   if (clear + 40 >= reach && safeStep(s, ...at(reach), h, true)) clear = reach;
-  let land = -1;
-  for (let a = clear; a >= CUBE.lunge.minDistance; a -= 40)
-    if (safeStep(s, ...at(a), h)) {
-      land = a;
-      break;
-    }
-  if (land < 0) return s.failSkill('Magnet Lunge: no clear water toward the cube');
-  const [x1, z1] = at(land);
-  t.lunge = { x0: s.pos.x, z0: s.pos.z, x1, z1, elapsed: 0, time: land / CUBE.lunge.speed, hit: [], cube: c.id };
-  c.state = 'hover';
+  for (let a = clear; a >= CUBE.lunge.minDistance; a -= 40) if (safeStep(s, ...at(a), h)) return a;
+  return -1;
+}
+
+/** Starts hauling the ship `land` metres along bearing `h`; it takes 40% less damage on the way. */
+function haul(s: Ship, h: number, land: number, speed: number, cube: number, damage: number, skill: number): void {
+  const x1 = s.pos.x + forwardX(h) * land,
+    z1 = s.pos.z + forwardZ(h) * land;
+  s.tungsten!.lunge = { x0: s.pos.x, z0: s.pos.z, x1, z1, elapsed: 0, time: land / speed, hit: [], cube, damage, skill };
   s.heading = s.prevHeading = s.renderHeading = h;
-  t.guardUntil = Math.min(t.guardUntil, s.game.time);
-  emit(s, 'lunge', c, s.pos.x, 0, s.pos.z, land);
-  void skill;
-  return true;
 }
 
 export function switchMode(s: Ship): boolean {
@@ -682,45 +698,163 @@ export function dockCubes(s: Ship, skill: number): boolean {
   return true;
 }
 
+/** Each mode's Signature from cube `c`: an empty string when it fires, or why it cannot. */
+const MOVES: Record<SignatureId, (s: Ship, c: Cube, skill: number) => string> = { ricochet, pile, cone, dash, collide, sanctuary };
+
 export function signature(s: Ship, skill: number): boolean {
   if (!cubeReady(s, 'Signature')) return false;
-  const g = s.game;
-  const spec = skillSpec(s, skill);
-  let fired = 0;
+  let fired = 0,
+    why = '';
   for (const c of driven(s)) {
-    const sig = TUNGSTEN_MODES[c.mode].signature;
-    if (c.mode === KINETIC) {
-      const first = nextTarget(s, c, SIGNATURE.ricochet.reach, 0);
-      if (!first) continue;
-      c.state = 'flying';
-      c.flown = 0;
-      c.path = newPath('ricochet', skill, first.pos.x, hoverY(s, first.pos.x, first.pos.z), first.pos.z, SIGNATURE.ricochet.speed * TUNGSTEN_MODES[c.mode].speed);
-      c.path.target = first.id;
-      c.path.bounces = SIGNATURE.ricochet.bounces;
-    } else if (c.mode === CRUSH || c.mode === TETHER) {
-      const reel = c.mode === TETHER;
-      const targets = reel ? foesNear(s, c.x, c.z, sig.radius).map((o) => o.id) : [];
-      s.tungsten!.acts.push({ kind: reel ? 'reel' : 'slam', cube: c.id, skill, x: c.x, z: c.z, elapsed: 0, time: reel ? SIGNATURE.reel.time : SIGNATURE.slam.time, radius: sig.radius, targets });
-    } else if (c.mode === SHARD) {
-      for (const o of foesNear(s, c.x, c.z, sig.radius)) {
-        cubeHit(s, c, o, SIGNATURE.storm.damage, spec, false);
-        knockTurrets(s, o, SIGNATURE.storm.turrets, SIGNATURE.storm.out);
-      }
-    } else if (c.mode === REPEL) {
-      for (const o of foesNear(s, c.x, c.z, sig.radius)) {
-        cubeHit(s, c, o, SIGNATURE.repulse.damage, spec, false);
-        const d = Math.max(1, gap(o.pos.x, o.pos.z, c.x, c.z));
-        o.shove(((o.pos.x - c.x) / d) * SIGNATURE.repulse.knock * 1.5, ((o.pos.z - c.z) / d) * SIGNATURE.repulse.knock * 1.5);
-      }
-      repulse(s, c.x, c.z, sig.radius);
-    } else if (c.mode === MEND) {
-      for (const o of g.ships) if (o !== s && o.alive && o.team === s.team && gap(o.pos.x, o.pos.z, c.x, c.z) <= sig.radius) o.heal(o.maxHp * SIGNATURE.restore.allies);
-      s.heal(s.maxHp * SIGNATURE.restore.ship);
-    }
-    emit(s, 'signature', c, c.x, c.y, c.z, sig.radius);
-    fired++;
+    const no = MOVES[TUNGSTEN_MODES[c.mode].signature.id](s, c, skill);
+    if (no) why = no;
+    else fired++;
   }
-  return fired > 0 || s.failSkill('Ricochet: no enemy within 2 km of the cube');
+  return fired > 0 || s.failSkill(why);
+}
+
+function signatureEvent(s: Ship, c: Cube, toX = c.x, toZ = c.z): void {
+  s.game.events.emit('tungsten', { ship: s, kind: 'signature', cube: c.id, x: c.x, y: c.y, z: c.z, radius: TUNGSTEN_MODES[c.mode].signature.radius, mode: c.mode, toX, toZ });
+}
+
+/** Kinetic, Ricochet+: the cube bounces from enemy to enemy, each leg faster than the last. */
+function ricochet(s: Ship, c: Cube, skill: number): string {
+  const R = SIGNATURE.ricochet;
+  const first = nextTarget(s, c, R.reach, -1);
+  if (!first) return 'Ricochet+: no enemy within 2 km of the cube';
+  c.state = 'flying';
+  c.flown = 0;
+  c.path = newPath('ricochet', skill, first.pos.x, hoverY(s, first.pos.x, first.pos.z), first.pos.z, R.speed * TUNGSTEN_MODES[c.mode].speed);
+  c.path.target = first.id;
+  c.path.bounces = R.bounces;
+  signatureEvent(s, c);
+  return '';
+}
+
+/** Crush, Pile Driver: the cube leaps onto the enemy nearest the reticle within reach of it. */
+function pile(s: Ship, c: Cube, skill: number): string {
+  const reach = TUNGSTEN_MODES[c.mode].signature.radius;
+  let best: Ship | null = null;
+  for (const o of s.game.ships) {
+    if (!hostile(s, o) || !canTrack(s, o) || gap(o.pos.x, o.pos.z, c.x, c.z) > reach) continue;
+    if (!best || gap(o.pos.x, o.pos.z, s.control.aimX, s.control.aimZ) < gap(best.pos.x, best.pos.z, s.control.aimX, s.control.aimZ)) best = o;
+  }
+  if (!best) return 'Pile Driver: no enemy within 2.5 km of the cube';
+  c.state = 'flying';
+  c.flown = 0;
+  c.path = newPath('pile', skill, best.pos.x, perchY(best), best.pos.z, SIGNATURE.pile.speed);
+  c.path.target = best.id;
+  c.path.bounces = 1;
+  signatureEvent(s, c, best.pos.x, best.pos.z);
+  return '';
+}
+/** A pinned cube's centre, resting on the deck. */
+const perchY = (o: Ship) => o.spec.freeboard + H;
+
+/** The leap lands: the hull takes the blow, is rooted and stunned, and the cube perches on it while the root lasts. */
+function pinDown(s: Ship, c: Cube, p: CubePath): void {
+  const o = shipById(s, p.target);
+  if (!o || !hostile(s, o)) return land(s, c);
+  const P = SIGNATURE.pile;
+  cubeHit(s, c, o, P.damage, skillSpec(s, p.skill), false);
+  buff(o, 'debuff:tungstenPin', P.root, (m) => {
+    m.rooted = true;
+  });
+  stun(o, P.stun);
+  c.state = 'pin';
+  c.path = null;
+  perch(c, o);
+  s.tungsten!.acts.push({ kind: 'pin', cube: c.id, skill: p.skill, x: c.x, z: c.z, elapsed: 0, time: P.root, radius: 0, targets: [o.id], rate: 0, taken: 1 });
+  emit(s, 'slam', c, o.pos.x, 0, o.pos.z, o.spec.length * 0.6, o);
+}
+function perch(c: Cube, o: Ship): void {
+  c.x = o.pos.x;
+  c.z = o.pos.z;
+  c.y = perchY(o);
+}
+/** The pin is over: the cube drops off the hull onto the water beside it, on the magnet's side. */
+function dropBeside(s: Ship, c: Cube, o: Ship | null): void {
+  let x = c.x,
+    z = c.z;
+  if (o) {
+    const px = -forwardZ(o.heading),
+      pz = forwardX(o.heading);
+    const side = (s.pos.x - o.pos.x) * px + (s.pos.z - o.pos.z) * pz >= 0 ? 1 : -1;
+    const off = o.spec.beam / 2 + H + 40;
+    x = o.pos.x + px * side * off;
+    z = o.pos.z + pz * side * off;
+  }
+  c.state = 'flying';
+  c.path = newPath('pile', -1, x, hoverY(s, x, z), z, SIGNATURE.pile.speed / 4);
+}
+
+/** Shard, Shrapnel Cone: shards fan toward the reticle, each striking the first enemy hull on its line. */
+function cone(s: Ship, c: Cube, skill: number): string {
+  const C = SIGNATURE.cone;
+  const b = bearingTo(c.x, c.z, s.control.aimX, s.control.aimZ);
+  const spec = skillSpec(s, skill);
+  const struck: number[] = [];
+  for (let i = 0; i < C.shards; i++) {
+    const a = b + (i / (C.shards - 1) - 0.5) * ((C.spread * Math.PI) / 180);
+    const x1 = c.x + forwardX(a) * C.range,
+      z1 = c.z + forwardZ(a) * C.range;
+    let first: Ship | null = null,
+      at = Infinity;
+    for (const o of s.game.ships) {
+      if (!hostile(s, o)) continue;
+      const k = segmentHitsHull(o, c.x, c.z, x1, z1, 0);
+      if (k >= 0 && k < at) {
+        at = k;
+        first = o;
+      }
+    }
+    if (!first) continue;
+    // The first shard into each hull is the cube's hit; the rest are shrapnel.
+    if (struck.includes(first.id)) hurt(s, first, C.damage, spec);
+    else {
+      struck.push(first.id);
+      cubeHit(s, c, first, C.damage, spec, false);
+    }
+  }
+  signatureEvent(s, c, c.x + forwardX(b) * C.range, c.z + forwardZ(b) * C.range);
+  return '';
+}
+
+/** Repel, Polarity Dash: the magnet throws the ship away from the cube (toward the reticle from the dais), through hulls. */
+function dash(s: Ship, c: Cube, skill: number): string {
+  if (s.tungsten!.lunge) return 'Polarity Dash: the magnet is already hauling the ship';
+  const D = SIGNATURE.dash;
+  const home = c.state === 'docked' || gap(c.x, c.z, s.pos.x, s.pos.z) < 100;
+  const h = home ? bearingTo(s.pos.x, s.pos.z, s.control.aimX, s.control.aimZ) : bearingTo(c.x, c.z, s.pos.x, s.pos.z);
+  const land = corridor(s, h, D.distance);
+  if (land < 0) return 'Polarity Dash: no clear water to dash into';
+  haul(s, h, land, D.speed, -1, D.damage, skill);
+  const L = s.tungsten!.lunge!;
+  signatureEvent(s, c, L.x1, L.z1);
+  return '';
+}
+
+/** Tether, Collide: the two enemy hulls nearest the cube are reeled into each other (a lone one into the cube). */
+function collide(s: Ship, c: Cube, skill: number): string {
+  const r = TUNGSTEN_MODES[c.mode].signature.radius;
+  const near = foesNear(s, c.x, c.z, r)
+    .sort((a, b) => gap(a.pos.x, a.pos.z, c.x, c.z) - gap(b.pos.x, b.pos.z, c.x, c.z))
+    .slice(0, 2);
+  if (!near.length) return 'Collide: no enemy within 1.2 km of the cube';
+  const [a, b] = near;
+  const x = b ? (a.pos.x + b.pos.x) / 2 : c.x,
+    z = b ? (a.pos.z + b.pos.z) / 2 : c.z;
+  s.tungsten!.acts.push({ kind: 'reel', cube: c.id, skill, x, z, elapsed: 0, time: SIGNATURE.collide.time, radius: r, targets: near.map((o) => o.id), rate: 0, taken: 1 });
+  signatureEvent(s, c, x, z);
+  return '';
+}
+
+/** Mend, Sanctuary: a dome at the cube where allies heal and take less damage. */
+function sanctuary(s: Ship, c: Cube, skill: number): string {
+  const S = SIGNATURE.sanctuary;
+  s.tungsten!.acts.push({ kind: 'field', cube: c.id, skill, x: c.x, z: c.z, elapsed: 0, time: S.time, radius: TUNGSTEN_MODES[c.mode].signature.radius, targets: [], rate: S.heal, taken: S.taken });
+  signatureEvent(s, c);
+  return '';
 }
 
 /** Enemy shells, missiles and torpedoes within `r` of (x, z) are torn apart. */
@@ -883,11 +1017,11 @@ function stepLunge(s: Ship, t: TungstenState, dt: number): void {
     oz = s.pos.z;
   s.pos.x = L.x0 + (L.x1 - L.x0) * f;
   s.pos.z = L.z0 + (L.z1 - L.z0) * f;
-  const spec = skillSpec(s, 0);
+  const spec = skillSpec(s, L.skill);
   for (const o of s.game.ships)
     if (hostile(s, o) && !L.hit.includes(o.id) && segmentHitsHull(o, ox, oz, s.pos.x, s.pos.z, s.spec.beam / 2) >= 0) {
       L.hit.push(o.id);
-      hurt(s, o, CUBE.lunge.damage, spec);
+      hurt(s, o, L.damage, spec);
     }
   if (f < 1) return;
   t.lunge = null;
@@ -952,6 +1086,13 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
       c.yaw = -a;
       strike(s, c, CUBE.orbit);
       break;
+    }
+    case 'pin': {
+      // Riding the hull it holds down; it is the hull's weight, so it shoves nothing.
+      const a = t.acts.find((k) => k.kind === 'pin' && k.cube === c.id);
+      const o = a && shipById(s, a.targets[0]);
+      if (o) perch(c, o);
+      return;
     }
     default:
       return;
@@ -1035,6 +1176,12 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
     p.tx = d.x;
     p.ty = d.y;
     p.tz = d.z;
+  } else if (p.kind === 'pile' && p.bounces > 0) {
+    const o = shipById(s, p.target);
+    if (!o || !hostile(s, o)) return land(s, c);
+    p.tx = o.pos.x;
+    p.ty = perchY(o);
+    p.tz = o.pos.z;
   } else if (p.kind === 'ricochet') {
     const o = shipById(s, p.target);
     if (!o || !hostile(s, o)) return land(s, c);
@@ -1063,8 +1210,8 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
       uz = (c.z - oz) / moved;
     for (let a = -H; a <= 2 * H; a += H / 4) c.y = Math.max(c.y, hoverY(s, c.x + ux * a, c.z + uz * a, c.scale));
   }
-  // Homing cubes and a rolling die strike nothing on the way.
-  if (p.kind !== 'home' && p.kind !== 'die') {
+  // Homing cubes, a rolling die and a leaping Pile Driver strike nothing on the way.
+  if (p.kind !== 'home' && p.kind !== 'die' && p.kind !== 'pile') {
     const spec = skillSpec(s, p.skill);
     const h = H * c.scale;
     for (const o of g.ships) {
@@ -1080,6 +1227,7 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
         if (!next) return land(s, c);
         p.target = next.id;
         p.hit = [];
+        p.speed *= SIGNATURE.ricochet.gain;
         return;
       }
       // A Crush cube stops on the first hull it meets.
@@ -1102,6 +1250,7 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
     land(s, c);
     return dieLands(s, c, p.skill);
   }
+  if (p.kind === 'pile') return p.bounces > 0 ? pinDown(s, c, p) : land(s, c);
   if (p.kind === 'home' && c.extra && !t.overdriveUntil) {
     c.gone = true;
     return;
@@ -1151,34 +1300,50 @@ function stepActs(s: Ship, t: TungstenState, dt: number): void {
   t.acts = t.acts.filter((a) => {
     a.elapsed += dt;
     const c = cubeById(t, a.cube);
-    if (c && a.kind !== 'field') {
-      a.x = c.x;
-      a.z = c.z;
+    if (a.kind === 'pin') {
+      const o = shipById(s, a.targets[0]);
+      if (c && o && hostile(s, o) && c.state === 'pin' && a.elapsed < a.time) {
+        a.x = c.x;
+        a.z = c.z;
+        return true;
+      }
+      if (c?.state === 'pin') dropBeside(s, c, o && hostile(s, o) ? o : null);
+      return false;
     }
-    const spec = skillSpec(s, a.skill);
     if (a.kind === 'reel') {
+      // A lone hull is reeled into the cube; a pair into each other at their midpoint.
+      const pair = a.targets.length > 1;
+      if (c && !pair) {
+        a.x = c.x;
+        a.z = c.z;
+      }
+      const left = Math.max(dt, a.time - a.elapsed + dt);
       for (const id of a.targets) {
         const o = shipById(s, id);
-        if (o && hostile(s, o)) drag(o, a.x, a.z, SIGNATURE.reel.speed, H + o.spec.beam / 2 + 60);
+        if (!o || !hostile(s, o)) continue;
+        const stop = o.spec.beam / 2 + (pair ? 40 : H + 40);
+        drag(o, a.x, a.z, gap(o.pos.x, o.pos.z, a.x, a.z) / left + 40, stop);
       }
       if (a.elapsed < a.time) return true;
+      const spec = skillSpec(s, a.skill);
       for (const id of a.targets) {
         const o = shipById(s, id);
-        if (o && hostile(s, o) && c) cubeHit(s, c, o, SIGNATURE.reel.damage, spec, false);
+        if (!o || !hostile(s, o)) continue;
+        if (c) cubeHit(s, c, o, SIGNATURE.collide.damage, spec, false);
+        else hurt(s, o, SIGNATURE.collide.damage, spec);
+        stun(o, SIGNATURE.collide.stun);
       }
       emit(s, 'reel', c, a.x, 0, a.z, a.radius);
       return false;
     }
-    if (a.kind === 'slam') {
-      if (a.elapsed < a.time) return true;
-      for (const o of foesNear(s, a.x, a.z, a.radius)) {
-        if (c) cubeHit(s, c, o, SIGNATURE.slam.damage, spec, false);
-        stun(o, SIGNATURE.slam.stun);
-      }
-      emit(s, 'slam', c, a.x, 0, a.z, a.radius);
-      return false;
+    for (const o of g.ships) {
+      if (!o.alive || o.team !== s.team || gap(o.pos.x, o.pos.z, a.x, a.z) > a.radius) continue;
+      o.heal(o.maxHp * a.rate * dt);
+      if (a.taken < 1)
+        buff(o, 'tungstenSanctuary', 0.1, (m) => {
+          m.damageTakenMul *= a.taken;
+        });
     }
-    for (const o of g.ships) if (o.alive && o.team === s.team && gap(o.pos.x, o.pos.z, a.x, a.z) <= a.radius) o.heal(o.maxHp * 0.02 * dt);
     return a.elapsed < a.time;
   });
 }
@@ -1315,7 +1480,7 @@ function meteorImpact(s: Ship, t: TungstenState, u: TungstenUlt, c: Cube, x: num
       const d = Math.max(1, gap(o.pos.x, o.pos.z, x, z));
       o.shove(((o.pos.x - x) / d) * 600 * 1.5, ((o.pos.z - z) / d) * 600 * 1.5);
     }
-  else if (c.mode === MEND) t.acts.push({ kind: 'field', cube: c.id, skill: u.skill, x, z, elapsed: 0, time: 6, radius: R, targets: [] });
+  else if (c.mode === MEND) t.acts.push({ kind: 'field', cube: c.id, skill: u.skill, x, z, elapsed: 0, time: 6, radius: R, targets: [], rate: 0.02, taken: 1 });
   g.events.emit('explosion', { x, y: 5, z, size: u.merged ? 3 : 5 });
   emit(s, 'meteorImpact', c, x, 0, z, R);
 }

@@ -24,8 +24,16 @@ describe('Tungsten HUD presentation', () => {
     t.mode = 2;
     view = tungstenPresentation(t, time, 0, 0);
     expect(view.switchLabel).toBe('SHARD');
-    expect(view.signatureLabel).toBe('STORM');
-    expect(view.signatureTitle).toContain('Fragment Storm');
+    expect(view.signatureLabel).toBe('CONE');
+    expect(view.signatureTitle).toBe('Now Shrapnel Cone: 2.0 km toward the reticle.');
+    t.mode = 3;
+    expect(tungstenPresentation(t, time, 0, 0).signatureTitle).toBe('Now Polarity Dash: 1.5 km away from the cube.');
+  });
+
+  it('says where a pinning cube is', () => {
+    const { t, time } = tungsten();
+    t.cubes[0].state = 'pin';
+    expect(tungstenPresentation(t, time, 0, 0).panel.where).toBe('Pinning a hull');
   });
 
   it('shows every mode at once during Overdrive', () => {

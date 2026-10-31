@@ -1,4 +1,4 @@
-import { CUBE, TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
+import { CUBE, TUNGSTEN_MODES, type SignatureId } from '../skills/misc/TungstenModes';
 import type { Cube, CubeState, TungstenState } from '../skills/misc/TungstenRuntime';
 import type { Team } from '../core/types';
 import type { Ship } from '../ships/Ship';
@@ -50,7 +50,16 @@ const amount = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${Math.r
 const secs = (v: number) => Math.ceil(v - 1e-6);
 const km = (d: number) => `${(d / 1000).toFixed(1)} km`;
 const primary = (t: TungstenState) => t.cubes.find((k) => k.slot === 0 && !k.extra) ?? t.cubes[0];
-const PLACE: Record<CubeState, string> = { docked: 'Docked', flying: 'In flight', hover: 'Out', guard: 'Shielding', orbit: 'Shielding', meteor: 'Meteor', collapse: 'Collapse', broken: 'Shattered' };
+const PLACE: Record<CubeState, string> = { docked: 'Docked', flying: 'In flight', hover: 'Out', guard: 'Shielding', orbit: 'Shielding', meteor: 'Meteor', collapse: 'Collapse', broken: 'Shattered', pin: 'Pinning a hull' };
+/** Where each Signature reaches, for the button's tooltip. */
+const REACH: Record<SignatureId, (r: string) => string> = {
+  ricochet: (r) => `first hull within ${r} of the cube`,
+  pile: (r) => `leaps onto the enemy nearest the reticle within ${r} of the cube`,
+  cone: (r) => `${r} toward the reticle`,
+  dash: (r) => `${r} away from the cube`,
+  collide: (r) => `two enemies within ${r} of the cube`,
+  sanctuary: (r) => `a ${r} dome at the cube`,
+};
 
 /** The Tungsten's HUD state at game time `time`, for a ship standing at (x, z). */
 export function tungstenPresentation(t: TungstenState, time: number, x: number, z: number): TungstenView {
@@ -70,7 +79,7 @@ export function tungstenPresentation(t: TungstenState, time: number, x: number, 
     switchLabel: overdrive > 0 ? 'ALL' : mode.name.toUpperCase(),
     switchTitle: overdrive > 0 ? 'Every mode is active during Overdrive.' : `${mode.name} now; tap for ${next.name}.\nThrow: ${mode.hit}\nPassive: ${mode.passive}`,
     signatureLabel: overdrive > 0 ? 'ALL' : sig.id.toUpperCase(),
-    signatureTitle: overdrive > 0 ? "Every cube fires its own mode's move." : `Now ${sig.name}, ${(sig.radius / 1000).toFixed(1)} km round the cube.`,
+    signatureTitle: overdrive > 0 ? "Every cube fires its own mode's move." : `Now ${sig.name}: ${REACH[sig.id](km(sig.radius))}.`,
     accent: css(mode.color),
     status,
     panel: panel(t, time, x, z),

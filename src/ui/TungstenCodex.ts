@@ -23,12 +23,12 @@ const km = (v: number) => `${v / 1000} km`;
 
 /** Each mode's Signature (Z), with its real numbers. */
 const SIGNATURE_TEXT: Record<TungstenModeId, string> = {
-  kinetic: `The cube leaps to the nearest enemy within ${km(SIGNATURE.ricochet.reach)}, then on to the next within ${km(SIGNATURE.ricochet.hop)}: ${SIGNATURE.ricochet.bounces} hulls, ${k(SIGNATURE.ricochet.damage)} each.`,
-  crush: `After ${SIGNATURE.slam.time} s the cube slams down: ${k(SIGNATURE.slam.damage)} and a ${SIGNATURE.slam.stun} s stun to every enemy within ${TUNGSTEN_MODES[1].signature.radius} m.`,
-  shard: `${k(SIGNATURE.storm.damage)} to every enemy within ${TUNGSTEN_MODES[2].signature.radius} m of the cube, knocking out ${SIGNATURE.storm.turrets} turrets each for ${SIGNATURE.storm.out} s.`,
-  repel: `${k(SIGNATURE.repulse.damage)} to enemies within ${TUNGSTEN_MODES[3].signature.radius} m, hurled ${SIGNATURE.repulse.knock} m away; shells, missiles and torpedoes there are torn apart.`,
-  tether: `Drags every enemy within ${km(TUNGSTEN_MODES[4].signature.radius)} to the cube over ${SIGNATURE.reel.time} s, then ${k(SIGNATURE.reel.damage)} each.`,
-  mend: `Heals allies within ${km(TUNGSTEN_MODES[5].signature.radius)} of the cube ${SIGNATURE.restore.allies * 100}% and the ship ${SIGNATURE.restore.ship * 100}%.`,
+  kinetic: `The cube leaps to the nearest enemy within ${km(SIGNATURE.ricochet.reach)}, then on to the next within ${km(SIGNATURE.ricochet.hop)}: ${SIGNATURE.ricochet.bounces} hulls, ${k(SIGNATURE.ricochet.damage)} each, every leg ${Math.round((SIGNATURE.ricochet.gain - 1) * 100)}% faster.`,
+  crush: `The cube leaps onto the enemy nearest the reticle within ${km(TUNGSTEN_MODES[1].signature.radius)}: ${k(SIGNATURE.pile.damage)}, a ${SIGNATURE.pile.stun} s stun, and it holds the hull still for ${SIGNATURE.pile.root} s before dropping beside it.`,
+  shard: `${SIGNATURE.cone.shards} shards fan ${SIGNATURE.cone.spread}° toward the reticle, out to ${km(SIGNATURE.cone.range)}: each strikes the first enemy hull in its way for ${k(SIGNATURE.cone.damage)}.`,
+  repel: `The magnet throws the ship ${km(SIGNATURE.dash.distance)} away from the cube (toward the reticle if it is docked), through any hull in the way for ${k(SIGNATURE.dash.damage)}; it takes ${Math.round((1 - CUBE.lunge.taken) * 100)}% less damage on the way.`,
+  tether: `The two enemies nearest the cube within ${km(TUNGSTEN_MODES[4].signature.radius)} are reeled into each other over ${SIGNATURE.collide.time} s: ${k(SIGNATURE.collide.damage)} each and a ${SIGNATURE.collide.stun} s stun. A lone hull is reeled into the cube.`,
+  mend: `A ${km(TUNGSTEN_MODES[5].signature.radius)} dome at the cube for ${SIGNATURE.sanctuary.time} s: allies inside heal ${SIGNATURE.sanctuary.heal * 100}% a second and take ${Math.round((1 - SIGNATURE.sanctuary.taken) * 100)}% less damage.`,
 };
 
 /** The mode guide as data: six mode tabs, then Overdrive. */

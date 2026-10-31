@@ -25,11 +25,16 @@ describe('Tungsten mode guide', () => {
   it('quotes the real Signature numbers', () => {
     const sig = (id: string) => tabs.find((t) => t.id === id)!.rows[2].text;
     expect(sig('kinetic')).toContain(`${SIGNATURE.ricochet.damage / 1000}k`);
-    expect(sig('crush')).toContain(`${SIGNATURE.slam.damage / 1000}k`);
-    expect(sig('shard')).toContain(`${SIGNATURE.storm.damage / 1000}k`);
-    expect(sig('repel')).toContain(`${SIGNATURE.repulse.damage / 1000}k`);
-    expect(sig('tether')).toContain(`${SIGNATURE.reel.damage / 1000}k`);
-    expect(sig('mend')).toContain(`${SIGNATURE.restore.allies * 100}%`);
+    expect(sig('kinetic')).toContain(`${SIGNATURE.ricochet.bounces} hulls`);
+    expect(sig('crush')).toContain(`${SIGNATURE.pile.damage / 1000}k`);
+    expect(sig('crush')).toContain(`${SIGNATURE.pile.root} s`);
+    expect(sig('shard')).toContain(`${SIGNATURE.cone.shards} shards`);
+    expect(sig('shard')).toContain(`${SIGNATURE.cone.damage / 1000}k`);
+    expect(sig('repel')).toContain(`${SIGNATURE.dash.damage / 1000}k`);
+    expect(sig('repel')).toContain(`${SIGNATURE.dash.distance / 1000} km`);
+    expect(sig('tether')).toContain(`${SIGNATURE.collide.damage / 1000}k`);
+    expect(sig('mend')).toContain(`${SIGNATURE.sanctuary.heal * 100}%`);
+    expect(sig('mend')).toContain(`${Math.round((1 - SIGNATURE.sanctuary.taken) * 100)}% less`);
   });
 
   it('explains what Overdrive changes', () => {

@@ -11,7 +11,7 @@ import { BK, drift, hash01, type BurstParticles } from './BurstParticles';
 import type { Ribbons } from './Projectiles';
 import { quality } from './Quality';
 import { FOAM, SPRAY, TAU, TungstenPaint, WHITE, clamp01, ease, hot } from './TungstenPaint';
-import { ModeSweep, cubeGeometry, cubeSkin, modeColor, slamLift, type CubeSkinUniforms } from './TungstenLook';
+import { ModeSweep, cubeGeometry, cubeSkin, modeColor, pileLift, type CubeSkinUniforms } from './TungstenLook';
 import { HORN_TIPS, type TungstenModel } from './TungstenModel';
 import { INFALL, TungstenSingularities } from './TungstenSingularity';
 import { TungstenUltFx, ULT_LIFE } from './TungstenUltFx';
@@ -246,11 +246,11 @@ export class TungstenCubeFx {
       case 'signature': {
         const sig = TUNGSTEN_MODES[e.mode].signature.id;
         if (sig === 'ricochet') play('ricochet', 'ricochet', 0.8, 1);
-        else if (sig === 'storm') play('explosion', 'blast-shock', 0.8, 1.2, 2);
-        else if (sig === 'repulse') play('charge', 'energy-heavy', 0.9, 1.1);
-        else if (sig === 'reel') play('charge', 'energy-charge', 0.8, 0.8);
-        else if (sig === 'restore') play('charge', 'ward-rise', 0.8, 1);
-        else play('charge', 'energy-charge', 0.6, 0.7);
+        else if (sig === 'pile') play('charge', 'energy-heavy', 0.8, 0.8);
+        else if (sig === 'cone') play('explosion', 'blast-shock', 0.8, 1.3, 2);
+        else if (sig === 'dash') play('charge', 'energy-heavy', 0.9, 1.3);
+        else if (sig === 'collide') play('charge', 'energy-charge', 0.8, 0.8);
+        else play('charge', 'ward-rise', 0.8, 0.9);
         break;
       }
       case 'slam':
@@ -452,7 +452,7 @@ export class TungstenCubeFx {
       const spent = t.spent && c === t.cubes[0] && c.state === 'hover';
       const bob = parked && !spent && !this.paint.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
       const ult = this.ult.cubeLook(s, c);
-      const lift = slamLift(t, c.id) + (ult?.lift ?? 0);
+      const lift = pileLift(c) + (ult?.lift ?? 0);
       const size = CUBE.edge * c.scale * (ult?.size ?? 1);
       v.mesh.visible = size > 0.5;
       v.mesh.position.set(p.x, p.y + bob + lift, p.z);
@@ -567,7 +567,7 @@ export class TungstenCubeFx {
   private ship(s: Ship, t: TungstenState, team: Team | -1): void {
     const now = this.game.renderTime;
     const seen = this.shipVisible(s, team);
-    this.ult.state(s, t, team, this.paint.reduce);
+    this.ult.state(s, t, team, this.paint.reduce, seen);
     const tips = this.hornTips(s);
     const lead = t.cubes[0];
     const mode = modeColor(t.mode);
@@ -626,19 +626,29 @@ export class TungstenCubeFx {
       if (c?.state === 'docked' && !seen) continue;
       const color = modeColor(c?.mode ?? t.mode);
       const k = a.elapsed / a.time;
-      if (a.kind === 'reel' && c) {
-        // Taut chains that haul every caught hull to the cube.
-        const p = this.renderPos(c, this.v);
+      if (a.kind === 'reel') {
+        // Taut chains haul the caught pair into each other, or a lone hull into the cube.
+        const pair = a.targets.length > 1;
+        const p = pair ? this.v.set(a.x, 40, a.z) : c ? this.renderPos(c, this.v) : null;
+        if (!p) continue;
         for (const id of a.targets) {
           const o = this.game.ships.find((x) => x.id === id);
           if (!o?.alive) continue;
           this.paint.chain(p.x, p.y, p.z, o.renderPos.x, o.renderPos.y + o.spec.freeboard + 4, o.renderPos.z, hot(color, 2.2), 0.95, 0, 3);
         }
+        if (pair) this.paint.loop(a.x, 40, a.z, 50 + 150 * (1 - ease(k)), hot(color, 2), 0.7);
         this.paint.ring(a.x, a.z, a.radius * (1 - ease(k)), hot(color, 1.5), 0.6 * (1 - k));
-      } else if (a.kind === 'slam') {
-        // The footprint the falling cube will hit, tightening as it drops.
-        this.paint.ring(a.x, a.z, a.radius, hot(color, 1.4), 0.25 + 0.5 * k);
-        this.paint.ring(a.x, a.z, a.radius * (1 - 0.6 * k), hot(color, 1.1), 0.35 * k);
+      } else if (a.kind === 'pin') {
+        // The cube on the deck, the hull pressed into the sea under rings of force.
+        const o = this.game.ships.find((x) => x.id === a.targets[0]);
+        if (!o?.alive) continue;
+        const now = this.game.renderTime;
+        const pulse = this.paint.reduce ? 1 : 0.75 + 0.25 * Math.sin(now * 9);
+        const L = o.spec.length * 0.6;
+        this.paint.ring(o.renderPos.x, o.renderPos.z, L, hot(color, 1.6), 0.7 * pulse * (1 - 0.5 * k));
+        if (!this.paint.reduce) this.paint.ring(o.renderPos.x, o.renderPos.z, L * (1 - 0.4 * ((now * 1.5) % 1)), hot(WHITE, 1.1), 0.35 * (1 - k));
+        this.paint.foamRing(o.renderPos.x, o.renderPos.z, L * 0.9, 0.45 * (1 - k), a.cube);
+        this.paint.loop(o.renderPos.x, o.renderPos.y + o.spec.freeboard + 6, o.renderPos.z, o.spec.beam * 0.9, hot(color, 2), 0.6 * pulse);
       }
     }
     // Lunge: the hull drawn down a magnetic rail toward the cube, field lines leading it in.
@@ -958,56 +968,53 @@ export class TungstenCubeFx {
     const n = (count: number) => this.paint.n(count);
     const base = this.paint.surface(e.x, e.z);
     if (age < 0.12) p.push(BK.Flare, e.x, e.y, e.z, 200, hot(color, 1.8), 1 - age / 0.12);
+    const tx = e.toX ?? e.x,
+      tz = e.toZ ?? e.z;
     if (sig === 'ricochet') {
       this.paint.loop(e.x, e.y, e.z, 40 + 160 * ease(age / 0.3), hot(color, 2), 0.8 * (1 - clamp01(age / 0.5)));
-    } else if (sig === 'storm') {
-      // Fragment Storm: the cube's skin shears off in a sphere of red-hot shards.
-      p.push(BK.Glow, e.x, e.y, e.z, e.radius * 1.2 * (0.4 + 0.6 * ease(age / 0.3)), hot(color, 1.1), 0.5 * (1 - clamp01(age / 0.6)));
-      for (let i = 0; i < n(90); i++) {
-        const a = R(i, 0) * TAU,
-          el = (R(i, 1) - 0.25) * 1.3,
-          v = e.radius * (1.3 + 0.7 * R(i, 2)),
-          pl = 0.6 + 0.6 * R(i, 3);
-        if (age > pl) continue;
-        const d = drift(age, v, 2.2);
-        p.push(BK.Spark, e.x + Math.cos(a) * Math.cos(el) * d, Math.max(base + 2, e.y + Math.sin(el) * d - 30 * age * age), e.z + Math.sin(a) * Math.cos(el) * d, 2, tint2.copy(WHITE).lerp(color, age / pl).multiplyScalar(2.6), 1 - age / pl, 0, 0, Math.cos(a) * 9, Math.sin(el) * 9, Math.sin(a) * 9, 1.8);
+    } else if (sig === 'pile') {
+      // Pile Driver: the cube kicks off the sea, and a ring closes on the hull it will land on.
+      this.paint.foamRing(e.x, e.z, 60 + 220 * ease(age / 0.5), 0.6 * (1 - f), b.id);
+      this.paint.ring(tx, tz, 360 * (1 - 0.65 * ease(age / 0.8)), hot(color, 1.8), 0.85 * (1 - f));
+      this.paint.ring(tx, tz, 110, hot(WHITE, 1.2), 0.45 * (1 - f), BK.Hex, b.id);
+    } else if (sig === 'cone') {
+      // Shrapnel Cone: the cube's skin shears off in a fan of white-hot streaks toward the reticle.
+      const C = SIGNATURE.cone;
+      const b0 = Math.atan2(tz - e.z, tx - e.x),
+        half = (C.spread * Math.PI) / 360;
+      for (const side of [-1, 1]) {
+        const a = b0 + side * half;
+        this.trails.push(e.x, e.y, e.z, e.x + Math.cos(a) * C.range, base + 10, e.z + Math.sin(a) * C.range, hot(color, 1.4), 0.4 * (1 - clamp01(age / 0.5)), 4, 1);
       }
-      this.paint.ring(e.x, e.z, e.radius * ease(age / 0.5), hot(color, 1.6), 0.7 * (1 - f));
-      for (let i = 0; i < n(24); i++) {
-        const a = R(i, 7) * TAU,
-          r = e.radius * (0.3 + 0.7 * R(i, 8)),
-          t0 = 0.2 + 0.5 * R(i, 9),
-          la = age - t0;
-        if (la < 0 || la > 0.8) continue;
-        const h = drift(la, 60 + 60 * R(i, 10), 1.5, 80);
-        if (h > 0) p.push(BK.Spray, e.x + Math.cos(a) * r, base + h, e.z + Math.sin(a) * r, 14 + la * 40, SPRAY, 0.5 * (1 - la / 0.8), a, i);
+      for (let i = 0; i < n(48); i++) {
+        const a = b0 + (R(i, 0) * 2 - 1) * half,
+          life = 0.3 + 0.25 * R(i, 1);
+        if (age > life) continue;
+        const d = C.range * (0.75 + 0.25 * R(i, 2)) * ease(age / life),
+          d0 = Math.max(0, d - 260);
+        const ux = Math.cos(a),
+          uz = Math.sin(a),
+          y = e.y + (base + 10 - e.y) * (d / C.range);
+        this.trails.push(e.x + ux * d0, y + 20, e.z + uz * d0, e.x + ux * d, y, e.z + uz * d, tint2.copy(WHITE).lerp(color, age / life).multiplyScalar(2.6), 0.85 * (1 - age / life), 5, 2);
       }
-    } else if (sig === 'repulse') {
-      // Repulse: a hard blue wave that flattens the sea and throws a lip of spray.
-      const front = e.radius * ease(age / 0.55);
-      this.paint.ring(e.x, e.z, front, hot(color, 2), 0.95 * (1 - f));
-      this.paint.ring(e.x, e.z, front * 0.92, hot(WHITE, 1.2), 0.5 * (1 - f));
-      this.paint.foamRing(e.x, e.z, front, 0.5 * (1 - f), b.id);
-      this.paint.loop(e.x, e.y, e.z, 60 + front * 0.6, hot(color, 1.5), 0.5 * (1 - clamp01(age / 0.5)));
-      if (age < 0.7)
-        for (let i = 0; i < n(48); i++) {
-          const a = (i / 48) * TAU + R(i, 0) * 0.1;
-          p.push(BK.Spray, e.x + Math.cos(a) * front, base + 8 + 30 * R(i, 1) * (1 - age), e.z + Math.sin(a) * front, 30 + 20 * R(i, 2), SPRAY, 0.6 * (1 - age / 0.7), a, R(i, 3));
-        }
-    } else if (sig === 'reel') {
-      this.paint.ring(e.x, e.z, e.radius * (1 - ease(age / SIGNATURE.reel.time)), hot(color, 1.8), 0.8 * (1 - f));
-    } else if (sig === 'restore') {
-      // Restore: a green tide out to every ally in reach, motes rising off the water.
-      this.paint.ring(e.x, e.z, e.radius * ease(age / 0.8), hot(color, 1.8), 0.85 * (1 - f));
-      this.paint.ring(e.x, e.z, e.radius * 0.95 * ease(age / 1), hot(color, 1), 0.4 * (1 - f), BK.Hex, b.id);
+    } else if (sig === 'dash') {
+      // Polarity Dash: the cube's field kicks the hull away, a shock ring on the sea and the landing marked.
+      this.paint.ring(e.x, e.z, 80 + 420 * ease(age / 0.5), hot(color, 2), 0.85 * (1 - f));
+      this.paint.foamRing(e.x, e.z, 60 + 320 * ease(age / 0.6), 0.5 * (1 - f), b.id);
+      if (seen) this.paint.ring(tx, tz, e.ship.spec.length * 0.5 * (0.6 + 0.4 * ease(age / 0.4)), hot(color, 1.5), 0.6 * (1 - f));
+    } else if (sig === 'collide') {
+      // Collide: the meeting point, closing as the hulls are hauled in.
+      this.paint.ring(tx, tz, e.radius * (1 - ease(age / SIGNATURE.collide.time)), hot(color, 1.8), 0.8 * (1 - f));
+      this.paint.loop(tx, 40, tz, 40 + 90 * ease(age / 0.3), hot(color, 2), 0.7 * (1 - f));
+    } else {
+      // Sanctuary: the dome rises off the cube, motes lifting off the water; the field act holds it up.
+      this.paint.ring(e.x, e.z, e.radius * ease(age / 0.6), hot(color, 1.8), 0.85 * (1 - f));
       for (let i = 0; i < n(50); i++) {
         const a = R(i, 0) * TAU,
           r = e.radius * Math.sqrt(R(i, 1)) * ease(age / 0.8),
           rise = drift(age, 40 + 60 * R(i, 2), 0.6);
         p.push(BK.Glow, e.x + Math.cos(a) * r, base + 5 + rise, e.z + Math.sin(a) * r, 10 + 10 * R(i, 3), hot(color, 2.2), 0.8 * (1 - f));
       }
-      const s = e.ship;
-      if (seen) this.paint.loop(s.renderPos.x, 40, s.renderPos.z, s.spec.length * 0.4 * (0.6 + 0.4 * ease(age / 0.5)), hot(color, 1.6), 0.6 * (1 - f));
     }
   }
 

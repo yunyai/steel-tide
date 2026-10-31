@@ -60,18 +60,36 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       return !overdriveOn(s) && !inFlight(cube(s)) && tungstenWantedMode(s, t, underFire(s, g, 1500)) !== s.tungsten!.mode;
     },
   }),
-  def(spec('tungstenSignature', 'Signature', 'SIG', 14, 0, 'rune', "The current mode's move, from the cube: Ricochet, Slam, Fragment Storm, Repulse, Reel or Restore."), {
-    activate: (s, _g, st) => signature(s, st.index),
-    aiShouldUse(s, g) {
-      return pool(s).some((c) => {
-        if (!isFree(c)) return false;
-        const sig = TUNGSTEN_MODES[c.mode].signature;
-        if (sig.id === 'restore') return hpFrac(s) < 0.75;
-        if (sig.id === 'repulse') return underFire(s, g, 1200) > 4 || foesNearCube(s, c, sig.radius).length > 0;
-        return foesNearCube(s, c, sig.id === 'ricochet' ? SIGNATURE.ricochet.reach : sig.radius).length > 0;
-      });
+  def(
+    spec(
+      'tungstenSignature',
+      'Signature',
+      'SIG',
+      14,
+      0,
+      'rune',
+      "The current mode's move, from the cube. Kinetic: Ricochet+, six bounces, each faster. Crush: Pile Driver, the cube leaps onto a hull, roots and stuns it. Shard: Shrapnel Cone, 24 shards toward the reticle. Repel: Polarity Dash, the ship is thrown away from the cube through anything in the way. Tether: Collide, two hulls are reeled into each other. Mend: Sanctuary, a dome where allies heal and take less damage.",
+    ),
+    {
+      activate: (s, _g, st) => signature(s, st.index),
+      aiShouldUse(s, g) {
+        return pool(s).some((c) => {
+          if (!isFree(c)) return false;
+          const sig = TUNGSTEN_MODES[c.mode].signature;
+          switch (sig.id) {
+            case 'sanctuary':
+              return hpFrac(s) < 0.75 && Math.hypot(c.x - s.pos.x, c.z - s.pos.z) <= sig.radius;
+            case 'dash':
+              return !s.tungsten!.lunge && (hpFrac(s) < 0.4 || underFire(s, g, 1500) > 4);
+            case 'ricochet':
+              return foesNearCube(s, c, SIGNATURE.ricochet.reach).length > 0;
+            default:
+              return foesNearCube(s, c, sig.radius).length > 0;
+          }
+        });
+      },
     },
-  }),
+  ),
   def(
     spec('tungstenDie', 'Loaded Die', 'DIE', CUBE.die.cooldown, 0, 'dice', "Roll the cube to the reticle, up to 4 km, over anything in the way; free, and a spent cube stays spent. It lands for 120k to every foe within 600 m, then the face it rolls fires at double strength: Kinetic hits harder the farther it rolled, Crush stuns, Shard knocks out turrets, Repel flings hulls and tears up fire, Tether chains and Mend heals the ship. Roll the cube's own mode for a jackpot: every face at once. In Overdrive all six roll into a ring round the reticle."),
     {

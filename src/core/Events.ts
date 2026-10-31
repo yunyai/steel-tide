@@ -64,8 +64,8 @@ export interface GameEventMap {
   architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox';slot?:number };
   crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
   /** The Tungsten's cube: throws, hits, docking, Shield captures, signatures and both cube ultimates. `mode` indexes TUNGSTEN_MODES. */
-  /** `face` and `jackpot`: what a Loaded Die rolled. */
-  tungsten: { ship: Ship; kind: TungstenEventKind; cube: number; x: number; y: number; z: number; radius: number; mode: number; target?: Ship; face?: number; jackpot?: boolean };
+  /** `face` and `jackpot`: what a Loaded Die rolled. `toX`/`toZ`: where a Signature reaches (a cone's tip, a dash's end, a leap's hull). */
+  tungsten: { ship: Ship; kind: TungstenEventKind; cube: number; x: number; y: number; z: number; radius: number; mode: number; target?: Ship; face?: number; jackpot?: boolean; toX?: number; toZ?: number };
   stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };
   blink: { ship: Ship; fromX: number; fromZ: number; fromHeading?: number; dodge?: boolean; step?: 'flash' | 'ram' | 'broad' | 'over' | 'back' };
   /** A ship refused to sink, or was raised from its wreck. */

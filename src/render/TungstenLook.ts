@@ -1,8 +1,7 @@
 import { Color, DataTexture, LinearFilter, LinearMipmapLinearFilter, MeshStandardMaterial, RGBAFormat, RepeatWrapping, UnsignedByteType, type BufferGeometry } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
-import type { TungstenState } from '../skills/misc/TungstenRuntime';
-import { smooth } from './ArchitectPose';
+import { SIGNATURE, TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
+import type { Cube } from '../skills/misc/TungstenRuntime';
 
 /** Mode colours as three.js colours, in mode order. */
 export const MODE_COLORS: readonly Color[] = TUNGSTEN_MODES.map((m) => new Color(m.color));
@@ -252,10 +251,11 @@ export class ModeSweep {
   }
 }
 
-/** Presentation-only lift for a Slam: up, hang, and down hard as the act ends. */
-export function slamLift(t: TungstenState, cube: number): number {
-  const a = t.acts.find((x) => x.kind === 'slam' && x.cube === cube);
-  if (!a) return 0;
-  const k = a.elapsed / a.time;
-  return k < 0.65 ? 150 * smooth(k / 0.65) : 150 * (1 - ((k - 0.65) / 0.35) ** 2);
+/** Presentation-only arc for a Pile Driver's leap: the sim flies it straight; it is drawn rising and crashing down. */
+export function pileLift(c: Cube): number {
+  const p = c.path;
+  if (c.state !== 'flying' || p?.kind !== 'pile' || p.bounces <= 0) return 0;
+  const left = Math.hypot(p.tx - c.x, p.tz - c.z);
+  const k = c.flown / Math.max(1, c.flown + left);
+  return SIGNATURE.pile.height * 4 * k * (1 - k);
 }

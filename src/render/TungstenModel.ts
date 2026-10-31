@@ -4,7 +4,7 @@ import { CUBE, dockLift, haloAngle } from '../skills/misc/TungstenModes';
 import { overdriveOn } from '../skills/misc/TungstenRuntime';
 import { Parts } from './Geometry';
 import { reducedMotion } from './ArchitectPose';
-import { MODE_COLORS, ModeSweep, cubeGeometry, cubeSkin, slamLift, type CubeSkinUniforms } from './TungstenLook';
+import { MODE_COLORS, ModeSweep, cubeGeometry, cubeSkin, type CubeSkinUniforms } from './TungstenLook';
 
 /** Layout of the levitation dais amidships, in hull space (x forward, y up from the waterline, z starboard). */
 export const DAIS = {
@@ -213,9 +213,8 @@ export class TungstenModel {
       const solid = reforming ? Math.max(0.02, 1 - c!.reform / 2) : this.reduce ? (present ? 1 : 0) : fade;
       v.mesh.visible = reforming || solid > 0.001;
       if (!v.mesh.visible) continue;
-      const lift = c && t ? slamLift(t, c.id) : 0;
       // It turns on the sim's clock (see dockPose); bobbing and rocking are drawing only.
-      const y = LIFT + lift + (this.reduce ? 0 : Math.sin(anim * 1.1 + slot * 1.7) * 2.5);
+      const y = LIFT + (this.reduce ? 0 : Math.sin(anim * 1.1 + slot * 1.7) * 2.5);
       if (slot === 0 && !over) v.mesh.position.set(0, y, 0);
       else {
         // Matches dockPoint: local x forward, z starboard. In Overdrive all six share the halo.

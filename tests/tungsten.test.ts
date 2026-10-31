@@ -6,7 +6,7 @@ import { Game } from '../src/core/Game';
 import { navalRules } from '../server/rules';
 import { TurnApplier } from '../src/net/navalTurns';
 import { stateHash } from '../src/net/hash';
-import { CUBE, dockLift, HIT, TUNGSTEN_MODES } from '../src/skills/misc/TungstenModes';
+import { CUBE, dockLift, HIT, SIGNATURE, TUNGSTEN_MODES } from '../src/skills/misc/TungstenModes';
 import { absorbCube, cubeIntercept, damageCube, PATH_KINDS, type Cube } from '../src/skills/misc/TungstenRuntime';
 import { aiWantsSkill } from '../src/skills/registry';
 import { stun } from '../src/weapons/StrikeSystem';
@@ -707,68 +707,180 @@ describe('mode hits', () => {
 });
 
 describe('signatures', () => {
-  it('Kinetic ricochets five times between enemies', () => {
-    const { g, me, foe } = duel();
+  it('Kinetic: Ricochet+ bounces six times for 90k, each leg 15% faster', () => {
+    const { g, me, foe, t } = duel();
     const two = extra(g, 'leviathan', 1, 800, -1500);
+    const c = t.cubes[0];
+    let hits = 0;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'hit' && e.ship === me) hits++;
+    });
     expect(me.activateSkill(Z)).toBe(true);
-    run(g, 6);
-    expect(foe.stats.received).toBeGreaterThan(0);
-    expect(two.stats.received).toBeGreaterThan(0);
-    expect(foe.stats.received + two.stats.received).toBeGreaterThanOrEqual(5 * 55000);
+    const speeds: number[] = [];
+    for (let k = 0; k < 900 && c.state === 'flying'; k++) {
+      if (c.path && c.path.speed !== speeds[speeds.length - 1]) speeds.push(c.path.speed);
+      g.step(1 / 60);
+    }
+    expect(hits).toBe(SIGNATURE.ricochet.bounces);
+    expect(SIGNATURE.ricochet.bounces).toBe(6);
+    expect(speeds).toHaveLength(6);
+    for (let i = 1; i < 6; i++) expect(speeds[i] / speeds[i - 1]).toBeCloseTo(1.15);
+    expect(foe.stats.received + two.stats.received).toBeGreaterThanOrEqual(6 * 90000);
   });
-  it('Ricochet needs an enemy within 2 km of the cube', () => {
+  it('Ricochet+ needs an enemy within 2 km of the cube', () => {
     const { me } = duel(-3000);
     expect(me.activateSkill(Z)).toBe(false);
     expect(me.skills[Z].cooldown).toBe(0);
   });
-  it('Crush slams and stuns', () => {
-    const { g, me, foe, t } = duel();
+  it('Crush: Pile Driver leaps onto the enemy nearest the reticle, pins it and drops beside it', () => {
+    const { g, me, foe, t } = duel(-1500);
     setMode(me, 'crush');
-    park(t.cubes[0], 200, -1500);
-    expect(me.activateSkill(Z)).toBe(true);
-    run(g, 0.8);
-    expect(foe.stats.received).toBeCloseTo(120000, -3);
+    const c = t.cubes[0];
+    park(c, 0, -500);
+    // Nearer the cube, but farther from the reticle.
+    const near = extra(g, 'leviathan', 1, -800, -600);
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    until(g, () => c.state === 'pin', 3);
+    expect(c.state).toBe('pin');
+    expect(near.stats.received).toBe(0);
+    expect(foe.stats.received).toBeCloseTo(SIGNATURE.pile.damage, -3);
+    expect(SIGNATURE.pile.damage).toBe(200000);
     expect(foe.mods.stunned).toBe(true);
+    expect(foe.mods.rooted).toBe(true);
+    // Perched on the hull, which cannot move under it.
+    expect(gap(c, foe.pos)).toBeLessThan(5);
+    expect(c.y).toBeGreaterThan(foe.spec.freeboard + CUBE.edge / 2 - 1);
+    const at = { x: foe.pos.x, z: foe.pos.z };
+    run(g, SIGNATURE.pile.root - 0.2);
+    expect(gap(foe.pos, at)).toBeLessThan(5);
+    expect(c.state).toBe('pin');
+    run(g, 0.5);
+    expect(c.state).toBe('hover');
+    expect(gap(c, foe.pos)).toBeGreaterThan(foe.spec.beam / 2 + CUBE.edge / 2);
+    expect(c.y).toBeCloseTo(CUBE.hoverY);
   });
-  it('Shard storms hulls and knocks out two turrets', () => {
-    const { g, me, foe, t } = duel();
+  it('Pile Driver needs an enemy within 2.5 km of the cube', () => {
+    const { me, t } = duel(-4000);
+    setMode(me, 'crush');
+    park(t.cubes[0], 0, -1000);
+    expect(me.activateSkill(Z)).toBe(false);
+    expect(me.skillFailure).toMatch(/2\.5 km/);
+  });
+  it('Shard: Shrapnel Cone sprays 24 shards in a 40° cone, each striking the first hull on its ray for 25k', () => {
+    const { g, me, foe, t } = duel(-1200);
     setMode(me, 'shard');
-    park(t.cubes[0], 500, -1500);
+    park(t.cubes[0], 0, -500);
+    // Broadside to the cone, with a second hull hidden right behind it and a third well off its edge.
+    foe.heading = Math.PI / 2;
+    const behind = extra(g, 'leviathan', 1, 0, -1900);
+    behind.heading = Math.PI / 2;
+    const wide = extra(g, 'leviathan', 1, 1500, -1000);
+    aim(me, 0, -2500);
     expect(me.activateSkill(Z)).toBe(true);
     run(g, 0.05);
-    expect(foe.stats.received).toBeCloseTo(70000, -3);
-    expect(foe.turrets.filter((x) => x.disabled > 0)).toHaveLength(2);
+    const shards = foe.stats.received / SIGNATURE.cone.damage;
+    expect(shards).toBeGreaterThan(4);
+    expect(shards).toBeLessThanOrEqual(SIGNATURE.cone.shards);
+    expect(Math.abs(shards - Math.round(shards))).toBeLessThan(0.05);
+    expect(behind.stats.received).toBe(0);
+    expect(wide.stats.received).toBe(0);
+    // The cube stays where it was, a wall.
+    expect(t.cubes[0].state).toBe('hover');
+    expect(gap(t.cubes[0], { x: 0, z: -500 })).toBeLessThan(1);
   });
-  it('Repel repulses hulls and destroys missiles near the cube', () => {
-    const { g, me, foe, t } = duel();
+  it('Repel: Polarity Dash drives the ship 1.5 km away from the cube, through hulls for 100k', () => {
+    const { g, me, t } = duel(-3000);
     setMode(me, 'repel');
-    park(t.cubes[0], 300, -1500);
-    const m = g.missiles.launch(foe, 0, 0, 0, 8000, { uninterceptable: true });
-    expect(me.activateSkill(Z)).toBe(true);
-    expect(m.alive).toBe(false);
-    run(g, 2);
-    expect(foe.stats.received).toBeCloseTo(40000, -3);
-    expect(gap(foe.pos, { x: 0, z: -1500 })).toBeGreaterThan(60);
+    park(t.cubes[0], 0, -1500);
+    const inWay = extra(g, 'leviathan', 1, 0, 800);
+    inWay.heading = Math.PI / 2;
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    expect(t.lunge).not.toBeNull();
+    until(g, () => !t.lunge, 3);
+    expect(me.pos.z).toBeCloseTo(SIGNATURE.dash.distance, -1);
+    expect(Math.abs(me.pos.x)).toBeLessThan(5);
+    expect(inWay.stats.received).toBeCloseTo(SIGNATURE.dash.damage, -3);
+    expect(t.cubes[0].state).toBe('hover');
   });
-  it('Tether reels enemies to the cube, then strikes', () => {
-    const { g, me, foe, t } = duel();
+  it('Polarity Dash heads for the reticle when the cube is docked', () => {
+    const { g, me, t } = duel(-3000);
+    setMode(me, 'repel');
+    aim(me, 3000, 0);
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    until(g, () => !t.lunge, 3);
+    expect(me.pos.x).toBeCloseTo(SIGNATURE.dash.distance, -1);
+  });
+  it('Tether: Collide reels the two nearest hulls into each other for 150k and a stun each', () => {
+    const { g, me, foe, t } = duel(-1500);
     setMode(me, 'tether');
-    park(t.cubes[0], 1000, -1500);
-    expect(me.activateSkill(Z)).toBe(true);
-    run(g, 1.2);
-    expect(foe.pos.x).toBeGreaterThan(150);
-    expect(foe.stats.received).toBeGreaterThanOrEqual(80000);
+    park(t.cubes[0], 0, -1200);
+    foe.pos.x = -500;
+    const two = extra(g, 'leviathan', 1, 500, -1500);
+    const third = extra(g, 'leviathan', 1, 0, -2300);
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    run(g, SIGNATURE.collide.time + 0.1);
+    expect(gap(foe.pos, two.pos)).toBeLessThan(450);
+    for (const o of [foe, two]) {
+      expect(o.stats.received).toBeGreaterThanOrEqual(SIGNATURE.collide.damage - 1);
+      expect(o.stats.received).toBeLessThan(SIGNATURE.collide.damage + 20000);
+      expect(o.mods.stunned).toBe(true);
+    }
+    expect(third.stats.received).toBe(0);
+    expect(gap(third.pos, { x: 0, z: -2300 })).toBeLessThan(30);
   });
-  it('Mend restores allies near the cube and the ship', () => {
-    const { g, me, t } = duel();
-    const ally = extra(g, 'leviathan', 0, 2000, 0);
-    ally.hp = ally.maxHp * 0.5;
-    me.hp = me.maxHp * 0.5;
+  it('Collide reels a lone hull into the cube', () => {
+    const { g, me, foe, t } = duel(-1500);
+    setMode(me, 'tether');
+    park(t.cubes[0], 900, -1500);
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    run(g, SIGNATURE.collide.time + 0.1);
+    expect(gap(foe.pos, t.cubes[0])).toBeLessThan(300);
+    expect(foe.stats.received).toBeGreaterThanOrEqual(SIGNATURE.collide.damage - 1);
+  });
+  it('Mend: Sanctuary raises a 6 s, 900 m dome: allies inside heal 3% a second and take 40% less damage', () => {
+    const { g, me, foe, t } = duel(-4000);
     setMode(me, 'mend');
-    park(t.cubes[0], 2000, -500);
+    park(t.cubes[0], 0, -300);
+    const ally = extra(g, 'leviathan', 0, 500, -300);
+    const out = extra(g, 'leviathan', 0, 2500, 0);
+    ally.hp = ally.maxHp / 2;
+    out.hp = out.maxHp / 2;
     expect(me.activateSkill(Z)).toBe(true);
-    expect(ally.hp / ally.maxHp).toBeCloseTo(0.6);
-    expect(me.hp / me.maxHp).toBeCloseTo(0.58);
+    run(g, 1);
+    // Both hulls repair on their own as well; the dome adds 3% a second.
+    expect(ally.hp / ally.maxHp - out.hp / out.maxHp).toBeCloseTo(SIGNATURE.sanctuary.heal, 3);
+    const spec = foe.skills[0].spec;
+    expect(ally.takeDamage(100000, foe, spec) / out.takeDamage(100000, foe, spec)).toBeCloseTo(0.6);
+    run(g, SIGNATURE.sanctuary.time - 1 + 0.2);
+    expect(ally.takeDamage(100000, foe, spec) / out.takeDamage(100000, foe, spec)).toBeCloseTo(1);
+  });
+  it('fires all six moves at once in Overdrive', () => {
+    const { g, me, t } = duel(-1000);
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 1);
+    extra(g, 'leviathan', 1, 600, -900);
+    const fired: string[] = [];
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'signature') fired.push(TUNGSTEN_MODES[e.mode].signature.id);
+    });
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    expect(fired.sort()).toEqual(TUNGSTEN_MODES.map((m) => m.signature.id).sort());
+    expect(t.cubes).toHaveLength(6);
+  });
+  it('lets the AI weigh each move on its own terms', () => {
+    const { g, me, foe, t } = duel(-1500);
+    setMode(me, 'tether');
+    park(t.cubes[0], 0, -1200);
+    expect(aiWantsSkill(me, g, Z, foe)).toBe(true);
+    foe.pos.z = -4000;
+    expect(aiWantsSkill(me, g, Z, foe)).toBe(false);
+    setMode(me, 'mend');
+    me.hp = me.maxHp * 0.5;
+    // Sanctuary only helps when the ship is under the dome.
+    expect(aiWantsSkill(me, g, Z, foe)).toBe(false);
+    park(t.cubes[0], 0, -400);
+    expect(aiWantsSkill(me, g, Z, foe)).toBe(true);
   });
 });
 

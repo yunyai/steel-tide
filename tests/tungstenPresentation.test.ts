@@ -21,6 +21,7 @@ const COLLAPSE = 6;
 const METEOR = 7;
 const OVERDRIVE = 8;
 const CRUSH = 1;
+const SHARD = 2;
 const MEND = 5;
 
 afterEach(() => vi.unstubAllGlobals());
@@ -285,7 +286,7 @@ describe('Tungsten cube effects', () => {
     fx.dispose();
   });
 
-  it("keeps a concealed enemy's docked-cube moves and Restore pulse off its hidden hull", () => {
+  it("keeps a concealed enemy's docked-cube moves and Sanctuary off its hidden hull", () => {
     const hidden = (mode: number) => {
       const g = emptyGame('open', 7, 'freeplay');
       const s = place(g, 'tungsten', 1, 0, 1500);
@@ -299,8 +300,8 @@ describe('Tungsten cube effects', () => {
       fx.prepare(team, 720);
       return fx.count;
     };
-    // Restore and Slam fired from the magnet: nothing for the enemy to see.
-    for (const mode of [MEND, CRUSH]) {
+    // Sanctuary and Shrapnel Cone fired from the dais: nothing for the enemy to see.
+    for (const mode of [MEND, SHARD]) {
       const { g, s, fx } = hidden(mode);
       cast(s, SIGNATURE);
       play(g, fx, 0.3);
@@ -308,15 +309,15 @@ describe('Tungsten cube effects', () => {
       expect(look(s, fx, 0)).toBe(0);
       fx.dispose();
     }
-    // Restore from a cube out at sea: its tide shows, but not the pulse on the hull.
+    // Sanctuary from a cube out at sea: its dome shows to both sides.
     const { g, s, fx } = hidden(MEND);
     park(s, 0, 4000);
     play(g, fx, 0.1);
     expect(s.tungsten!.cubes[0].state).toBe('hover');
+    const before = look(s, fx, 0);
     cast(s, SIGNATURE);
     play(g, fx, 0.3);
-    expect(look(s, fx, 0)).toBeGreaterThan(0);
-    expect(look(s, fx, 0)).toBeLessThan(look(s, fx, 1));
+    expect(look(s, fx, 0)).toBeGreaterThan(before);
     fx.dispose();
   });
 });

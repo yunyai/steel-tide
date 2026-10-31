@@ -59,6 +59,7 @@ export const dockLift = (spec: { freeboard: number }) => spec.freeboard + CUBE.f
 export const haloAngle = (slot: number, time: number) => (slot / 6) * Math.PI * 2 + time * CUBE.ringSpin;
 
 export type TungstenModeId = 'kinetic' | 'crush' | 'shard' | 'repel' | 'tether' | 'mend';
+export type SignatureId = 'ricochet' | 'pile' | 'cone' | 'dash' | 'collide' | 'sanctuary';
 
 export interface TungstenMode {
   id: TungstenModeId;
@@ -71,8 +72,8 @@ export interface TungstenMode {
   damage: number;
   /** Stops on the first hull instead of ploughing through. */
   stops: boolean;
-  /** The Z move in this mode. */
-  signature: { id: string; name: string; radius: number };
+  /** The Z move in this mode, and how far from the cube it reaches. */
+  signature: { id: SignatureId; name: string; radius: number };
   /** One line each for the HUD and tooltips. */
   hit: string;
   passive: string;
@@ -82,42 +83,42 @@ export interface TungstenMode {
 export const TUNGSTEN_MODES: readonly TungstenMode[] = [
   {
     id: 'kinetic', name: 'Kinetic', short: 'KIN', color: 0x3ff0ff, speed: 1.5, damage: 1, stops: false,
-    signature: { id: 'ricochet', name: 'Ricochet', radius: 2000 },
+    signature: { id: 'ricochet', name: 'Ricochet+', radius: 2000 },
     hit: 'Flies 1.5x faster; hits gain up to +60% with distance flown.',
     passive: 'Ship +15% speed and acceleration; skill cooldowns -15%.',
     meteor: 'Falls twice as fast; a second ring hits wider for 30%.',
   },
   {
     id: 'crush', name: 'Crush', short: 'CRU', color: 0xffae2b, speed: 0.75, damage: 1.6, stops: true,
-    signature: { id: 'slam', name: 'Slam', radius: 450 },
+    signature: { id: 'pile', name: 'Pile Driver', radius: 2500 },
     hit: 'Stops on the first hull: +60% damage and a 1 s stun.',
     passive: 'Cube hits mark enemies for 6 s (+25% damage taken).',
     meteor: 'Survivors are stunned for 1.5 s.',
   },
   {
     id: 'shard', name: 'Shard', short: 'SHD', color: 0xff3b3b, speed: 1, damage: 1, stops: false,
-    signature: { id: 'storm', name: 'Fragment Storm', radius: 700 },
+    signature: { id: 'cone', name: 'Shrapnel Cone', radius: 2000 },
     hit: 'Shrapnel: 50% splash within 350 m and a turret knocked out.',
     passive: 'Enemies within 1 km of the cube scatter 25% wider.',
     meteor: 'Twelve fragment sub-impacts ring the crater.',
   },
   {
     id: 'repel', name: 'Repel', short: 'REP', color: 0x3d6bff, speed: 1, damage: 0.85, stops: false,
-    signature: { id: 'repulse', name: 'Repulse', radius: 800 },
+    signature: { id: 'dash', name: 'Polarity Dash', radius: 1500 },
     hit: '-15% damage; knocks hulls 250 m aside. Wider Shield capture.',
     passive: 'Ship takes 12% less damage.',
     meteor: 'Survivors are hurled 600 m outward.',
   },
   {
     id: 'tether', name: 'Tether', short: 'TET', color: 0xb46bff, speed: 1, damage: 1, stops: false,
-    signature: { id: 'reel', name: 'Reel', radius: 1200 },
+    signature: { id: 'collide', name: 'Collide', radius: 1200 },
     hit: 'Chains hulls to the cube for 4 s: 40% slow and 6k a second.',
     passive: 'Enemies within 1 km of the cube sail 15% slower.',
     meteor: 'Drags enemies within 2 km inward as it falls.',
   },
   {
     id: 'mend', name: 'Mend', short: 'MND', color: 0x3dff8a, speed: 1, damage: 1, stops: false,
-    signature: { id: 'restore', name: 'Restore', radius: 1000 },
+    signature: { id: 'sanctuary', name: 'Sanctuary', radius: 900 },
     hit: 'Heals the ship for 25% of cube damage; allies it passes heal 5%.',
     passive: 'Ship regenerates 0.3% of max HP a second.',
     meteor: 'Leaves a 6 s field that heals allies 2% a second.',
@@ -128,12 +129,18 @@ export const modeOf = (id: TungstenModeId): number => TUNGSTEN_MODES.findIndex((
 
 /** Signature numbers, by mode. */
 export const SIGNATURE = {
-  ricochet: { bounces: 5, reach: 2000, hop: 1500, damage: 55000, speed: 1800 },
-  slam: { time: 0.75, damage: 120000, stun: 1.5 },
-  storm: { damage: 70000, turrets: 2, out: 5 },
-  repulse: { damage: 40000, knock: 300 },
-  reel: { time: 1, speed: 400, damage: 80000 },
-  restore: { allies: 0.1, ship: 0.08 },
+  /** Kinetic: the cube bounces between enemies `bounces` times, each leg `gain` times faster than the last. */
+  ricochet: { bounces: 6, reach: 2000, hop: 1500, damage: 90000, speed: 1800, gain: 1.15 },
+  /** Crush: the cube leaps onto the enemy nearest the reticle, rooting it `root` s and stunning it, then drops beside it. */
+  pile: { damage: 200000, root: 3, stun: 2, speed: 2400, height: 450 },
+  /** Shard: `shards` rays across a `spread`-degree cone toward the reticle, each striking the first hull it meets. */
+  cone: { shards: 24, spread: 40, range: 2000, damage: 25000 },
+  /** Repel: the ship dashes `distance` away from the cube (or toward the reticle from the dais), through hulls, taking the Lunge's 40% less damage. */
+  dash: { distance: 1500, speed: 2000, damage: 100000 },
+  /** Tether: the two nearest hulls are reeled into each other over `time` (a lone hull into the cube). */
+  collide: { time: 1, damage: 150000, stun: 1.5 },
+  /** Mend: a dome at the cube: allies inside heal `heal` of max HP a second and take `taken` damage. */
+  sanctuary: { time: 6, heal: 0.03, taken: 0.6 },
 } as const;
 
 /** Body-hit side effects, by mode. */
