@@ -7,7 +7,7 @@ import { navalRules } from '../server/rules';
 import { TurnApplier } from '../src/net/navalTurns';
 import { stateHash } from '../src/net/hash';
 import { CUBE, dockLift, HIT, SIGNATURE, TUNGSTEN_MODES } from '../src/skills/misc/TungstenModes';
-import { absorbCube, cubeIntercept, CUBE_STATES, damageCube, PATH_KINDS, type Cube } from '../src/skills/misc/TungstenRuntime';
+import { absorbCube, cubeIntercept, CUBE_STATES, damageCube, PATH_KINDS, throwerCube, type Cube } from '../src/skills/misc/TungstenRuntime';
 import { cubeTargets } from '../src/core/Targeting';
 import { aiWantsSkill } from '../src/skills/registry';
 import { stun } from '../src/weapons/StrikeSystem';
@@ -957,6 +957,26 @@ describe('signatures', () => {
     until(g, () => foe.stats.received > 0, 5);
     expect(foe.stats.received).toBeGreaterThan(0);
   });
+  it('Polarity Mirror sends back only fresh fire, so two opposing bubbles cannot juggle a shell', () => {
+    const { g, me, foe } = duel(-3000);
+    foe.heading = foe.renderHeading = Math.PI / 2;
+    setMode(me, 'repel');
+    // An enemy Tungsten's Repel cube between the hulls: its bubble overlaps ours where the shell comes in.
+    const other = extra(g, 'tungsten', 1, 1500, -1500);
+    setMode(other, 'repel');
+    park(other.tungsten!.cubes[0], 0, -1000);
+    const shell = fireAt(g, foe, me.pos.x, me.pos.z);
+    let mirrored = 0;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'mirror') mirrored++;
+    });
+    until(g, () => gap(shell, me.pos) < 1500, 10);
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    expect(other.activateSkill(Z), other.skillFailure).toBe(true);
+    run(g, 3);
+    expect(mirrored).toBe(1);
+    expect(g.shells.shells.filter((p) => p.alive).length).toBeLessThanOrEqual(1);
+  });
   it('Polarity Mirror tears up torpedoes in its bubble and leaves fire outside it alone', () => {
     const { g, me, foe, t } = duel(-4000);
     setMode(me, 'repel');
@@ -1310,6 +1330,30 @@ describe('Overdrive', () => {
     me.charge(1e9);
     expect(me.skills[B].meter).toBe(1);
   });
+  it("leads a moving target at the central cube's pace, which every Overdrive throw flies at", () => {
+    const { g, me, foe } = duel(-3000);
+    // A slow Crush cube on the dais; the ring cube nearest the target is quicker.
+    setMode(me, 'crush');
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 0.5);
+    Object.assign(g, { difficulty: { ...g.difficulty, aimError: 0, lead: 1 } });
+    foe.heading = Math.PI / 2;
+    foe.speed = 20;
+    const ai = new AIController(me, g);
+    ai.update(1);
+    me.control.skill = -1;
+    ai.update(0.01);
+    const k = throwerCube(me, foe.pos.x, foe.pos.z)!;
+    expect(k.mode).not.toBe(me.tungsten!.mode);
+    // Undo the 400 m push through the hull, then measure the lead.
+    const c = me.control,
+      d = Math.hypot(c.aimX - k.x, c.aimZ - k.z);
+    const ax = k.x + ((c.aimX - k.x) / d) * (d - 400),
+      az = k.z + ((c.aimZ - k.z) / d) * (d - 400);
+    const time = Math.hypot(foe.pos.x - k.x, foe.pos.z - k.z) / (CUBE.shot.speed * TUNGSTEN_MODES[me.tungsten!.mode].speed);
+    expect(Math.hypot(ax - foe.pos.x, az - foe.pos.z)).toBeCloseTo(foe.speed * time, 0);
+  });
   it('leaves the AI casting cube skills while it runs', () => {
     const { g, me } = duel(-700);
     g.ai.set(me, new AIController(me, g));
@@ -1452,6 +1496,20 @@ describe('Overdrive', () => {
     // Badly hurt, the AI wants Mend.
     me.hp = me.maxHp * 0.3;
     expect(aiWantsSkill(me, g, E, foe)).toBe(true);
+  });
+  it("keeps the AI from swapping in Overdrive while the cube it wants is away from the ring", () => {
+    const { g, me, foe, t } = duel();
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 0.5);
+    me.hp = me.maxHp * 0.3;
+    // The Mend cube out on the water: swapping would only cycle the other docked modes.
+    const mend = t.cubes.find((c) => c.mode === modeIndex('mend'))!;
+    park(mend, 1500, -1500);
+    expect(aiWantsSkill(me, g, E, foe)).toBe(false);
+    // Shattered and re-forming, likewise.
+    mend.state = 'broken';
+    expect(aiWantsSkill(me, g, E, foe)).toBe(false);
   });
   it('moves the pentagon at one pace without any path crossing another, from the dock and from the water', () => {
     const { g, me, foe, t } = duel();

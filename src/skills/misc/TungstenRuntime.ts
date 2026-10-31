@@ -975,8 +975,8 @@ function mirror(s: Ship, c: Cube, skill: number): string {
 
 /**
  * Every enemy shell inside a Polarity Mirror at height `y` dies there, and one like it flies straight back at where
- * its firer is now, at `SIGNATURE.mirror.return` times its muzzle velocity, credited to the Signature. Missiles,
- * torpedoes and bombs inside are torn up.
+ * its firer is now, at `SIGNATURE.mirror.return` times its muzzle velocity, credited to the Signature. A shell already
+ * turned by a Mirror flies on, so two opposing bubbles cannot juggle it. Missiles, torpedoes and bombs inside are torn up.
  */
 function reflect(s: Ship, a: TungstenAct, c: Cube): void {
   const g = s.game;
@@ -984,7 +984,7 @@ function reflect(s: Ship, a: TungstenAct, c: Cube): void {
   const shells = g.shells.shells;
   for (let i = 0, n = shells.length; i < n; i++) {
     const p = shells[i];
-    if (!p.alive || p.team === s.team || Math.hypot(p.x - a.x, p.y - c.y, p.z - a.z) > a.radius) continue;
+    if (!p.alive || p.team === s.team || p.skill?.id === 'tungstenSignature' || Math.hypot(p.x - a.x, p.y - c.y, p.z - a.z) > a.radius) continue;
     p.alive = false;
     const o = p.owner;
     emit(s, 'mirror', c, p.x, p.y, p.z, 0, o);

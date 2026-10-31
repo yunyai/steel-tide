@@ -58,9 +58,13 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
   def(spec('tungstenSwitch', 'Switch', 'MODE', 0.5, 0, 'swap', 'Cycle the cube to its next mode: Kinetic, Crush, Shard, Repel, Tether, Mend. In Overdrive, with the central cube docked, swap it with the next docked cube in the pentagon.'), {
     activate: (s) => switchMode(s),
     aiShouldUse(s, g, t) {
-      // In Overdrive the swap needs the central cube docked.
-      const ready = overdriveOn(s) ? cube(s).state === 'docked' && !!swapCandidate(s.tungsten!) : !inFlight(cube(s));
-      return ready && tungstenWantedMode(s, t, underFire(s, g, 1500)) !== s.tungsten!.mode;
+      const T = s.tungsten!;
+      const want = tungstenWantedMode(s, t, underFire(s, g, 1500));
+      if (want === T.mode) return false;
+      // In Overdrive the swap needs the central cube docked, and the wanted cube docked in the ring, or every swap
+      // would only cycle the other docked modes.
+      if (overdriveOn(s)) return cube(s).state === 'docked' && !!swapCandidate(T) && T.cubes.some((c) => c.mode === want && !c.gone && c.state === 'docked');
+      return !inFlight(cube(s));
     },
   }),
   def(

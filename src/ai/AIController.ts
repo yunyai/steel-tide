@@ -592,8 +592,9 @@ export class AIController {
     } else if (slot?.kind === 'air' || slot?.kind === 'vls') {
       time = 0;
     } else if (slot?.kind === 'cube') {
+      // Every throw flies at the central cube's pace, the whole Overdrive formation included.
       const cube = throwerCube(ship, t.pos.x, t.pos.z) ?? ship.tungsten!.cubes[0];
-      time = dist2D(cube.x, cube.z, t.pos.x, t.pos.z) / (CUBE.shot.speed * TUNGSTEN_MODES[cube.mode].speed);
+      time = dist2D(cube.x, cube.z, t.pos.x, t.pos.z) / (CUBE.shot.speed * TUNGSTEN_MODES[ship.tungsten!.mode].speed);
     } else {
       const table = ship.tableFor(ship.ammo);
       if (table) time = solve(table, d).time;
