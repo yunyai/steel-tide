@@ -62,7 +62,7 @@ const amount = (v: number) => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : v > 0 ? 
 const secs = (v: number) => Math.ceil(v - 1e-6);
 const km = (d: number) => `${(d / 1000).toFixed(1)} km`;
 const primary = (t: TungstenState) => t.cubes.find((k) => k.slot === 0 && !k.extra) ?? t.cubes[0];
-const PLACE: Record<CubeState, string> = { docked: 'Docked', flying: 'In flight', hover: 'Out', guard: 'Shielding', orbit: 'Shielding', meteor: 'Meteor', collapse: 'Collapse', broken: 'Shattered', pin: 'Pinning a hull' };
+const PLACE: Record<CubeState, string> = { docked: 'Docked', flying: 'In flight', hover: 'Out', guard: 'Shielding', orbit: 'Shielding', meteor: 'Meteor', collapse: 'Collapse', broken: 'Shattered', pin: 'Pinning a hull', merged: 'In the die' };
 /** Where each Signature reaches, for the button's tooltip. */
 const REACH: Record<SignatureId, (r: string) => string> = {
   ricochet: (r) => `first hull within ${r} of the cube`,
@@ -196,7 +196,7 @@ export function minimapCubes(ships: readonly Ship[], team: Team): CubeMarker[] {
   for (const s of ships) {
     if (!s.tungsten || !s.alive || s.withdrawn) continue;
     for (const c of s.tungsten.cubes) {
-      if (c.state === 'docked' || c.state === 'broken') continue;
+      if (c.state === 'docked' || c.state === 'broken' || c.state === 'merged') continue;
       marks.push({ x: c.x, z: c.z, color: css(TUNGSTEN_MODES[c.mode].color), ally: s.team === team, size: c.scale });
     }
   }
@@ -228,7 +228,7 @@ export function cubeMarkers(ships: readonly Ship[], me: Ship, team: Team): CubeL
     if (!s.tungsten || !s.alive || s.withdrawn || s.mods.banished) continue;
     const ally = s.team === team;
     for (const c of s.tungsten.cubes) {
-      if (ally ? c.gone || c.state === 'docked' || c.state === 'broken' : !cubeLockable(c)) continue;
+      if (ally ? c.gone || c.state === 'docked' || c.state === 'broken' || c.state === 'merged' : !cubeLockable(c)) continue;
       const name = `Cube · ${TUNGSTEN_MODES[c.mode].name}`;
       const label = ally ? name : `${name} ${km(Math.hypot(c.x - me.pos.x, c.z - me.pos.z))}`;
       marks.push({ owner: s, cube: c, x: c.x, y: c.y + (CUBE.edge / 2) * c.scale + 10, z: c.z, label, hp: Math.max(0, Math.min(1, c.hp / c.maxHp)), color: css(TUNGSTEN_MODES[c.mode].color), ally });

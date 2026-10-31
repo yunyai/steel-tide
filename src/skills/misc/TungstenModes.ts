@@ -92,11 +92,13 @@ export const CUBE = {
   /** The magnet's energy recharges slowly anywhere and fast docked. A cube thrown empty sinks `sink` m into the sea (or rests on land) until it docks or is full again. */
   energy: { regen: 0.03, dockRegen: 0.3, sink: 10 },
   /**
-   * Loaded Die: the cube rolls to the reticle (a `ring` round it in Overdrive), up to `range` from where it is, for
-   * free. It lands for `damage` to every foe within `radius`, then the face it rolls fires its mode's hit at
-   * `strength` times its strength; rolling the cube's own mode fires every face.
+   * Loaded Die: the cube rolls to the reticle, up to `range` from where it is, for free. It lands for `damage` to
+   * every foe within `radius`, then the face it rolls fires its mode's hit at `strength` times its strength; rolling
+   * the cube's own mode fires every face. In Overdrive the cubes merge into one die `merged` times the size that
+   * always fires every face; landed, the rest burst out at `burst` m/s into a pentagon `ring` m round it, drawn in
+   * toward it as close as `inner` m to stay off land.
    */
-  die: { cooldown: 16, range: 4000, radius: 600, damage: 120000, ring: 300, strength: 2 },
+  die: { cooldown: 16, range: 4000, radius: 600, damage: 120000, ring: 300, strength: 2, merged: 1.5, burst: 700, inner: 200 },
   /** A cube turns slowly about its vertical, docked or out on the water (rad/s). */
   spin: 0.25,
   overdrive: { time: 20 },

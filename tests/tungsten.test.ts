@@ -7,7 +7,8 @@ import { navalRules } from '../server/rules';
 import { TurnApplier } from '../src/net/navalTurns';
 import { stateHash } from '../src/net/hash';
 import { CUBE, dockLift, HIT, SIGNATURE, TUNGSTEN_MODES } from '../src/skills/misc/TungstenModes';
-import { absorbCube, cubeIntercept, damageCube, PATH_KINDS, type Cube } from '../src/skills/misc/TungstenRuntime';
+import { absorbCube, cubeIntercept, CUBE_STATES, damageCube, PATH_KINDS, type Cube } from '../src/skills/misc/TungstenRuntime';
+import { cubeTargets } from '../src/core/Targeting';
 import { aiWantsSkill } from '../src/skills/registry';
 import { stun } from '../src/weapons/StrikeSystem';
 import type { GameEventMap } from '../src/core/Events';
@@ -334,6 +335,12 @@ describe('thrown cube hits', () => {
 });
 
 describe('Loaded Die', () => {
+  /** Overdrive on, a second in. */
+  const overdriveOn = (g: Game, me: Ship) => {
+    me.meter = 1;
+    expect(me.activateSkill(B)).toBe(true);
+    run(g, 1);
+  };
   /** Forces the die to land on `face`. */
   const loaded = (g: Game, face: number) => ((g as unknown as { rng: () => number }).rng = () => (face + 0.5) / 6);
   function roll(face: number | null, mode: string, foeAt = { x: 0, z: -2500 }) {
@@ -456,13 +463,11 @@ describe('Loaded Die', () => {
     expect(t.cubes[0].mode).toBe(2);
     expect(t.mode).toBe(2);
   });
-  it('keeps every Overdrive cube in its own mode whatever they roll', () => {
+  it('keeps every Overdrive cube in its own mode', () => {
     const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
-    me.meter = 1;
-    me.activateSkill(B);
-    run(g, 1);
+    overdriveOn(g, me);
     const modes = t.cubes.map((c) => c.mode);
-    cast(g, me, rolls, 6);
+    cast(g, me, rolls);
     expect(t.cubes.map((c) => c.mode)).toEqual(modes);
     expect(t.mode).toBe(3);
   });
@@ -482,15 +487,133 @@ describe('Loaded Die', () => {
     expect(t.charge).toBe(0);
     expect(foe.stats.received).toBeCloseTo(CUBE.die.damage + 300000, -3);
   });
-  it('rolls all six into a 300 m ring round the reticle in Overdrive', () => {
+  it('merges the Overdrive cubes into the central one, rolling half again its size', () => {
     const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
-    me.meter = 1;
-    me.activateSkill(B);
-    run(g, 1);
-    cast(g, me, rolls, 6);
-    for (const c of t.cubes) expect(gap(c, { x: 0, z: -2500 })).toBeCloseTo(CUBE.die.ring, -1);
-    const angles = t.cubes.map((c) => Math.atan2(c.z + 2500, c.x)).sort((a, b) => a - b);
-    for (let i = 1; i < 6; i++) expect(angles[i] - angles[i - 1]).toBeCloseTo(Math.PI / 3, 1);
+    overdriveOn(g, me);
+    expect(me.activateSkill(X), me.skillFailure).toBe(true);
+    const [die, ...rest] = t.cubes;
+    expect(die.path?.kind).toBe('die');
+    expect(die.scale).toBe(CUBE.die.merged);
+    for (const c of rest) expect(c.state).toBe('merged');
+    run(g, 0.5);
+    expect(rolls).toHaveLength(0);
+    for (const c of rest) expect(gap(c, die)).toBeLessThan(1);
+    // Nothing can lock or strike a cube inside the die: shots meet the die.
+    expect(cubeTargets(g, 1).map((k) => k.cube)).toEqual([die]);
+    expect(cubeIntercept(g, 1, die.x - 500, die.y, die.z, die.x + 500, die.y, die.z, 'shell')?.cube).toBe(die);
+    until(g, () => rolls.length > 0, 6);
+    expect(rolls).toHaveLength(1);
+  });
+  it('always lands the merged die as a jackpot, every face once for one die\'s damage', () => {
+    for (let f = 0; f < 6; f++) {
+      const { g, me, foe, t, rolls } = roll(f, 'repel');
+      overdriveOn(g, me);
+      cast(g, me, rolls);
+      expect(rolls[0].jackpot).toBe(true);
+      expect(rolls[0].merged).toBe(true);
+      expect(rolls[0].face).toBe(t.cubes[0].mode);
+      expect(foe.mods.stunned).toBe(true);
+      expect(foe.turrets.filter((k) => k.disabled > 7.5)).toHaveLength(2);
+      expect(t.tethers.some((k) => k.target === foe.id)).toBe(true);
+      expect(foe.stats.received).toBeGreaterThan(CUBE.die.damage);
+      expect(foe.stats.received).toBeLessThan(2 * CUBE.die.damage * (1 + HIT.kinetic.bonus * CUBE.die.strength));
+    }
+  });
+  it('bursts the five out of the landed die into a pentagon round it, in mode order from the ship', () => {
+    const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
+    overdriveOn(g, me);
+    cast(g, me, rolls);
+    const [die, ...rest] = t.cubes;
+    expect(die.scale).toBe(1);
+    expect(die.state).toBe('hover');
+    expect(gap(die, { x: 0, z: -2500 })).toBeLessThan(5);
+    for (const c of rest) {
+      expect(c.path?.kind).toBe('spread');
+      expect(c.path?.speed).toBe(CUBE.die.burst);
+    }
+    const home = bearingTo(0, -2500, me.pos.x, me.pos.z);
+    until(g, () => rest.every((c) => c.state === 'hover'));
+    for (const c of rest) {
+      expect(gap(c, { x: 0, z: -2500 })).toBeCloseTo(CUBE.die.ring, 0);
+      // The mode after the central one faces the ship, and the rest follow clockwise.
+      const k = (c.mode - die.mode + 5) % 6;
+      expect(Math.cos(bearingTo(0, -2500, c.x, c.z) - home - (k / 5) * Math.PI * 2)).toBeCloseTo(1, 4);
+    }
+  });
+  it('turns the pentagon to keep the five off an island beside the die', () => {
+    const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
+    // An islet on the spoke toward the ship.
+    g.map.heightAt = (x, z) => (Math.hypot(x, z + 2200) < 120 ? 20 : -50);
+    overdriveOn(g, me);
+    cast(g, me, rolls);
+    const rest = t.cubes.slice(1);
+    until(g, () => rest.every((c) => c.state === 'hover'));
+    const turn = bearingTo(0, -2500, rest[0].x, rest[0].z);
+    for (const c of rest) {
+      expect(gap(c, { x: 0, z: -2500 })).toBeCloseTo(CUBE.die.ring, 0);
+      expect(g.map.heightAt(c.x, c.z)).toBeLessThan(0);
+      // Still a regular pentagon.
+      const a = bearingTo(0, -2500, c.x, c.z) - turn;
+      expect(Math.cos(5 * a)).toBeCloseTo(1, 4);
+    }
+  });
+  it('draws a vertex on land in toward the die, or rests it on the ground when the land runs on', () => {
+    for (const [shore, at, wet] of [[260, 250, true], [150, CUBE.die.ring, false]] as const) {
+      const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
+      // Land over the whole east side beyond `shore`: every turn leaves two vertices there.
+      g.map.heightAt = (x, z) => (x > 0 && Math.hypot(x, z + 2500) > shore && Math.hypot(x, z + 2500) < 2000 ? 20 : -50);
+      overdriveOn(g, me);
+      cast(g, me, rolls);
+      const rest = t.cubes.slice(1);
+      until(g, () => rest.every((c) => c.state === 'hover'));
+      for (const c of rest) {
+        const d = gap(c, { x: 0, z: -2500 });
+        if (c.x > 1) {
+          expect(d).toBeCloseTo(at, 0);
+          expect(g.map.heightAt(c.x, c.z) < 0).toBe(wet);
+        } else {
+          expect(d).toBeCloseTo(CUBE.die.ring, 0);
+          expect(g.map.heightAt(c.x, c.z)).toBeLessThan(0);
+        }
+      }
+    }
+  });
+  it('lets the five burst out where the die breaks', () => {
+    const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
+    overdriveOn(g, me);
+    expect(me.activateSkill(X), me.skillFailure).toBe(true);
+    run(g, 0.5);
+    const [die, ...rest] = t.cubes;
+    const at = { x: die.x, z: die.z };
+    damageCube(me, die, 1e9, null);
+    g.step(1 / 60);
+    for (const c of rest) expect(c.path?.kind).toBe('spread');
+    until(g, () => rest.every((c) => c.state === 'hover'));
+    for (const c of rest) expect(gap(c, at)).toBeCloseTo(CUBE.die.ring, 0);
+    expect(rolls).toHaveLength(0);
+  });
+  it('dissolves the merged extras when Overdrive ends mid-roll, and still lands the die as a jackpot', () => {
+    const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
+    overdriveOn(g, me);
+    expect(me.activateSkill(X), me.skillFailure).toBe(true);
+    t.overdriveUntil = g.time + 0.1;
+    run(g, 0.2);
+    expect(t.cubes).toHaveLength(1);
+    until(g, () => rolls.length > 0, 6);
+    expect(rolls[0].jackpot).toBe(true);
+    expect(rolls[0].merged).toBe(true);
+    expect(t.cubes[0].scale).toBe(1);
+  });
+  it('ends the Shield when it takes the shielding cubes', () => {
+    for (const od of [false, true]) {
+      const { g, me, t } = roll(0, 'repel');
+      if (od) overdriveOn(g, me);
+      expect(me.activateSkill(V), me.skillFailure).toBe(true);
+      run(g, 0.5);
+      expect(t.cubes[0].state).toBe(od ? 'orbit' : 'guard');
+      expect(me.activateSkill(X), me.skillFailure).toBe(true);
+      expect(t.guardUntil).toBeLessThanOrEqual(g.time);
+    }
   });
   it('fails while the cube is re-forming', () => {
     const { me, t } = duel();
@@ -1655,6 +1778,21 @@ describe('Tungsten sync', () => {
     t.cubes[0].path = path('die');
     expect(stateHash(g)).not.toBe(shot);
     t.cubes[0].path = null;
+  });
+  it('hashes a merged Die identically for the same seed', () => {
+    const hashes = [0, 1].map(() => {
+      const { g, me } = duel();
+      me.meter = 1;
+      me.activateSkill(B);
+      for (let k = 0; k < 300; k++) {
+        if (k === 60) me.activateSkill(X);
+        g.step(1 / 60);
+      }
+      return stateHash(g);
+    });
+    expect(hashes[0]).toBe(hashes[1]);
+    expect(CUBE_STATES).toContain('merged');
+    expect(PATH_KINDS).toContain('spread');
   });
   it('replays Tungsten LAN turns in lockstep', () => {
     const st = navalRules.defaults();

@@ -155,6 +155,8 @@ export interface CubeSkinUniforms {
   uFlicker: { value: number };
   /** A rolling Loaded Die: 1 lights each face in its own mode's colour (`uFaces`, laid out as `dieFaceNormal`). */
   uDie: { value: number };
+  /** A merged Overdrive die: 1 runs every face through the whole rainbow. */
+  uRainbow: { value: number };
   uFaces: { value: readonly Color[] };
 }
 
@@ -195,6 +197,7 @@ export function cubeSkin(): { material: MeshStandardMaterial; u: CubeSkinUniform
     uAssemble: { value: 1 },
     uFlicker: { value: 0 },
     uDie: { value: 0 },
+    uRainbow: { value: 0 },
     uFaces: { value: MODE_COLORS },
   };
   const material = new MeshStandardMaterial({ color: 0x40454d, metalness: 0.92, roughness: 0.36 });
@@ -207,7 +210,7 @@ export function cubeSkin(): { material: MeshStandardMaterial; u: CubeSkinUniform
       `uniform sampler2D uEtch;
 uniform vec3 uGlow, uPrev;
 uniform vec3 uFaces[6];
-uniform float uSweep, uTime, uPower, uHeat, uStore, uAssemble, uFlicker, uDie;
+uniform float uSweep, uTime, uPower, uHeat, uStore, uAssemble, uFlicker, uDie, uRainbow;
 varying vec3 vCubeObj;
 varying vec2 vEtchUv;
 float cubeHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
@@ -243,6 +246,14 @@ float cubeHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719)))
         : a.x >= a.z ? (vCubeObj.x > 0.0 ? uFaces[1] : uFaces[4])
         : (vCubeObj.z > 0.0 ? uFaces[2] : uFaces[3]);
       glow = mix(glow, face, uDie);
+    }
+    // A merged die: rainbow bands sweep diagonally across every face.
+    if (uRainbow > 0.0) {
+      vec3 a = abs(vCubeObj);
+      vec2 q = a.y >= a.x && a.y >= a.z ? vCubeObj.xz : a.x >= a.z ? vCubeObj.zy : vCubeObj.xy;
+      float hue = fract((q.x - q.y) * 0.8 + uTime * 0.35);
+      vec3 rainbow = clamp(abs(mod(hue * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+      glow = mix(glow, rainbow, uRainbow);
     }
     // A full Shield store runs the etching white-hot, and brighter.
     glow = mix(glow, vec3(1.0, 0.94, 0.84), uStore * 0.7);

@@ -10,12 +10,13 @@ import { buff, hpFrac, hurt, mark } from '../kit';
 import { safeStep } from './StepperRuntime';
 import { CUBE, dockLift, haloAngle, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf, type SignatureId } from './TungstenModes';
 
-/** `pin`: perched on a hull it leapt onto (Pile Driver), holding it down. */
-export type CubeState = 'docked' | 'flying' | 'hover' | 'guard' | 'orbit' | 'meteor' | 'collapse' | 'broken' | 'pin';
-export type CubePathKind = 'shot' | 'dock' | 'ricochet' | 'home' | 'die' | 'pile';
+/** `pin`: perched on a hull it leapt onto (Pile Driver), holding it down. `merged`: inside an Overdrive die, riding it. */
+export type CubeState = 'docked' | 'flying' | 'hover' | 'guard' | 'orbit' | 'meteor' | 'collapse' | 'broken' | 'pin' | 'merged';
+/** `spread`: bursting out of a landed Overdrive die. */
+export type CubePathKind = 'shot' | 'dock' | 'ricochet' | 'home' | 'die' | 'pile' | 'spread';
 /** Orders for hashing and the HUD. */
-export const CUBE_STATES: readonly CubeState[] = ['docked', 'flying', 'hover', 'guard', 'orbit', 'meteor', 'collapse', 'broken', 'pin'];
-export const PATH_KINDS: readonly CubePathKind[] = ['shot', 'dock', 'ricochet', 'home', 'die', 'pile'];
+export const CUBE_STATES: readonly CubeState[] = ['docked', 'flying', 'hover', 'guard', 'orbit', 'meteor', 'collapse', 'broken', 'pin', 'merged'];
+export const PATH_KINDS: readonly CubePathKind[] = ['shot', 'dock', 'ricochet', 'home', 'die', 'pile', 'spread'];
 
 export interface CubePath {
   kind: CubePathKind;
@@ -29,7 +30,10 @@ export interface CubePath {
   hit: number[];
   healed: number[];
   dealt: number;
-  /** Ricochet: ship id being chased, and bounces left. Pile: the ship leapt onto, with `bounces` 1 (0 for the drop beside it). */
+  /**
+   * Ricochet: ship id being chased, and bounces left. Pile: the ship leapt onto, with `bounces` 1 (0 for the drop
+   * beside it). Die: `bounces` 1 for an Overdrive die the other cubes merged into.
+   */
   target: number;
   bounces: number;
 }
@@ -234,7 +238,10 @@ export const CUBE_SHOT: SkillSpec = { id: 'tungstenCube', name: 'Tungsten cube',
 const skillSpec = (s: Ship, i: number): SkillSpec => (i < 0 ? CUBE_SHOT : s.skills[i].spec);
 const hostile = (s: Ship, o: Ship) => o.alive && o.team !== s.team && !o.deep && !o.mods.banished;
 const foesNear = (s: Ship, x: number, z: number, r: number) => s.game.ships.filter((o) => hostile(s, o) && gap(o.pos.x, o.pos.z, x, z) <= r);
-const busy = (c: Cube) => c.state === 'meteor' || c.state === 'collapse';
+/** An Overdrive die rolling with the other cubes merged inside it. */
+export const mergedDie = (c: Cube) => c.state === 'flying' && c.path?.kind === 'die' && c.path.bounces === 1;
+/** Out of every other skill's reach until it is done: a meteor, a Collapse, a merged die and the cubes inside it. */
+const busy = (c: Cube) => c.state === 'meteor' || c.state === 'collapse' || c.state === 'merged' || mergedDie(c);
 /** A cube on its way keeps the mode it was sent with: its hits, speed and fall were set by it. */
 export const inFlight = (c: Cube) => c.state === 'flying' || busy(c);
 /** Out under the magnet's hold, a wall on the water: hovering, guarding or orbiting. */
@@ -677,8 +684,9 @@ function swapCentre(s: Ship): boolean {
 }
 
 /**
- * Loaded Die: every driven cube rolls to the reticle (into a ring round it in Overdrive), up to `CUBE.die.range`
- * from where it is, over anything in the way. It costs no energy, and a spent cube stays spent.
+ * Loaded Die: the cube rolls to the reticle, up to `CUBE.die.range` from where it is, over anything in the way. It
+ * costs no energy, and a spent cube stays spent. In Overdrive the other free cubes merge into the central one (or
+ * the free cube nearest the reticle) and it rolls half again its size. Taking a shielding cube ends the Shield.
  */
 export function rollDie(s: Ship, skill: number): boolean {
   if (!cubeReady(s, 'Loaded Die')) return false;
@@ -687,37 +695,47 @@ export function rollDie(s: Ship, skill: number): boolean {
   const ax = s.control.aimX,
     az = s.control.aimZ;
   const cubes = driven(s).filter((c) => c.state !== 'broken');
-  // Round the ring in the order they already lie round the reticle, so no two cross.
-  const round = (c: Cube) => Math.atan2(c.z - az, c.x - ax);
-  cubes.sort((a, b) => round(a) - round(b));
-  const r = cubes.length > 1 ? CUBE.die.ring : 0,
-    a0 = cubes.length ? round(cubes[0]) : 0;
+  if (!cubes.length) return s.failSkill('Loaded Die: the cube is re-forming');
+  if (cubes.some((c) => c.state === 'guard' || c.state === 'orbit')) t.guardUntil = Math.min(t.guardUntil, s.game.time);
+  const merged = cubes.length > 1;
+  const c = cubes.includes(t.cubes[0]) ? t.cubes[0] : cubes.reduce((a, b) => (gap(b.x, b.z, ax, az) < gap(a.x, a.z, ax, az) ? b : a));
+  for (const k of cubes) {
+    if (k === c) continue;
+    k.state = 'merged';
+    k.path = null;
+    ride(k, c);
+  }
+  if (merged) c.scale = CUBE.die.merged;
+  const d = gap(c.x, c.z, ax, az);
+  const k = d > CUBE.die.range ? CUBE.die.range / d : 1;
   const edge = MAP_HALF - 200;
-  cubes.forEach((c, i) => {
-    const a = a0 + (i / cubes.length) * Math.PI * 2;
-    const gx = ax + Math.cos(a) * r,
-      gz = az + Math.sin(a) * r;
-    const d = gap(c.x, c.z, gx, gz);
-    const k = d > CUBE.die.range ? CUBE.die.range / d : 1;
-    const x = Math.max(-edge, Math.min(edge, c.x + (gx - c.x) * k)),
-      z = Math.max(-edge, Math.min(edge, c.z + (gz - c.z) * k));
-    c.state = 'flying';
-    c.flown = 0;
-    c.path = newPath('die', skill, x, hoverY(s, x, z), z, CUBE.shot.speed * TUNGSTEN_MODES[c.mode].speed);
-    emit(s, 'throw', c, c.x, c.y, c.z);
-  });
+  const x = Math.max(-edge, Math.min(edge, c.x + (ax - c.x) * k)),
+    z = Math.max(-edge, Math.min(edge, c.z + (az - c.z) * k));
+  c.state = 'flying';
+  c.flown = 0;
+  c.path = newPath('die', skill, x, hoverY(s, x, z, c.scale), z, CUBE.shot.speed * TUNGSTEN_MODES[c.mode].speed);
+  c.path.bounces = merged ? 1 : 0;
+  emit(s, 'throw', c, c.x, c.y, c.z);
   return true;
+}
+/** A merged cube sits inside its die. */
+function ride(c: Cube, die: Cube): void {
+  c.x = die.x;
+  c.y = die.y;
+  c.z = die.z;
+  c.yaw = die.yaw;
 }
 
 /**
  * The die lands: `CUBE.die.damage` to every foe within its radius (spending the store on the first), then the face
- * it rolled fires that mode's hit at double strength. Rolling the cube's own mode is a jackpot: every face fires.
+ * it rolled fires that mode's hit at double strength. Rolling the cube's own mode is a jackpot: every face fires,
+ * as it always does for a merged die, which then shrinks back and lets its cubes burst out.
  */
-function dieLands(s: Ship, c: Cube, skill: number): void {
+function dieLands(s: Ship, c: Cube, skill: number, merged: boolean): void {
   const g = s.game;
   const D = CUBE.die,
     k = D.strength;
-  const face = Math.min(5, Math.floor(g.rng() * 6));
+  const face = merged ? c.mode : Math.min(5, Math.floor(g.rng() * 6));
   const jackpot = face === c.mode;
   const rolled = (m: number) => jackpot || face === m;
   const spec = skillSpec(s, skill);
@@ -738,9 +756,74 @@ function dieLands(s: Ship, c: Cube, skill: number): void {
   }
   if (rolled(REPEL)) repulse(s, c.x, c.z, D.radius);
   if (rolled(MEND)) s.heal(dealt * HIT.mend.lifesteal * k);
-  g.events.emit('tungsten', { ship: s, kind: 'die', cube: c.id, x: c.x, y: c.y, z: c.z, radius: D.radius, mode: c.mode, face, jackpot });
+  g.events.emit('tungsten', { ship: s, kind: 'die', cube: c.id, x: c.x, y: c.y, z: c.z, radius: D.radius, mode: c.mode, face, jackpot, merged });
   // The cube stays on the face it rolled; in Overdrive the six keep one mode each.
   if (!overdriveOn(s) && c === s.tungsten!.cubes[0]) s.tungsten!.mode = c.mode = face;
+  if (!merged) return;
+  c.scale = 1;
+  c.y = hoverY(s, c.x, c.z);
+  burst(s, c.x, c.y, c.z);
+}
+
+/**
+ * The cubes merged into a die burst out of it at (x, y, z) into a pentagon `CUBE.die.ring` round it: the mode after
+ * the central cube's on the vertex toward the ship, the rest clockwise in mode order.
+ */
+function burst(s: Ship, x: number, y: number, z: number): void {
+  const t = s.tungsten!;
+  const at = pentagon(s, x, z, CUBE.die.ring);
+  for (const c of t.cubes) {
+    if (c.state !== 'merged') continue;
+    const [px, pz] = at[(c.mode - t.mode + 5) % 6];
+    c.x = x;
+    c.y = y;
+    c.z = z;
+    c.state = 'flying';
+    c.flown = 0;
+    c.path = newPath('spread', -1, px, hoverY(s, px, pz), pz, CUBE.die.burst);
+  }
+}
+
+/**
+ * A pentagon `r` round (x, z) with its first vertex toward the ship, turned by up to a fifth of a turn to put the
+ * most vertices on water inside the map. A vertex still on land is drawn in along its spoke, no closer than
+ * `CUBE.die.inner`; failing that, it stays out and its cube rests on the ground.
+ */
+function pentagon(s: Ship, x: number, z: number, r: number): [number, number][] {
+  const edge = MAP_HALF - 200;
+  const wet = (px: number, pz: number) => Math.abs(px) <= edge && Math.abs(pz) <= edge && s.game.map.heightAt(px, pz) < 0;
+  const at = (a: number, d: number): [number, number] => [x + Math.sin(a) * d, z - Math.cos(a) * d];
+  const fifth = (Math.PI * 2) / 5;
+  const toShip = bearingTo(x, z, s.pos.x, s.pos.z);
+  let turn = toShip,
+    most = -1;
+  for (let k = 0; k < 8 && most < 5; k++) {
+    const b = toShip + (k / 8) * fifth;
+    let n = 0;
+    for (let i = 0; i < 5; i++) if (wet(...at(b + i * fifth, r))) n++;
+    if (n > most) {
+      most = n;
+      turn = b;
+    }
+  }
+  return [0, 1, 2, 3, 4].map((i) => {
+    const a = turn + i * fifth;
+    for (let d = r; d >= CUBE.die.inner; d -= 25) {
+      const p = at(a, d);
+      if (wet(...p)) return p;
+    }
+    const [px, pz] = at(a, r);
+    return [Math.max(-edge, Math.min(edge, px)), Math.max(-edge, Math.min(edge, pz))];
+  });
+}
+
+/** Merged cubes ride their die; if it stops rolling before it lands (broken), they burst out where it is. */
+function rideDie(s: Ship, t: TungstenState): void {
+  const inside = t.cubes.filter((c) => c.state === 'merged');
+  if (!inside.length) return;
+  const die = t.cubes.find(mergedDie);
+  if (die) for (const c of inside) ride(c, die);
+  else burst(s, inside[0].x, inside[0].y, inside[0].z);
 }
 
 export function dockCubes(s: Ship, skill: number): boolean {
@@ -1030,10 +1113,11 @@ export function updateTungsten(s: Ship, dt: number): void {
   else if (t.ult?.kind === 'meteor') stepMeteor(s, t, dt);
   fire(s, t, dt);
   for (const c of t.cubes) stepCube(s, t, c, dt);
+  rideDie(s, t);
   if (!t.overdriveUntil)
     for (const c of t.cubes) {
       if (!c.extra) continue;
-      if (c.state === 'docked' || c.state === 'broken') c.gone = true;
+      if (c.state === 'docked' || c.state === 'broken' || c.state === 'merged') c.gone = true;
       else if (parked(c)) sendHome(s, c, 'home');
     }
   if (t.cubes.some((c) => c.gone)) {
@@ -1263,8 +1347,8 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
       uz = (c.z - oz) / moved;
     for (let a = -H; a <= 2 * H; a += H / 4) c.y = Math.max(c.y, hoverY(s, c.x + ux * a, c.z + uz * a, c.scale));
   }
-  // Homing cubes, a rolling die and a leaping Pile Driver strike nothing on the way.
-  if (p.kind !== 'home' && p.kind !== 'die' && p.kind !== 'pile') {
+  // Homing cubes, a rolling die, cubes bursting from it and a leaping Pile Driver strike nothing on the way.
+  if (p.kind !== 'home' && p.kind !== 'die' && p.kind !== 'pile' && p.kind !== 'spread') {
     const spec = skillSpec(s, p.skill);
     const h = H * c.scale;
     for (const o of g.ships) {
@@ -1298,10 +1382,10 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
         }
   }
   if (f < 1) return;
-  if (p.kind === 'shot' || p.kind === 'ricochet') return land(s, c);
+  if (p.kind === 'shot' || p.kind === 'ricochet' || p.kind === 'spread') return land(s, c);
   if (p.kind === 'die') {
     land(s, c);
-    return dieLands(s, c, p.skill);
+    return dieLands(s, c, p.skill, p.bounces === 1);
   }
   if (p.kind === 'pile') return p.bounces > 0 ? pinDown(s, c, p) : land(s, c);
   if (p.kind === 'home' && c.extra && !t.overdriveUntil) {

@@ -6,7 +6,7 @@ import type { Team } from '../core/types';
 import { contactVisible } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
 import { CUBE, HIT, SIGNATURE, TUNGSTEN_MODES, dockLift, modeOf } from '../skills/misc/TungstenModes';
-import { overdriveOn, type Cube, type TungstenState } from '../skills/misc/TungstenRuntime';
+import { dockPoint, mergedDie, overdriveOn, type Cube, type TungstenState } from '../skills/misc/TungstenRuntime';
 import { audio } from '../fx/Audio';
 import { BK, drift, hash01, type BurstParticles } from './BurstParticles';
 import type { Ribbons } from './Projectiles';
@@ -62,6 +62,12 @@ interface FreeCube {
   wobble: number;
   /** How much the six face colours show, 0 to 1. */
   die: number;
+  /** How much a merged die's rainbow shows, 0 to 1; `merged` when the die it last landed was one. */
+  rainbow: number;
+  merged: boolean;
+  /** Render time it merged into a die (-1 when not merged), and where it slides in from. */
+  mergeAt: number;
+  mergeFrom: Vector3;
   mode: number;
 }
 
@@ -97,6 +103,8 @@ const DIE_SETTLE = 0.35;
 const DIE_HOLD = 0.9;
 /** How far (m) a cube flying out to the Overdrive ring bows sideways mid-flight: clear of a swapping cube's corners. */
 const SWAP_BOW = 190;
+/** Seconds a cube takes to slide into an Overdrive die, and a landed die to shrink back to size. */
+const MERGE = 0.3;
 const H = CUBE.edge / 2;
 const TETHER = modeOf('tether');
 const tint2 = new Color();
@@ -188,6 +196,7 @@ export class TungstenCubeFx {
       if (v) {
         v.face = e.face ?? e.mode;
         v.faceAt = this.game.time;
+        v.merged = !!e.merged;
         this.settleDie(v, v.face);
       }
     }
@@ -396,8 +405,20 @@ export class TungstenCubeFx {
         mesh.frustumCulled = false;
         this.scene.add(mesh);
         this.renderPos(c, this.v);
-        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, face: -1, faceAt: -1, mode: c.mode, base: new Quaternion(), from: new Quaternion(), to: new Quaternion(), settleAt: -1, wobble: 0, die: 0 };
+        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, face: -1, faceAt: -1, mode: c.mode, base: new Quaternion(), from: new Quaternion(), to: new Quaternion(), settleAt: -1, wobble: 0, die: 0, rainbow: 0, merged: false, mergeAt: -1, mergeFrom: new Vector3() };
+        // A cube first seen merging left the magnet for the die this step: it slides in from its slot.
+        if (c.state === 'merged') {
+          dockPoint(s, c.slot, v.mergeFrom);
+          v.lastX = v.mergeFrom.x;
+          v.lastY = v.mergeFrom.y;
+          v.lastZ = v.mergeFrom.z;
+        }
         this.views.set(k, v);
+      }
+      if (c.state !== 'merged') v.mergeAt = -1;
+      else if (v.mergeAt < 0) {
+        v.mergeAt = now;
+        v.mergeFrom.set(v.lastX, v.lastY, v.lastZ);
       }
       v.live = true;
       v.gone = -1;
@@ -419,7 +440,10 @@ export class TungstenCubeFx {
       }
       // Rolling while it flies, a die faster and rocking; settling onto a face once it stops.
       const rolling = c.state === 'flying' && c.path?.kind === 'die';
-      v.die = rolling ? Math.min(1, v.die + dt / 0.15) : v.face >= 0 && this.game.time - v.faceAt < DIE_SHOW ? clamp01(1 - (this.game.time - v.faceAt - DIE_HOLD) / (DIE_SHOW - DIE_HOLD)) : 0;
+      const shown = v.face >= 0 && this.game.time - v.faceAt < DIE_SHOW ? clamp01(1 - (this.game.time - v.faceAt - DIE_HOLD) / (DIE_SHOW - DIE_HOLD)) : 0;
+      v.die = rolling ? Math.min(1, v.die + dt / 0.15) : shown;
+      // A merged die runs rainbow while it rolls and fades back like the faces once it lands.
+      v.rainbow = mergedDie(c) ? Math.min(1, v.rainbow + dt / 0.15) : v.merged ? shown : 0;
       if (!this.paint.reduce && rolling) {
         v.tumble += moved / 110;
         v.wobble = 0.45 * Math.sin(c.flown / 240);
@@ -428,7 +452,8 @@ export class TungstenCubeFx {
         const rest = Math.round(v.tumble / (Math.PI / 2)) * (Math.PI / 2);
         v.tumble += (rest - v.tumble) * (1 - Math.exp(-dt * 6));
       }
-      if (moved > 1 || v.trail.length === 0) v.trail.push(p.x, p.y, p.z, now);
+      // Inside a die it leaves no wake of its own.
+      if (c.state !== 'merged' && (moved > 1 || v.trail.length === 0)) v.trail.push(p.x, p.y, p.z, now);
       v.lastX = p.x;
       v.lastY = p.y;
       v.lastZ = p.z;
@@ -506,7 +531,21 @@ export class TungstenCubeFx {
       const bob = parked && !spent && !this.paint.reduce ? Math.sin(anim * 1.3 + c.id * 1.7) * 1.6 : 0;
       const ult = this.ult.cubeLook(s, c);
       const lift = pileLift(c) + (ult?.lift ?? 0);
-      const size = CUBE.edge * c.scale * (ult?.size ?? 1);
+      let size = CUBE.edge * c.scale * (ult?.size ?? 1);
+      let rise = 0;
+      if (c.state === 'merged') {
+        // Sliding into the die and shrinking away inside it.
+        const k = this.paint.reduce ? 1 : ease(clamp01((now - v.mergeAt) / MERGE));
+        p.lerpVectors(v.mergeFrom, p, k);
+        size *= 1 - k;
+      } else if (v.merged && !this.paint.reduce && c.scale === 1) {
+        // A landed merged die shrinks back to a cube, its base staying on the water.
+        const grow = (CUBE.die.merged - 1) * (1 - ease(clamp01((this.game.time - v.faceAt) / MERGE)));
+        size *= 1 + grow;
+        rise = H * grow;
+      }
+      // The cubes it held burst out of it, growing to size as they clear its faces.
+      if (c.path?.kind === 'spread') size *= 0.55 + 0.45 * ease(clamp01(c.flown / H));
       v.mesh.visible = size > 0.5;
       // A cube flying out to the Overdrive ring bows aside, so a cube swapping onto the dais never passes through it.
       const P = c.path;
@@ -520,7 +559,7 @@ export class TungstenCubeFx {
           p.z += (dx / d) * bow;
         }
       }
-      v.mesh.position.set(p.x, p.y + bob + lift + (this.paint.reduce ? 0 : dieHop(c)), p.z);
+      v.mesh.position.set(p.x, p.y + bob + lift + rise + (this.paint.reduce ? 0 : dieHop(c)), p.z);
       v.mesh.scale.setScalar(Math.max(0.01, size));
       if (v.settleAt >= 0) {
         const k = this.paint.reduce ? 1 : clamp01((this.game.renderTime - v.settleAt) / DIE_SETTLE);
@@ -533,6 +572,7 @@ export class TungstenCubeFx {
       const rolled = v.face >= 0 && this.game.time - v.faceAt < DIE_SHOW;
       v.sweep.apply(v.u, rolled ? v.face : c.mode, now, this.paint.reduce);
       v.u.uDie.value = v.die;
+      v.u.uRainbow.value = v.rainbow;
       const flash = Math.max(clamp01(1 - (this.game.time - v.struck) / 0.25), rolled ? clamp01(1 - (this.game.time - v.faceAt) / 0.5) : 0);
       const sputter = this.paint.reduce ? 0.2 : hash01(c.id, Math.floor(now * 12)) < 0.18 ? 0.3 : 0.12;
       const power = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + flash * 1.5;

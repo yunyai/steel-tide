@@ -11,6 +11,7 @@ import { SHIP_BY_ID } from '../src/data/ships';
 import { stateHash } from '../src/net/hash';
 import type { Ship } from '../src/ships/Ship';
 import type { Game } from '../src/core/Game';
+import type { Cube } from '../src/skills/misc/TungstenRuntime';
 import { emptyGame, place, run } from './helpers';
 
 // Skill slots: Q Lunge, E Switch, Z Signature, X Die, C Dock, V Shield, R Collapse, T Meteor, B Overdrive.
@@ -704,6 +705,50 @@ describe('Tungsten throw effects', () => {
     expect(die.up.y).toBeGreaterThan(0.99);
     expect(die.settled).toBeGreaterThan(0.5);
     expect(die.later).toBe(0);
+  });
+
+  it('merges the Overdrive cubes into a rainbow die that eases back to size, sliding the rest in out of sight', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    const t = s.tungsten!;
+    s.control.aimX = 0;
+    s.control.aimZ = -3000;
+    cast(s, OVERDRIVE);
+    play(g, fx, 0.5, [s]);
+    let landed = false;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'die') landed = true;
+    });
+    cast(s, DIE);
+    const [die, ...rest] = t.cubes;
+    const mesh = (c: Cube) => scene.getObjectByName(`tungsten-free-cube-${s.id}:${c.id}`);
+    // Sliding in from the halo, shrinking, then gone inside the die.
+    play(g, fx, 0.1, [s]);
+    fx.prepare(0, 720);
+    for (const c of rest) {
+      const m = mesh(c)!;
+      expect(m.visible).toBe(true);
+      expect(m.position.distanceTo(mesh(die)!.position)).toBeGreaterThan(30);
+      expect(m.scale.x).toBeLessThan(CUBE.edge);
+    }
+    play(g, fx, 0.3, [s]);
+    fx.prepare(0, 720);
+    for (const c of rest) expect(mesh(c)?.visible ?? false).toBe(false);
+    expect(fx.skin(s, die.id)!.uRainbow.value).toBe(1);
+    expect(mesh(die)!.scale.x).toBeCloseTo(CUBE.edge * CUBE.die.merged, 0);
+    for (let i = 0; i < 300 && !landed; i++) play(g, fx, 1 / 60, [s]);
+    expect(landed).toBe(true);
+    play(g, fx, 0.1, [s]);
+    fx.prepare(0, 720);
+    const easing = mesh(die)!.scale.x;
+    expect(easing).toBeGreaterThan(CUBE.edge * 1.05);
+    expect(easing).toBeLessThan(CUBE.edge * CUBE.die.merged);
+    play(g, fx, 0.4, [s]);
+    fx.prepare(0, 720);
+    expect(mesh(die)!.scale.x).toBeCloseTo(CUBE.edge, 0);
+    fx.dispose();
   });
 
   it('lays the die faces out like a die: six directions, opposite faces summing to five', () => {

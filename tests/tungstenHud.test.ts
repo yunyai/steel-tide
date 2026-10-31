@@ -285,6 +285,17 @@ describe('Tungsten minimap markers', () => {
     s.alive = false;
     expect(minimapCubes(g.ships, 1)).toEqual([]);
   });
+
+  it('leaves out cubes merged into a die, counting them out of the magnet', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    overdrive(s);
+    const c = s.tungsten!.cubes[1];
+    Object.assign(c, { state: 'merged', x: 900, z: -1200 });
+    expect(minimapCubes(g.ships, 1)).toEqual([]);
+    expect(cubeMarkers(g.ships, s, 0)).toEqual([]);
+    expect(tungstenPresentation(s.tungsten!, g.time, 0, 0).panel.where).toBe('Overdrive · 1 out · 5 home');
+  });
 });
 
 describe('Tungsten cube markers', () => {
