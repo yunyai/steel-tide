@@ -1576,6 +1576,23 @@ select {
   border-left: 0;
 }
 
+/* A cube's marker: its mode colour on a small square, health in the side's colour. */
+.marker.cube .cg {
+  width: 8px;
+  height: 8px;
+  background: var(--cube);
+  box-shadow: 0 0 6px var(--cube);
+  transform: rotate(45deg);
+}
+
+.marker.cube .hp {
+  width: 48px;
+}
+
+.marker.cube.ally .hp i {
+  background: var(--cube);
+}
+
 .marker.lead {
   width: 18px;
   height: 18px;

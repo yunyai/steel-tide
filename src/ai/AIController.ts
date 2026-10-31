@@ -1,4 +1,4 @@
-import { canTrack } from '../core/Targeting';
+import { canTrack, cubeTargets, type CubeContact } from '../core/Targeting';
 import { CAP_RADIUS, KNOT, MAP_HALF, RANGE_SCALE, SPEED_SCALE } from '../config';
 import type { Game } from '../core/Game';
 import { Pickups } from '../core/Pickups';
@@ -15,8 +15,18 @@ import { avoid, evasion, rudderFor, separate } from './Navigation';
 
 // Class-aware bot captain. Thinks a few times per second, steers every tick.
 
+/** A hovering enemy cube this close to the line of fire gets shot out of the way. */
+const CUBE_IN_LINE = 400;
+/** A hovering enemy cube under this share of its health gets finished off wherever it sits in range. */
+const CUBE_FINISH = 0.3;
+
 export class AIController {
   target: Ship | null = null;
+  /**
+   * A hovering enemy cube the guns are on instead of the target. Never a shielding cube, whose store a hit only
+   * feeds; a Tungsten or a carrier never picks one.
+   */
+  cube: CubeContact | null = null;
   leader: Ship | null = null;
   /** Boss Rush: head for this ship wherever it is, and fight at shorter range. */
   hunt: Ship | null = null;
@@ -56,6 +66,11 @@ export class AIController {
       c.fire = false;
       c.targetId = -1;
     }
+    const k = this.cube;
+    if (k && (k.cube.gone || k.cube.state !== 'hover' || !k.owner.alive)) {
+      this.cube = null;
+      c.aimY = this.targetAimY();
+    }
     this.think -= dt;
     if (this.think <= 0) {
       this.think = this.game.difficulty.think * (0.8 + this.game.rng() * 0.4);
@@ -90,8 +105,9 @@ export class AIController {
     const g = this.game;
     const c = ship.control;
     this.target = this.pickTarget();
+    this.cube = this.pickCube();
     c.targetId = this.target?.id ?? -1;
-    c.aimY = this.target && this.target.pos.y > 20 ? this.target.pos.y + 4 : undefined;
+    c.aimY = this.targetAimY();
 
     // Fresh aim error each decision, scaled by range and difficulty.
     if (this.target) {
@@ -107,6 +123,41 @@ export class AIController {
     this.useConsumables();
     this.useSkills();
     this.submarineDepth();
+  }
+
+  private targetAimY(): number | undefined {
+    return this.target && this.target.pos.y > 20 ? this.target.pos.y + 4 : undefined;
+  }
+
+  /** The nearest hovering enemy cube in gun range that blocks the line to the target or is nearly broken. */
+  private pickCube(): CubeContact | null {
+    const ship = this.ship;
+    if (ship.tungsten || ship.spec.air || !ship.slots.some((s) => s.kind === 'gun')) return null;
+    const t = this.target;
+    const reach = ship.mainRange * 0.98;
+    let best: CubeContact | null = null;
+    let bestD = reach;
+    for (const k of cubeTargets(this.game, ship.team)) {
+      const c = k.cube;
+      if (c.state !== 'hover') continue;
+      const d = dist2D(ship.pos.x, ship.pos.z, c.x, c.z);
+      if (d > bestD) continue;
+      if (c.hp >= c.maxHp * CUBE_FINISH && !(t && this.inLine(t, c.x, c.z))) continue;
+      best = k;
+      bestD = d;
+    }
+    return best;
+  }
+
+  /** Whether (x, z) lies within CUBE_IN_LINE of the stretch between this ship and `t`. */
+  private inLine(t: Ship, x: number, z: number): boolean {
+    const o = this.ship.pos;
+    const dx = t.pos.x - o.x,
+      dz = t.pos.z - o.z;
+    const len2 = dx * dx + dz * dz;
+    if (len2 < 1) return false;
+    const u = ((x - o.x) * dx + (z - o.z) * dz) / len2;
+    return u >= 0 && u <= 1 && dist2D(x, z, o.x + dx * u, o.z + dz * u) <= CUBE_IN_LINE;
   }
 
   private pickTarget(): Ship | null {
@@ -396,6 +447,13 @@ export class AIController {
       c.fire = !!t && st.cooldown <= 0;
       return;
     }
+    // A cube in the way, or nearly broken: the guns clear it first (pickCube keeps it in range).
+    if (this.cube) {
+      const he = ship.slots.findIndex((s) => s.kind === 'gun' && s.ammo === 'HE');
+      c.slot = he >= 0 ? he : ship.slots.findIndex((s) => s.kind === 'gun');
+      c.fire = !(ship.isSub && ship.depthState !== 0);
+      return;
+    }
     if (!t) {
       c.fire = false;
       return;
@@ -508,6 +566,14 @@ export class AIController {
     const ship = this.ship;
     const c = ship.control;
     const t = this.target;
+    // A hovering cube sits still: straight at it.
+    const k = this.cube;
+    if (k && ship.currentSlot?.kind === 'gun' && c.skill < 0) {
+      c.aimX = k.cube.x;
+      c.aimZ = k.cube.z;
+      c.aimY = k.cube.y;
+      return;
+    }
     if (!t) {
       c.aimX = ship.pos.x + forwardX(ship.heading) * 1500;
       c.aimZ = ship.pos.z + forwardZ(ship.heading) * 1500;

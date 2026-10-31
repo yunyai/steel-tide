@@ -2,7 +2,7 @@ import { architectSkillPresentation,architectModuleSkillPresentation,architectIn
 import { architectDockingStatus } from '../skills/misc/ArchitectRuntime';
 import { CROSS } from '../skills/misc/CrossStep';
 import { vectorMobilityPresentation } from './VectorMobilityPresentation';
-import { cubeReticle, cubeSlot, tungstenPresentation, type TungstenView } from './TungstenPresentation';
+import { cubeMarkers, cubeReticle, cubeSlot, tungstenPresentation, type TungstenView } from './TungstenPresentation';
 import { ARCHETYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
@@ -115,6 +115,7 @@ export class HUD {
   private team: Team;
   private off: (() => void)[] = [];
   private markers: HTMLElement[] = [];
+  private cubeMarks: HTMLElement[] = [];
   private markerLayer: HTMLElement;
   /** Edge chevrons for enemies outside the view. */
   private offMarks: HTMLElement[] = [];
@@ -1148,7 +1149,51 @@ export class HUD {
       if (s.shield > 0) setWidth(sh.firstChild as HTMLElement, s.shield / Math.max(1, s.shieldMax));
     });
     for (let i = items.length; i < this.markers.length; i++) this.markers[i].style.display = 'none';
+    this.updateCubeMarkers(placed, rowH, W, H);
     this.updateOffscreen(off, W, H);
+  }
+
+  /** Health markers over cubes: enemy cubes that can be shot, and your own and allied cubes out on the water. */
+  private updateCubeMarkers(placed: { x0: number; x1: number; y0: number; y1: number }[], rowH: number, W: number, H: number): void {
+    const g = this.game;
+    const held = this.pc.cubeLock?.cube;
+    const marks = cubeMarkers(g.ships, this.pc.ship, this.team);
+    // The locked cube keeps its spot.
+    marks.sort((a, b) => (a.cube === held ? -1 : b.cube === held ? 1 : 0));
+    const a = g.alpha;
+    let n = 0;
+    for (const k of marks) {
+      const c = k.cube;
+      const x = c.px + (c.x - c.px) * a;
+      const z = c.pz + (c.z - c.pz) * a;
+      const cy = c.py + (c.y - c.py) * a;
+      if (!k.ally && cameraOccluded(g, this.pc.camera.position, { x, y: cy, z }, this.team)) continue;
+      const p = this.project(x, cy + (k.y - c.y), z);
+      if (!p || p.x < -50 || p.y < -20 || p.x > W + 50 || p.y > H + 20) continue;
+      const w = k.label.length * 6.4 + 30;
+      let y = p.y;
+      for (let tries = 0; tries < 6; tries++) {
+        const box = { x0: p.x - w / 2, x1: p.x + w / 2, y0: y - rowH, y1: y };
+        if (!placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) break;
+        y -= rowH;
+      }
+      placed.push({ x0: p.x - w / 2, x1: p.x + w / 2, y0: y - rowH, y1: y });
+      let m = this.cubeMarks[n];
+      if (!m) {
+        m = el('div', 'marker cube', this.markerLayer);
+        m.innerHTML = '<div class="nm"><span class="cg"></span><span class="tx"></span></div><div class="hp"><i></i></div>';
+        this.cubeMarks.push(m);
+      }
+      n++;
+      m.style.display = '';
+      const cls = `marker cube ${k.ally ? 'ally' : 'enemy'}${c === held ? ' locked' : ''}`;
+      if (m.className !== cls) m.className = cls;
+      if (m.style.getPropertyValue('--cube') !== k.color) m.style.setProperty('--cube', k.color);
+      m.style.transform = `translate(${p.x.toFixed(0)}px, ${y.toFixed(0)}px) translate(-50%, -100%)`;
+      setText(m.querySelector('.tx') as HTMLElement, k.label);
+      setWidth(m.querySelector('.hp i') as HTMLElement, k.hp);
+    }
+    for (let i = n; i < this.cubeMarks.length; i++) this.cubeMarks[i].style.display = 'none';
   }
 
   /** Bearing of a point from the camera, in radians clockwise from straight ahead on screen. */
@@ -1248,6 +1293,7 @@ export class HUD {
       }
     }
     if (pc.lock) main += `, ${captainName(pc.lock)}`;
+    else if (pc.cubeLock) main += `, ${captainName(pc.cubeLock.owner)}'s cube`;
     if (pc.zoom) main += `, ${pc.scopeMag.toFixed(pc.scopeMag < 10 ? 1 : 0)}x`;
     const key = `${out}|${main}|${sub}|${note}`;
     if (e.readout.dataset.k !== key) {

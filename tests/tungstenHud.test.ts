@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cubeReticle, cubeSlot, minimapCubes, tungstenPresentation } from '../src/ui/TungstenPresentation';
+import { cubeMarkers, cubeReticle, cubeSlot, minimapCubes, tungstenPresentation } from '../src/ui/TungstenPresentation';
 import { CUBE } from '../src/skills/misc/TungstenModes';
 import { overdrive } from '../src/skills/misc/TungstenRuntime';
 import { emptyGame, place } from './helpers';
@@ -254,5 +254,70 @@ describe('Tungsten minimap markers', () => {
 
     s.alive = false;
     expect(minimapCubes(g.ships, 1)).toEqual([]);
+  });
+});
+
+describe('Tungsten cube markers', () => {
+  function sides() {
+    const g = emptyGame('open', 7, 'freeplay');
+    const me = place(g, 'iowa', 0, 0, 0);
+    const foe = place(g, 'tungsten', 1, 0, -5000);
+    const mate = place(g, 'tungsten', 0, 2000, 0);
+    return { g, me, foe, mate };
+  }
+  const out = (c: { state: string; x: number; y: number; z: number }, x: number, z: number, state = 'hover') => Object.assign(c, { state, x, z, y: CUBE.hoverY });
+
+  it('labels an enemy cube with its mode, range and health', () => {
+    const { g, me, foe } = sides();
+    const c = foe.tungsten!.cubes[0];
+    expect(cubeMarkers(g.ships, me, 0)).toEqual([]);
+    out(c, 0, -2100);
+    c.hp = c.maxHp * 0.25;
+    const marks = cubeMarkers(g.ships, me, 0);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toMatchObject({ owner: foe, cube: c, x: 0, z: -2100, label: 'Cube · Kinetic 2.1 km', hp: 0.25, color: '#3ff0ff', ally: false });
+    expect(marks[0].y).toBeGreaterThan(c.y + CUBE.edge / 2);
+    c.mode = 2;
+    expect(cubeMarkers(g.ships, me, 0)[0].label).toBe('Cube · Shard 2.1 km');
+  });
+
+  it('shows only enemy cubes that can be shot', () => {
+    const { g, me, foe } = sides();
+    const c = foe.tungsten!.cubes[0];
+    for (const state of ['flying', 'guard', 'orbit', 'pin']) {
+      out(c, 0, -2100, state);
+      expect(cubeMarkers(g.ships, me, 0)).toHaveLength(1);
+    }
+    for (const state of ['meteor', 'collapse', 'broken']) {
+      out(c, 0, -2100, state);
+      expect(cubeMarkers(g.ships, me, 0)).toEqual([]);
+    }
+  });
+
+  it('shows your own and allied cubes while out, without a range', () => {
+    const { g, me, mate } = sides();
+    const c = mate.tungsten!.cubes[0];
+    out(c, 2000, -900, 'guard');
+    expect(cubeMarkers(g.ships, me, 0)).toEqual([expect.objectContaining({ owner: mate, label: 'Cube · Kinetic', ally: true, hp: 1 })]);
+    // Your own ship's cube too, out on the water.
+    expect(cubeMarkers(g.ships, mate, 0)).toHaveLength(1);
+    c.state = 'docked';
+    expect(cubeMarkers(g.ships, me, 0)).toEqual([]);
+    out(c, 2000, -900, 'broken');
+    expect(cubeMarkers(g.ships, me, 0)).toEqual([]);
+  });
+
+  it('drops the cubes of sunk, withdrawn or banished ships', () => {
+    const { g, me, foe } = sides();
+    out(foe.tungsten!.cubes[0], 0, -2100);
+    for (const k of ['alive', 'withdrawn', 'banished'] as const) {
+      if (k === 'alive') foe.alive = false;
+      else if (k === 'withdrawn') foe.withdrawn = true;
+      else foe.mods.banished = true;
+      expect(cubeMarkers(g.ships, me, 0)).toEqual([]);
+      foe.alive = true;
+      foe.withdrawn = false;
+      foe.mods.banished = false;
+    }
   });
 });

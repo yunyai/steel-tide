@@ -1,9 +1,10 @@
 import type { Vector3 } from 'three';
-import { KNOT, SPEED_SCALE } from '../config';
+import { KNOT, SIM_DT, SPEED_SCALE } from '../config';
 import type { Game } from '../core/Game';
 import { dist2D, rayBox } from '../core/math';
 import type { Team } from '../core/types';
 import type { Ship } from '../ships/Ship';
+import type { Cube } from '../skills/misc/TungstenRuntime';
 import { solve } from '../weapons/Ballistics';
 
 // Fire control for human captains: what the crosshair is on, and where a moving
@@ -130,6 +131,20 @@ export function leadPoint(shooter: Ship, target: Ship, flightTime: (d: number) =
     const time = flightTime(dist2D(shooter.pos.x, shooter.pos.z, px, pz));
     px = target.renderPos.x + vx * time;
     pz = target.renderPos.z + vz * time;
+  }
+  return { x: px, z: pz };
+}
+
+/** Where cube `c` will be when a shot fired now from `shooter` arrives, at the speed of its last sim step. */
+export function cubeLead(shooter: Ship, c: Cube, flightTime: (d: number) => number): { x: number; z: number } {
+  const vx = (c.x - c.px) / SIM_DT;
+  const vz = (c.z - c.pz) / SIM_DT;
+  let px = c.x;
+  let pz = c.z;
+  for (let i = 0; i < 4; i++) {
+    const time = flightTime(dist2D(shooter.pos.x, shooter.pos.z, px, pz));
+    px = c.x + vx * time;
+    pz = c.z + vz * time;
   }
   return { x: px, z: pz };
 }

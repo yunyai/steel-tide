@@ -1,4 +1,4 @@
-import { canTrack, concealmentReason } from '../core/Targeting';
+import { canTrack, concealmentReason, cubeLockable, cubeTargets, type CubeContact } from '../core/Targeting';
 import { PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import type { InputDeviceId, KeyLayout } from '../config';
 import type { Game } from '../core/Game';
@@ -9,7 +9,7 @@ import { waveHeight } from '../world/Waves';
 import type { Input } from '../input/Input';
 import { type Bindings, bindings, layoutFor } from '../input/Keybinds';
 import { controls } from '../input/Settings';
-import { type AimHit, assistAim, flightTimeFn, leadPoint, raycast } from './FireControl';
+import { type AimHit, assistAim, cubeLead, flightTimeFn, leadPoint, raycast } from './FireControl';
 import { ShellCam } from './ShellCam';
 
 // Turns one input device into ship orders and drives that player's camera.
@@ -81,6 +81,8 @@ export class PlayerController {
   freeYaw = 0;
   rudderStep = 0;
   lock: Ship | null = null;
+  /** A locked Tungsten cube. Local only (camera, aim assist, marker): the network target stays empty. Never set with `lock`. */
+  cubeLock: CubeContact | null = null;
   private lockYaw = 0;
   private lockRange = 0;
   focus: Ship;
@@ -176,20 +178,25 @@ export class PlayerController {
     return this.ship.maxAimRange() * 1.12;
   }
 
-  /** Enemy nearest the crosshair direction. */
-  private pickTarget(): Ship | null {
+  /** Enemy ship or cube nearest the crosshair direction. */
+  private pickTarget(): Ship | CubeContact | null {
     const s = this.ship;
-    let best: Ship | null = null;
+    let best: Ship | CubeContact | null = null;
     let bestScore = Infinity;
+    const score = (x: number, z: number) => Math.abs(wrapAngle(bearingTo(s.pos.x, s.pos.z, x, z) - this.yaw)) * 4000 + dist2D(s.pos.x, s.pos.z, x, z) * 0.3;
     for (const o of this.game.ships) {
       if (!canTrack(s, o)) continue;
-      const brg = bearingTo(s.pos.x, s.pos.z, o.pos.x, o.pos.z);
-      const off = Math.abs(wrapAngle(brg - this.yaw));
-      const d = dist2D(s.pos.x, s.pos.z, o.pos.x, o.pos.z);
-      const score = off * 4000 + d * 0.3;
-      if (score < bestScore) {
-        bestScore = score;
+      const v = score(o.pos.x, o.pos.z);
+      if (v < bestScore) {
+        bestScore = v;
         best = o;
+      }
+    }
+    for (const k of cubeTargets(this.game, s.team)) {
+      const v = score(k.cube.x, k.cube.z);
+      if (v < bestScore) {
+        bestScore = v;
+        best = k;
       }
     }
     return best;
@@ -197,21 +204,42 @@ export class PlayerController {
 
   private toggleLock(trackCamera: boolean): void {
     const t = this.pickTarget();
-    if (!t || t === this.lock) {
-      if (!t && !this.lock) {
+    const cube = t && 'cube' in t ? t : null;
+    if (!t || t === this.lock || (cube && cube.cube === this.cubeLock?.cube)) {
+      if (!t && !this.lock && !this.cubeLock) {
         this.notice = 'No enemy in sight to lock';
         this.noticeTime = 1.6;
       }
       this.lock = null;
+      this.cubeLock = null;
       this.out.targetId = -1;
       return;
     }
-    this.lock = t;
-    this.out.targetId = t.id;
+    this.lock = cube ? null : (t as Ship);
+    this.cubeLock = cube;
+    this.out.targetId = this.lock?.id ?? -1;
     if (trackCamera) {
       this.lockYaw = 0;
       this.lockRange = 0;
     }
+  }
+
+  /**
+   * A cube that docks, breaks or turns meteor can no longer be shot: the lock moves to the ship that owns it when
+   * that ship can be tracked, and is dropped with a notice otherwise.
+   */
+  private keepCubeLock(): void {
+    const k = this.cubeLock;
+    const o = k?.owner;
+    if (!k || !o || (cubeLockable(k.cube) && o.alive && !o.withdrawn && !o.mods.banished)) return;
+    this.cubeLock = null;
+    if (canTrack(this.ship, o)) {
+      this.lock = o;
+      this.out.targetId = o.id;
+      return;
+    }
+    this.notice = !o.alive ? 'Target sunk' : k.cube.gone || k.cube.state === 'broken' ? 'Cube shattered' : k.cube.state === 'docked' ? 'Cube docked: owner not in sight' : 'Cube lost';
+    this.noticeTime = 2.5;
   }
 
   /** Read the device and write ControlState. Call before the sim step. */
@@ -228,8 +256,9 @@ export class PlayerController {
       this.lock = null;
       c.targetId = -1;
     }
+    this.keepCubeLock();
 
-    const tracking = !mouse && this.lock !== null;
+    const tracking = !mouse && (this.lock !== null || this.cubeLock !== null);
 
     // Spectating after death.
     if (!s.alive) {
@@ -253,6 +282,7 @@ export class PlayerController {
       this.yaw = s.heading;
       this.freeYaw = 0;
       this.lock = null;
+      this.cubeLock = null;
       this.rudderStep = 0;
       c.targetId = -1;
     }
@@ -377,13 +407,13 @@ export class PlayerController {
 
 
     this.cameraInput(dt, input, pad, mouse);
-    if (tracking && this.lock) {
-      const t = this.lock;
-      this.yaw = wrapAngle(bearingTo(s.pos.x, s.pos.z, t.pos.x, t.pos.z) + this.lockYaw);
-      this.holdRange = clamp(dist2D(s.pos.x, s.pos.z, t.pos.x, t.pos.z) + this.lockRange, 100, this.maxRange());
+    const held = this.lock?.pos ?? this.cubeLock?.cube;
+    if (tracking && held) {
+      this.yaw = wrapAngle(bearingTo(s.pos.x, s.pos.z, held.x, held.z) + this.lockYaw);
+      this.holdRange = clamp(dist2D(s.pos.x, s.pos.z, held.x, held.z) + this.lockRange, 100, this.maxRange());
     }
     // The aim point comes from last frame's crosshair ray (see updateCamera).
-    c.aimY = this.aimHit?.ship && this.aimHit.ship.pos.y > 20 ? Math.max(this.aimHit.ship.pos.y + 4, this.aimHit.y) : this.assist && this.assist.pos.y > 20 ? this.assist.pos.y + 4 : this.lock && this.lock.pos.y > 20 ? this.lock.pos.y + 4 : undefined;
+    c.aimY = this.aimHit?.ship && this.aimHit.ship.pos.y > 20 ? Math.max(this.aimHit.ship.pos.y + 4, this.aimHit.y) : this.assist && this.assist.pos.y > 20 ? this.assist.pos.y + 4 : this.lock && this.lock.pos.y > 20 ? this.lock.pos.y + 4 : this.cubeLock ? this.cubeLock.cube.y : undefined;
     c.aimX = this.aim.x;
     c.aimZ = this.aim.z;
   }
@@ -430,7 +460,7 @@ export class PlayerController {
       dYaw += rx * Math.abs(rx) * 1.3 * zoomK * dt;
       rangeMul *= Math.exp(-ry * Math.abs(ry) * 1.1 * dt * (this.zoom ? 0.3 : 1));
     }
-    if (!mouse && this.lock !== null) {
+    if (!mouse && (this.lock !== null || this.cubeLock !== null)) {
       const d = this.holdRange;
       this.lockYaw = clamp(this.lockYaw + dYaw, -0.6, 0.6);
       this.lockRange = clamp(this.lockRange + d * (rangeMul - 1), -d * 0.6, d * 0.6);
@@ -614,9 +644,13 @@ export class PlayerController {
       z = me.pos.z - Math.cos(this.yaw) * max;
     }
     this.assist = null;
-    const ft = this.assistOn || this.lock ? flightTimeFn(me) : null;
-    const tgt = ft ? this.assistTarget(hit, x, z, ft) : null;
-    if (tgt && ft) {
+    const ft = this.assistOn || this.lock || this.cubeLock ? flightTimeFn(me) : null;
+    const k = this.assistOn ? this.cubeLock?.cube : null;
+    const tgt = ft && !k ? this.assistTarget(hit, x, z, ft) : null;
+    if (k && ft) {
+      const lead = cubeLead(me, k, ft);
+      ({ x, z } = assistAim(x, z, k.x, k.z, lead.x, lead.z));
+    } else if (tgt && ft) {
       const lead = leadPoint(me, tgt, ft);
       const a = assistAim(x, z, tgt.renderPos.x, tgt.renderPos.z, lead.x, lead.z);
       x = a.x;

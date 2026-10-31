@@ -1,6 +1,7 @@
 import { CUBE, TUNGSTEN_MODES, type SignatureId } from '../skills/misc/TungstenModes';
 import type { Cube, CubeState, TungstenState } from '../skills/misc/TungstenRuntime';
 import type { Team } from '../core/types';
+import { cubeLockable } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
 
 export interface TungstenStatusLine {
@@ -178,6 +179,40 @@ export function minimapCubes(ships: readonly Ship[], team: Team): CubeMarker[] {
     for (const c of s.tungsten.cubes) {
       if (c.state === 'docked' || c.state === 'broken') continue;
       marks.push({ x: c.x, z: c.z, color: css(TUNGSTEN_MODES[c.mode].color), ally: s.team === team, size: c.scale });
+    }
+  }
+  return marks;
+}
+
+/** A screen marker over a cube: its mode, range and health. */
+export interface CubeLabel {
+  owner: Ship;
+  cube: Cube;
+  x: number;
+  /** Just above the cube's top face. */
+  y: number;
+  z: number;
+  label: string;
+  /** Health, 0..1. */
+  hp: number;
+  color: string;
+  ally: boolean;
+}
+
+/**
+ * Markers for cubes seen from `me`: enemy cubes that can be locked and shot, with their range, and your own and
+ * allied cubes while they are off the magnet. A broken cube has no health to show, and a docked one rides on its ship.
+ */
+export function cubeMarkers(ships: readonly Ship[], me: Ship, team: Team): CubeLabel[] {
+  const marks: CubeLabel[] = [];
+  for (const s of ships) {
+    if (!s.tungsten || !s.alive || s.withdrawn || s.mods.banished) continue;
+    const ally = s.team === team;
+    for (const c of s.tungsten.cubes) {
+      if (ally ? c.gone || c.state === 'docked' || c.state === 'broken' : !cubeLockable(c)) continue;
+      const name = `Cube · ${TUNGSTEN_MODES[c.mode].name}`;
+      const label = ally ? name : `${name} ${km(Math.hypot(c.x - me.pos.x, c.z - me.pos.z))}`;
+      marks.push({ owner: s, cube: c, x: c.x, y: c.y + (CUBE.edge / 2) * c.scale + 10, z: c.z, label, hp: Math.max(0, Math.min(1, c.hp / c.maxHp)), color: css(TUNGSTEN_MODES[c.mode].color), ally });
     }
   }
   return marks;

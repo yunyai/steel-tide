@@ -1,5 +1,7 @@
 import type { Team } from './types';
 import type { Ship } from '../ships/Ship';
+import type { Game } from './Game';
+import type { Cube } from '../skills/misc/TungstenRuntime';
 
 export const FORCED_DETECTION_RANGE = 500;
 export const NEARBY_DETECTION_RANGE = 1500;
@@ -56,4 +58,28 @@ export function contactVisible(target: Ship, team: Team): boolean {
 export function canTrack(observer: Ship, target: Ship): boolean {
   if (target.team === observer.team || !contactVisible(target, observer.team)) return false;
   return target.mods.lockRange <= 0 || Math.hypot(target.pos.x - observer.pos.x, target.pos.z - observer.pos.z) <= target.mods.lockRange || proximityContact(target, observer.team) === 'forced';
+}
+
+/** A Tungsten's cube as a target: the cube and the ship whose magnet holds it. */
+export interface CubeContact {
+  owner: Ship;
+  cube: Cube;
+}
+
+/** A cube shells can hit: out on the water, in flight, shielding or pinning a hull. Docked, broken, meteor and collapse cubes are not. */
+export function cubeLockable(c: Cube): boolean {
+  return !c.gone && (c.state === 'flying' || c.state === 'hover' || c.state === 'guard' || c.state === 'orbit' || c.state === 'pin');
+}
+
+/**
+ * Enemy cubes `team` can lock and shoot. A 128 m cube out on the water ignores smoke and concealment, so
+ * only its owner's presence counts.
+ */
+export function cubeTargets(game: Game, team: Team): CubeContact[] {
+  const out: CubeContact[] = [];
+  for (const owner of game.ships) {
+    if (!owner.tungsten || !owner.alive || owner.withdrawn || owner.mods.banished || owner.team === team) continue;
+    for (const cube of owner.tungsten.cubes) if (cubeLockable(cube)) out.push({ owner, cube });
+  }
+  return out;
 }
