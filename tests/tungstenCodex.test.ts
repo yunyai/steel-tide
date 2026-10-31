@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { cubeFirepower, cubeLoadout, tungstenCodexEntries } from '../src/ui/TungstenCodex';
-import { CUBE, SIGNATURE, TUNGSTEN_MODES } from '../src/skills/misc/TungstenModes';
+import { CODEX_NOTE, cubeFirepower, cubeLoadout, tungstenCodexEntries } from '../src/ui/TungstenCodex';
+import { CUBE, HIT, SIGNATURE, TUNGSTEN_MODES } from '../src/skills/misc/TungstenModes';
+import { SHIP_BY_ID } from '../src/data/ships';
 
 describe('Tungsten mode guide', () => {
   const tabs = tungstenCodexEntries();
@@ -12,14 +13,46 @@ describe('Tungsten mode guide', () => {
     expect(tabs.slice(0, 6).every((t) => !t.rainbow)).toBe(true);
   });
 
-  it("gives every mode its throw, passive, Signature and Meteor", () => {
+  it('gives every mode its throw, passive, Signature, Die face, Collapse, Meteor and Shield', () => {
     TUNGSTEN_MODES.forEach((m, i) => {
       const rows = tabs[i].rows;
-      expect(rows.map((r) => r.label)).toEqual(['Throw', 'Passive', `Signature · ${m.signature.name}`, 'Meteor']);
+      expect(rows.map((r) => r.label)).toEqual(['Throw', 'Passive', `Signature · ${m.signature.name}`, 'Die face', 'Collapse', 'Meteor', 'Shield']);
       expect(rows[0].text).toBe(m.hit);
       expect(rows[1].text).toBe(m.passive);
-      expect(rows[3].text).toBe(m.meteor);
+      expect(rows[3].text).toContain(m.die);
+      expect(rows[4].text).toBe(m.collapse);
+      expect(rows[5].text).toBe(m.meteor);
+      expect(rows.every((r) => r.text.length > 20)).toBe(true);
     });
+  });
+
+  it('quotes the real Die face and Collapse numbers', () => {
+    const row = (id: string, label: string) => tabs.find((t) => t.id === id)!.rows.find((r) => r.label === label)!.text;
+    const k = CUBE.die.strength;
+    expect(row('kinetic', 'Die face')).toContain(`+${HIT.kinetic.bonus * k * 100}%`);
+    expect(row('crush', 'Die face')).toContain(`${HIT.crush.stun * k} s stun`);
+    expect(row('shard', 'Die face')).toContain(`${HIT.shard.out * k} s`);
+    expect(row('tether', 'Die face')).toContain(`${HIT.tether.time * k} s`);
+    expect(row('mend', 'Die face')).toContain(`${HIT.mend.lifesteal * k * 100}%`);
+    // Rolling the cube's own mode fires every face.
+    expect(row('repel', 'Die face')).toContain('every face');
+    const T = CUBE.collapse.twist;
+    expect(row('kinetic', 'Collapse')).toContain(`${T.kinetic.drift} m/s`);
+    expect(row('crush', 'Collapse')).toContain(`${T.crush.pull}x`);
+    expect(row('shard', 'Collapse')).toContain(`${T.shard.fragments} fragments of ${T.shard.damage / 1000}k`);
+    expect(row('repel', 'Collapse')).toContain(`${T.repel.fling} m`);
+    expect(row('tether', 'Collapse')).toContain(`${T.tether.time} s`);
+    expect(row('mend', 'Collapse')).toContain(`${T.mend.share * 100}%`);
+  });
+
+  it('widens the Shield capture in Repel', () => {
+    const shield = (i: number) => tabs[i].rows[6].text;
+    expect(shield(0)).toContain(`${CUBE.guard.radius} m`);
+    expect(shield(3)).toContain(`${CUBE.guard.repelRadius} m`);
+  });
+
+  it('says the Die leaves the cube on the mode it rolls', () => {
+    expect(CODEX_NOTE).toMatch(/Loaded Die.*keeps/);
   });
 
   it('quotes the real Signature numbers', () => {
@@ -39,9 +72,20 @@ describe('Tungsten mode guide', () => {
 
   it('explains what Overdrive changes', () => {
     const rows = tabs[6].rows;
-    expect(rows.map((r) => r.label)).toEqual(['Cubes', 'Throw', 'Passive', 'Signature', 'Shield', 'Collapse', 'Meteor']);
+    expect(rows.map((r) => r.label)).toEqual(['Cubes', 'Throw', 'Passive', 'Signature', 'Die', 'Shield', 'Collapse', 'Meteor']);
     expect(rows.every((r) => r.text.length > 20)).toBe(true);
-    expect(rows[4].text).toContain(`${CUBE.orbit.time} s`);
+    expect(rows[0].text).toContain('halo');
+    expect(rows[4].text).toContain(`${CUBE.die.ring} m ring`);
+    expect(rows[5].text).toContain(`${CUBE.orbit.time} s`);
+    expect(rows[6].text).toContain("every mode's twist");
+  });
+});
+
+describe('Tungsten texts', () => {
+  it("speaks of a magnet's worth of throws, not a fixed four", () => {
+    const spec = SHIP_BY_ID.tungsten;
+    expect(spec.specialty).not.toContain('four throws');
+    expect(spec.specialty).toContain("a magnet's worth");
   });
 });
 

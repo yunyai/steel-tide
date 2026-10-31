@@ -124,8 +124,25 @@ export interface TungstenMode {
   /** One line each for the HUD and tooltips. */
   hit: string;
   passive: string;
+  /** What the Loaded Die does when it rolls this face. */
+  die: string;
+  /** The Collapse's twist in this mode. */
+  collapse: string;
   meteor: string;
 }
+
+/** Body-hit side effects, by mode. */
+export const HIT = {
+  kinetic: { bonus: 0.6, full: 3000 },
+  crush: { stun: 1, mark: 6 },
+  shard: { splash: 0.5, radius: 350, out: 4 },
+  repel: { knock: 250 },
+  tether: { time: 4, slow: 0.6, dps: 6000, leash: 500 },
+  mend: { lifesteal: 0.25, ally: 0.05, regen: 0.003 },
+} as const;
+
+const D = CUBE.die.strength;
+const T = CUBE.collapse.twist;
 
 export const TUNGSTEN_MODES: readonly TungstenMode[] = [
   {
@@ -133,6 +150,8 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
     signature: { id: 'ricochet', name: 'Ricochet+', radius: 2000 },
     hit: 'Flies 1.5x faster; hits gain up to +60% with distance flown.',
     passive: 'Ship +15% speed and acceleration; skill cooldowns -15%.',
+    die: `Hits up to +${HIT.kinetic.bonus * D * 100}% harder the farther it rolled.`,
+    collapse: `The hole drifts toward the nearest enemy in the pull at ${T.kinetic.drift} m/s.`,
     meteor: 'Bounces to the nearest enemy within 1.5 km for 40%; a second ring hits wider for 30%.',
   },
   {
@@ -140,6 +159,8 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
     signature: { id: 'pile', name: 'Pile Driver', radius: 2500 },
     hit: 'Stops on the first hull: +60% damage and a 1 s stun.',
     passive: 'Cube hits mark enemies for 6 s (+25% damage taken).',
+    die: `A ${HIT.crush.stun * D} s stun and a ${HIT.crush.mark * D} s mark on every hull in the blast.`,
+    collapse: `Pulls ${T.crush.pull}x as hard, silences the guns of hulls in the core and bursts ${T.crush.burst}x as hard.`,
     meteor: 'Survivors are stunned for 1.5 s.',
   },
   {
@@ -147,6 +168,8 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
     signature: { id: 'cone', name: 'Shrapnel Cone', radius: 2000 },
     hit: 'Shrapnel: 50% splash within 350 m and a turret knocked out.',
     passive: 'Enemies within 1 km of the cube scatter 25% wider.',
+    die: `Knocks out ${D} turrets on every hull in the blast for ${HIT.shard.out * D} s.`,
+    collapse: `Swallows enemy shells and missiles in the pull; the burst throws ${T.shard.fragments} fragments of ${T.shard.damage / 1000}k.`,
     meteor: 'Twelve fragment sub-impacts ring the crater.',
   },
   {
@@ -154,6 +177,8 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
     signature: { id: 'dash', name: 'Polarity Dash', radius: 1500 },
     hit: '-15% damage; knocks hulls 250 m aside. Wider Shield capture.',
     passive: 'Ship takes 12% less damage.',
+    die: `Flings hulls ${HIT.repel.knock * D * 1.5} m out and tears up enemy fire in the blast.`,
+    collapse: `The burst flings survivors ${T.repel.fling} m out and tears up enemy fire within ${T.repel.clear / 1000} km.`,
     meteor: 'Survivors are hurled 600 m outward.',
   },
   {
@@ -161,6 +186,8 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
     signature: { id: 'collide', name: 'Collide', radius: 1200 },
     hit: 'Chains hulls to the cube for 4 s: 40% slow and 6k a second.',
     passive: 'Enemies within 1 km of the cube sail 15% slower.',
+    die: `Chains every hull in the blast to the cube for ${HIT.tether.time * D} s.`,
+    collapse: `The drag outruns a fleeing hull, and the burst chains every hull in the pull for ${T.tether.time} s.`,
     meteor: 'Drags enemies within 2 km inward as it falls.',
   },
   {
@@ -168,6 +195,8 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
     signature: { id: 'sanctuary', name: 'Sanctuary', radius: 900 },
     hit: 'Heals the ship for 25% of cube damage; allies it passes heal 5%.',
     passive: 'Ship regenerates 0.3% of max HP a second.',
+    die: `The ship heals ${HIT.mend.lifesteal * D * 100}% of the blast's damage.`,
+    collapse: `${T.mend.share * 100}% of the core's damage heals the ship and allies within ${T.mend.radius / 1000} km, split evenly; the burst heals the ship ${T.mend.burst * 100}%.`,
     meteor: 'Leaves a 6 s field that heals allies 2% a second.',
   },
 ];
@@ -190,12 +219,3 @@ export const SIGNATURE = {
   sanctuary: { time: 6, heal: 0.03, taken: 0.6 },
 } as const;
 
-/** Body-hit side effects, by mode. */
-export const HIT = {
-  kinetic: { bonus: 0.6, full: 3000 },
-  crush: { stun: 1, mark: 6 },
-  shard: { splash: 0.5, radius: 350, out: 4 },
-  repel: { knock: 250 },
-  tether: { time: 4, slow: 0.6, dps: 6000, leash: 500 },
-  mend: { lifesteal: 0.25, ally: 0.05, regen: 0.003 },
-} as const;

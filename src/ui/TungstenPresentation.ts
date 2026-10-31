@@ -20,15 +20,26 @@ export interface TungstenGauge {
   low: boolean;
 }
 
-/** The panel over the Tungsten's hull bar: where the cube is, the magnet's energy, the cube's health and the Shield store. */
+/** A cube drawn on the card: its mode colour, filled bottom-up by health (0..1), ringed by the Shield store (0..1). */
+export interface TungstenGlyph {
+  color: string;
+  hp: number;
+  store: number;
+}
+
+/**
+ * The cube card over the Tungsten's hull bar: the cube's glyph, where it is, the throws the magnet holds, the cube's
+ * health and the Shield store. Every row always has something to show.
+ */
 export interface TungstenPanel {
   where: string;
-  energy: TungstenGauge;
+  glyph: TungstenGlyph;
+  /** In Overdrive, one glyph per mode in mode order, in place of the big one. */
+  glyphs: TungstenGlyph[];
+  /** One pip per throw a full magnet holds: `full` whole, the next `partial` filled. */
+  throws: { pips: number; full: number; partial: number; text: string; low: boolean };
   cube: TungstenGauge;
-  /** Shown while the Shield is up or holds damage. */
-  store: TungstenGauge | null;
-  /** In Overdrive, one health bar per cube, in mode order. */
-  cubes: { color: string; frac: number }[];
+  store: { frac: number; text: string };
 }
 
 /** What the HUD shows for a Tungsten: live Switch and Signature buttons, its status lines and its panel. */
@@ -46,7 +57,7 @@ export interface TungstenView {
 }
 
 const css = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
-const amount = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${Math.round(v / 1000)}k`);
+const amount = (v: number) => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : v > 0 ? `${Math.round(v / 1000)}k` : '0');
 /** Whole seconds left, without float dust turning 20 into 21. */
 const secs = (v: number) => Math.ceil(v - 1e-6);
 const km = (d: number) => `${(d / 1000).toFixed(1)} km`;
@@ -89,39 +100,37 @@ export function tungstenPresentation(t: TungstenState, time: number, x: number, 
 
 function panel(t: TungstenState, time: number, x: number, z: number): TungstenPanel {
   const c = primary(t);
-  const where = t.overdriveUntil > time ? overdriveWhere(t) : c.state === 'hover' || c.state === 'flying' ? `${PLACE[c.state]} · ${km(Math.hypot(c.x - x, c.z - z))}` : PLACE[c.state];
-
-  let energy: string;
-  if (t.overdriveUntil > time) energy = 'Overdrive · free throws';
-  else if (t.spent) {
-    const docked = c.state === 'docked';
-    const wait = secs((1 - t.energy) / (docked ? CUBE.energy.dockRegen : CUBE.energy.regen));
-    energy = docked ? `Spent · charging ${wait}s` : `Spent · dock or wait ${wait}s`;
-  } else {
-    // Any energy left buys a throw; the one that empties the magnet spends it.
-    const n = secs(t.energy / CUBE.shot.cost);
-    energy = `${n} throw${n === 1 ? '' : 's'}${t.energy < 1 ? ' · recharging' : ''}`;
-  }
   const free = t.overdriveUntil > time;
+  const where = free ? overdriveWhere(t) : c.state === 'hover' || c.state === 'flying' ? `${PLACE[c.state]} · ${km(Math.hypot(c.x - x, c.z - z))}` : PLACE[c.state];
 
+  const pips = Math.round(1 / CUBE.shot.cost);
+  let throws: TungstenPanel['throws'];
+  if (free) throws = { pips, full: pips, partial: 0, text: 'Overdrive · free throws', low: false };
+  else {
+    const held = Math.min(pips, t.energy / CUBE.shot.cost);
+    const full = Math.floor(held + 1e-9);
+    const partial = full < pips ? held - full : 0;
+    // A spent cube wakes on docking, so a spent one is always out: dock it, or wait for a full magnet.
+    // Otherwise any energy left buys a throw; the one that empties the magnet spends it.
+    const n = secs(t.energy / CUBE.shot.cost);
+    const text = t.spent ? `Spent · dock or wait ${secs((1 - t.energy) / CUBE.energy.regen)}s` : `${n} throw${n === 1 ? '' : 's'}${t.energy < 1 ? ' · recharging' : ''}`;
+    throws = { pips, full, partial, text, low: t.spent || t.energy < CUBE.shot.cost };
+  }
+
+  const health = (k: Cube | undefined) => (k && !k.gone && k.state !== 'broken' ? Math.max(0, Math.min(1, k.hp / k.maxHp)) : 0);
   const cube: TungstenGauge =
     c.state === 'broken'
       ? { frac: 1 - c.reform / CUBE.reform, text: `Re-forming ${secs(c.reform)}s`, low: true }
       : { frac: c.hp / c.maxHp, text: `${amount(c.hp)} / ${amount(c.maxHp)}`, low: c.hp / c.maxHp < 0.3 };
 
   // A store kept from Overdrive reads as full.
-  const cap = Math.max(t.charge, CUBE.chargeCap * (t.overdriveUntil > time ? CUBE.orbit.cap : 1));
-  const store = t.guardUntil > time || t.charge > 0 ? { frac: t.charge / cap, text: `${amount(t.charge)} / ${amount(cap)}`, low: false } : null;
+  const cap = Math.max(t.charge, CUBE.chargeCap * (free ? CUBE.orbit.cap : 1));
+  const fill = t.charge / cap;
+  const guard = t.guardUntil - time;
+  const store = { frac: fill, text: `${guard > 0 ? `Shield ${secs(guard)}s · ` : ''}${amount(t.charge)} / ${amount(cap)}` };
 
-  const cubes =
-    t.overdriveUntil > time
-      ? TUNGSTEN_MODES.map((m, i) => {
-          const k = t.cubes.find((o) => o.mode === i && !o.gone);
-          return { color: css(m.color), frac: k && k.state !== 'broken' ? k.hp / k.maxHp : 0 };
-        })
-      : [];
-
-  return { where, energy: { frac: t.energy, text: energy, low: !free && (t.spent || t.energy < CUBE.shot.cost) }, cube, store, cubes };
+  const glyphs = free ? TUNGSTEN_MODES.map((m, i) => ({ color: css(m.color), hp: health(t.cubes.find((o) => o.mode === i && !o.gone)), store: fill })) : [];
+  return { where, glyph: { color: css(TUNGSTEN_MODES[c.mode].color), hp: health(c), store: fill }, glyphs, throws, cube, store };
 }
 
 /** In Overdrive the six are equals: count them out, home and shattered rather than following one. */

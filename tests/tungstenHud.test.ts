@@ -79,72 +79,102 @@ describe('Tungsten HUD presentation', () => {
 
 const panel = (t: ReturnType<typeof tungsten>['t'], time: number) => tungstenPresentation(t, time, 0, 0).panel;
 
-describe('Tungsten HUD panel', () => {
-  it('shows a full magnet and a whole cube at rest', () => {
+describe('Tungsten HUD cube card', () => {
+  const hex = (i: number) => `#${TUNGSTEN_MODES[i].color.toString(16).padStart(6, '0')}`;
+
+  it('shows a whole cube, four full pips and an empty store at rest', () => {
     const { t, time } = tungsten();
     expect(panel(t, time)).toEqual({
       where: 'Docked',
-      energy: { frac: 1, text: '4 throws', low: false },
+      glyph: { color: hex(0), hp: 1, store: 0 },
+      glyphs: [],
+      throws: { pips: 4, full: 4, partial: 0, text: '4 throws', low: false },
       cube: { frac: 1, text: '2.5M / 2.5M', low: false },
-      store: null,
-      cubes: [],
+      store: { frac: 0, text: '0 / 1M' },
     });
   });
 
-  it('counts the throws left and says where the cube is', () => {
+  it('counts the throws left in pips and says where the cube is', () => {
     const { t, time } = tungsten();
     const c = t.cubes[0];
-    Object.assign(c, { state: 'hover', x: 1800, z: -1435, hp: 1.9e6 });
+    Object.assign(c, { state: 'hover', x: 1800, z: -1435, hp: 1.9e6, mode: 2 });
+    t.mode = 2;
     t.energy = 0.3;
-    expect(panel(t, time).where).toBe('Out · 2.3 km');
-    expect(panel(t, time).energy).toEqual({ frac: 0.3, text: '2 throws · recharging', low: false });
-    expect(panel(t, time).cube).toEqual({ frac: 0.76, text: '1.9M / 2.5M', low: false });
+    const p = panel(t, time);
+    expect(p.where).toBe('Out · 2.3 km');
+    expect(p.glyph).toEqual({ color: hex(2), hp: 0.76, store: 0 });
+    expect(p.throws).toMatchObject({ pips: 4, full: 1, text: '2 throws · recharging', low: false });
+    expect(p.throws.partial).toBeCloseTo(0.2);
+    expect(p.cube).toEqual({ frac: 0.76, text: '1.9M / 2.5M', low: false });
     c.state = 'flying';
     expect(panel(t, time).where).toBe('In flight · 2.3 km');
     t.energy = 0.2;
-    expect(panel(t, time).energy).toEqual({ frac: 0.2, text: '1 throw · recharging', low: true });
+    expect(panel(t, time).throws).toMatchObject({ full: 0, text: '1 throw · recharging', low: true });
   });
 
-  it('tells a spent cube how long it waits, docked or out', () => {
+  it('tells a spent cube how long it waits', () => {
     const { t, time } = tungsten();
     Object.assign(t.cubes[0], { state: 'hover', x: 900, z: 0 });
     t.spent = true;
     t.energy = 0.4;
-    expect(panel(t, time).energy).toEqual({ frac: 0.4, text: 'Spent · dock or wait 20s', low: true });
-    t.cubes[0].state = 'docked';
-    expect(panel(t, time).energy.text).toBe('Spent · charging 2s');
+    const p = panel(t, time).throws;
+    expect(p).toMatchObject({ pips: 4, full: 1, text: 'Spent · dock or wait 20s', low: true });
+    expect(p.partial).toBeCloseTo(0.6);
   });
 
-  it('marks free throws during Overdrive', () => {
-    const { t, time } = tungsten();
-    t.energy = 0.5;
-    t.overdriveUntil = time + 10;
-    expect(panel(t, time).energy.text).toBe('Overdrive · free throws');
-  });
-
-  it('counts down a shattered cube', () => {
+  it('counts down a shattered cube and empties its glyph', () => {
     const { t, time } = tungsten();
     Object.assign(t.cubes[0], { state: 'broken', reform: 9, hp: 0 });
-    expect(panel(t, time).cube).toEqual({ frac: 1 - 9 / CUBE.reform, text: 'Re-forming 9s', low: true });
-    expect(panel(t, time).where).toBe('Shattered');
+    const p = panel(t, time);
+    expect(p.cube).toEqual({ frac: 1 - 9 / CUBE.reform, text: 'Re-forming 9s', low: true });
+    expect(p.where).toBe('Shattered');
+    expect(p.glyph.hp).toBe(0);
   });
 
-  it('fills the Shield store against its cap, tripled in Overdrive', () => {
+  it('times the Shield on the store row and rings the glyph with the store', () => {
     const { t, time } = tungsten();
-    t.guardUntil = time + 3;
-    expect(panel(t, time).store).toEqual({ frac: 0, text: '0k / 1.0M', low: false });
-    t.charge = 250000;
-    expect(panel(t, time).store).toEqual({ frac: 0.25, text: '250k / 1.0M', low: false });
+    t.guardUntil = time + 5.5;
+    t.charge = 400000;
+    const p = panel(t, time);
+    expect(p.store).toEqual({ frac: 0.4, text: 'Shield 6s · 400k / 1M' });
+    expect(p.glyph.store).toBe(0.4);
     t.guardUntil = 0;
-    t.overdriveUntil = time + 5;
-    expect(panel(t, time).store!.frac).toBeCloseTo(0.25 / 3);
-    expect(panel(t, time).store!.text).toBe('250k / 3.0M');
+    expect(panel(t, time).store).toEqual({ frac: 0.4, text: '400k / 1M' });
   });
 
   it('shows a store kept from Overdrive as full, not over its cap', () => {
     const { t, time } = tungsten();
     t.charge = 1_100_000;
-    expect(panel(t, time).store).toEqual({ frac: 1, text: '1.1M / 1.1M', low: false });
+    expect(panel(t, time).store).toEqual({ frac: 1, text: '1.1M / 1.1M' });
+  });
+
+  it('never leaves the store row empty', () => {
+    const { s, t } = tungsten();
+    const time = s.game.time;
+    for (const state of ['docked', 'hover', 'flying', 'guard', 'broken', 'meteor', 'collapse', 'pin'] as const) {
+      t.cubes[0].state = state;
+      expect(panel(t, time).store.text).toMatch(/\/ 1M$/);
+    }
+    overdrive(s);
+    expect(panel(t, time).store.text).toBe('0 / 3M');
+  });
+
+  it('gives each of the six its own glyph in Overdrive, with free throws', () => {
+    const { s, t } = tungsten();
+    t.mode = t.cubes[0].mode = 2;
+    overdrive(s);
+    const time = s.game.time;
+    const shard = t.cubes.find((c) => c.mode === 2)!;
+    shard.hp = shard.maxHp / 4;
+    Object.assign(t.cubes.find((c) => c.mode === 4)!, { state: 'broken', reform: 5 });
+    t.charge = 1_500_000;
+    t.energy = 0.1;
+    const p = panel(t, time);
+    expect(p.glyphs.map((g) => g.color)).toEqual(TUNGSTEN_MODES.map((_, i) => hex(i)));
+    expect(p.glyphs.map((g) => g.hp)).toEqual([1, 1, 0.25, 1, 0, 1]);
+    expect(p.glyphs.every((g) => g.store === 0.5)).toBe(true);
+    expect(p.throws).toEqual({ pips: 4, full: 4, partial: 0, text: 'Overdrive · free throws', low: false });
+    expect(p.store).toEqual({ frac: 0.5, text: '1.5M / 3M' });
   });
 
   it('counts the Overdrive cubes out and home rather than following one of them', () => {
@@ -157,17 +187,6 @@ describe('Tungsten HUD panel', () => {
     expect(panel(t, time).where).toBe('Overdrive · 2 out · 4 home');
     Object.assign(t.cubes[0], { state: 'broken', reform: 5 });
     expect(panel(t, time).where).toBe('Overdrive · 2 out · 3 home · 1 shattered');
-  });
-
-  it('gives every Overdrive cube a health bar in its own colour', () => {
-    const { s, t } = tungsten();
-    t.mode = t.cubes[0].mode = 2;
-    overdrive(s);
-    const shard = t.cubes.find((c) => c.mode === 2)!;
-    shard.hp = shard.maxHp / 4;
-    const bars = panel(t, s.game.time).cubes;
-    expect(bars.map((b) => b.color)).toEqual(TUNGSTEN_MODES.map((m) => `#${m.color.toString(16).padStart(6, '0')}`));
-    expect(bars.map((b) => b.frac)).toEqual([1, 1, 0.25, 1, 1, 1]);
   });
 });
 

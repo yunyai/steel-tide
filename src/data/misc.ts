@@ -44,7 +44,7 @@ export const MISC: ShipSpec[] = [
   {
     id: 'tungsten', name: 'Tungsten', nation: 'lodestone', cls: 'TT', year: 2091,
     description: 'A magnet that learned to sail: a levitation dais set into the hull floats a 128-metre cube of tungsten etched with neon circuitry, turning slowly over the deck. She carries no guns. The cube is the weapon, the armour and the anchor.',
-    specialty: 'Cube titan, no guns. Fire hurls a 2.5M-HP tungsten cube through hulls, four throws to a full magnet; it blocks fire in six switchable modes. Singularity, meteor and a six-cube Overdrive.',
+    specialty: "Cube titan, no guns. Fire hurls a 2.5M-HP tungsten cube through hulls, a magnet's worth of throws at a time; it blocks fire in six switchable modes. Singularity, meteor and a six-cube Overdrive.",
     hp: 1600000, length: 400, beam: 80, draft: 15, freeboard: 14,
     maxSpeed: 30, accelTime: 42, turnRadius: 900, rudderTime: 13,
     armor: { belt: 300, deck: 180, bow: 70, stern: 70, superstructure: 70, turret: 380, citadelInner: 70, torpedoProtection: 0.55 },

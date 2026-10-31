@@ -31,6 +31,15 @@ const SIGNATURE_TEXT: Record<TungstenModeId, string> = {
   mend: `A ${km(TUNGSTEN_MODES[5].signature.radius)} dome at the cube for ${SIGNATURE.sanctuary.time} s: allies inside heal ${SIGNATURE.sanctuary.heal * 100}% a second and take ${Math.round((1 - SIGNATURE.sanctuary.taken) * 100)}% less damage.`,
 };
 
+const G = CUBE.guard;
+/** The Shield outside Overdrive, with the capture reach of the mode. */
+const shieldText = (reach: number) =>
+  `The cube guards the reticle side for ${G.time} s, capturing fire within ${reach} m into a store of up to ${CUBE.chargeCap / 1e6}M that rides the next cube hit. Hulls it touches take ${k(G.damage)} plus ${Math.round(G.store * 100)}% of the store.`;
+
+/** The guide's opening line. */
+export const CODEX_NOTE =
+  'Switch cycles the cube through six modes. Each changes what a throw does to a hull, the passive the ship carries, the Signature, the Die face, the Collapse and the Meteor. The Loaded Die keeps the cube on the mode it rolls. Overdrive runs all six at once.';
+
 /** The mode guide as data: six mode tabs, then Overdrive. */
 export function tungstenCodexEntries(): CodexTab[] {
   const modes: CodexTab[] = TUNGSTEN_MODES.map((m) => ({
@@ -43,7 +52,10 @@ export function tungstenCodexEntries(): CodexTab[] {
       { label: 'Throw', text: m.hit },
       { label: 'Passive', text: m.passive },
       { label: `Signature · ${m.signature.name}`, text: SIGNATURE_TEXT[m.id] },
+      { label: 'Die face', text: `${m.die} Rolled on a ${m.name} cube, it fires every face.` },
+      { label: 'Collapse', text: m.collapse },
       { label: 'Meteor', text: m.meteor },
+      { label: 'Shield', text: shieldText(m.id === 'repel' ? G.repelRadius : G.radius) },
     ],
   }));
   const O = CUBE.orbit;
@@ -54,12 +66,13 @@ export function tungstenCodexEntries(): CodexTab[] {
     color: '#f4f8ff',
     rainbow: true,
     rows: [
-      { label: 'Cubes', text: `For ${CUBE.overdrive.time} s five more cubes leave the magnet, one in each other mode, and wheel round the dais.` },
+      { label: 'Cubes', text: `For ${CUBE.overdrive.time} s five more cubes leave the magnet, one in each other mode. All six float as equals in a halo round the ship, and the dais stands empty.` },
       { label: 'Throw', text: `Throws are free and hurl all six abreast, ${CUBE.shot.spread} m apart, each with its own mode's hit.` },
       { label: 'Passive', text: "Every mode's passive is live at once." },
       { label: 'Signature', text: "Every cube fires its own mode's Signature from where it is." },
+      { label: 'Die', text: `All six roll, landing in a ${CUBE.die.ring} m ring round the reticle; each keeps its own mode and rolls its own face.` },
       { label: 'Shield', text: `All six orbit the ship for ${O.time} s, each capturing fire and battering hulls for ${k(O.damage)} plus ${Math.round(O.store * 100)}% of the store. The ship takes ${Math.round((1 - O.taken) * 100)}% less damage and the store holds ${(CUBE.chargeCap * O.cap) / 1e6}M.` },
-      { label: 'Collapse', text: `The six merge into one rainbow singularity, ${CUBE.collapse.merged}x as strong and ${CUBE.collapse.mergedRadius}x as wide.` },
+      { label: 'Collapse', text: `The six merge into one rainbow singularity, ${CUBE.collapse.merged}x as strong and ${CUBE.collapse.mergedRadius}x as wide, with every mode's twist.` },
       { label: 'Meteor', text: `Six meteors fall in a ${CUBE.meteor.ring} m ring round the reticle, each in its own mode for ${CUBE.meteor.share * 100}% of the damage.` },
     ],
   };
@@ -98,7 +111,7 @@ export function tungstenCodex(click: () => void): HTMLElement {
   });
   root.append(
     h('h3', {}, 'Mode guide'),
-    h('p', { class: 'arsenal-note' }, "Switch cycles the cube through six modes. Each changes what a throw does to a hull, the passive the ship carries, the Signature and the Meteor. Overdrive runs all six at once."),
+    h('p', { class: 'arsenal-note' }, CODEX_NOTE),
     chips,
     detail,
   );

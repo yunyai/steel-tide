@@ -110,6 +110,27 @@ interface SkillEl {
 const MAX_OFFSCREEN = 8;
 const v3 = new Vector3();
 
+/** An isometric cube glyph for the Tungsten card: filled bottom-up by health, ringed in gold by the Shield store. */
+function cubeGlyph(parent: HTMLElement, size: 'big' | 'mini'): HTMLElement {
+  const g = el('div', `tp-glyph ${size}`, parent);
+  g.innerHTML =
+    '<i class="ring"></i><b class="fill"></b><svg viewBox="0 0 100 100" aria-hidden="true">' +
+    '<path class="top" d="M50 2 92 26 50 50 8 26Z"/><path class="side" d="M50 50 92 26 92 74 50 98Z"/>' +
+    '<path class="edge" d="M50 2 92 26 92 74 50 98 8 74 8 26Z M50 50 50 98 M50 50 92 26 M50 50 8 26"/></svg>';
+  return g;
+}
+
+function setVar(e: HTMLElement, name: string, value: string): void {
+  if (e.style.getPropertyValue(name) !== value) e.style.setProperty(name, value);
+}
+
+function paintGlyph(e: HTMLElement, g: { color: string; hp: number; store: number }): void {
+  setVar(e, '--c', g.color);
+  setVar(e, '--hp', g.hp.toFixed(3));
+  setVar(e, '--store', g.store.toFixed(3));
+  e.classList.toggle('empty', g.hp <= 0);
+}
+
 export class HUD {
   readonly root: HTMLElement;
   private team: Team;
@@ -131,7 +152,15 @@ export class HUD {
   private slotEls: { root: HTMLElement; bar: HTMLElement; info: HTMLElement }[] = [];
   /** The Tungsten's view this frame, shared by its panel, status lines and skill buttons. */
   private tungsten: TungstenView | null = null;
-  private tungstenEls: { root: HTMLElement; mode: HTMLElement; where: HTMLElement; gauges: Record<'energy' | 'cube' | 'store', { root: HTMLElement; fill: HTMLElement; text: HTMLElement }>; cubes: HTMLElement[] } | null = null;
+  private tungstenEls: {
+    root: HTMLElement;
+    mode: HTMLElement;
+    where: HTMLElement;
+    glyph: HTMLElement;
+    minis: HTMLElement[];
+    throws: { root: HTMLElement; pips: HTMLElement; text: HTMLElement };
+    gauges: Record<'cube' | 'store', { root: HTMLElement; fill: HTMLElement; text: HTMLElement }>;
+  } | null = null;
   private skillEls: SkillEl[] = [];
   private consEls: SkillEl[] = [];
   private vectorEls: {root:HTMLElement;t:HTMLElement;count:HTMLElement;lastActive?:number;wasReady:boolean}[] = [];
@@ -285,21 +314,29 @@ export class HUD {
         const item=el('div','architect-slot',battery);item.innerHTML=`<b>${i+1}</b><em></em><span>DOCK</span><i></i>`;this.moduleEls.push(item);
       }
     }
-    // Tungsten: the cube's whereabouts, the magnet's energy, the cube's health and the Shield store.
+    // Tungsten's cube card: the cube's glyph (six in Overdrive), where it is, the throws, its health and the Shield store.
     if (me.tungsten) {
       const root = el('div', 'tungsten-panel', ck);
+      const art = el('div', 'tp-art', root);
+      const glyph = cubeGlyph(art, 'big');
+      const row6 = el('div', 'tp-minis', art);
+      const minis = Array.from({ length: 6 }, () => cubeGlyph(row6, 'mini'));
       const head = el('div', 'tp-head', root);
       const mode = el('b', '', head);
       const where = el('span', '', head);
-      const gauge = (key: string, label: string) => {
+      const row = (key: string, label: string) => {
         const g = el('div', `tp-gauge ${key}`, root);
         el('span', 'tp-label', g).textContent = label;
-        const text = el('span', 'num', g);
-        return { root: g, fill: el('i', '', el('div', 'tp-bar', g)), text };
+        return { root: g, text: el('span', 'num', g) };
       };
-      const gauges = { energy: gauge('energy', 'Energy'), cube: gauge('cube', 'Cube'), store: gauge('store', 'Store') };
-      const row = el('div', 'tp-cubes', gauges.cube.root);
-      this.tungstenEls = { root, mode, where, gauges, cubes: Array.from({ length: 6 }, () => el('i', '', row)) };
+      const t = row('throws', 'Throws');
+      const throws = { ...t, pips: el('div', 'tp-pips', t.root) };
+      const gauge = (key: string, label: string) => {
+        const g = row(key, label);
+        return { ...g, fill: el('i', '', el('div', 'tp-bar', g.root)) };
+      };
+      const gauges = { cube: gauge('cube', 'Cube'), store: gauge('store', 'Store') };
+      this.tungstenEls = { root, mode, where, glyph, minis, throws, gauges };
     }
     const nb = el('div', 'namebar', ck);
     el('span', 'cls', nb).innerHTML = classIcon(me.spec.cls);
@@ -1056,22 +1093,24 @@ export class HUD {
     if (els.root.style.getPropertyValue('--mode') !== t.accent) els.root.style.setProperty('--mode', t.accent);
     setText(els.mode, t.switchLabel);
     setText(els.where, v.where);
-    for (const key of ['energy', 'cube', 'store'] as const) {
-      const g = els.gauges[key];
-      const value = v[key];
-      g.root.hidden = !value;
-      if (!value) continue;
-      g.root.classList.toggle('low', value.low);
-      setWidth(g.fill, value.frac);
-      setText(g.text, value.text);
-    }
-    els.root.classList.toggle('overdrive', v.cubes.length > 0);
-    v.cubes.forEach((c, i) => {
-      const bar = els.cubes[i];
-      if (bar.style.getPropertyValue('--type') !== c.color) bar.style.setProperty('--type', c.color);
-      const f = `${Math.max(0, Math.min(1, c.frac))}`;
-      if (bar.style.getPropertyValue('--health') !== f) bar.style.setProperty('--health', f);
-    });
+    els.root.classList.toggle('overdrive', v.glyphs.length > 0);
+    paintGlyph(els.glyph, v.glyph);
+    v.glyphs.forEach((g, i) => paintGlyph(els.minis[i], g));
+
+    const w = v.throws;
+    const pips = els.throws.pips;
+    while (pips.childElementCount < w.pips) el('i', '', pips);
+    while (pips.childElementCount > w.pips) pips.lastElementChild!.remove();
+    Array.from(pips.children).forEach((pip, i) => setVar(pip as HTMLElement, '--fill', `${i < w.full ? 1 : i === w.full ? w.partial.toFixed(2) : 0}`));
+    els.throws.root.classList.toggle('low', w.low);
+    setText(els.throws.text, w.text);
+
+    const { cube, store } = els.gauges;
+    cube.root.classList.toggle('low', v.cube.low);
+    setWidth(cube.fill, v.cube.frac);
+    setText(cube.text, v.cube.text);
+    setWidth(store.fill, v.store.frac);
+    setText(store.text, v.store.text);
   }
 
   private updateMarkers(): void {
