@@ -314,13 +314,18 @@ export class HUD {
         const item=el('div','architect-slot',battery);item.innerHTML=`<b>${i+1}</b><em></em><span>DOCK</span><i></i>`;this.moduleEls.push(item);
       }
     }
-    // Tungsten's cube card: the cube's glyph (six in Overdrive), where it is, the throws, its health and the Shield store.
+    // Tungsten's cube card: the cube's glyph (ringed by five in Overdrive), where it is, the throws, its health and the Shield store.
     if (me.tungsten) {
       const root = el('div', 'tungsten-panel', ck);
       const art = el('div', 'tp-art', root);
       const glyph = cubeGlyph(art, 'big');
-      const row6 = el('div', 'tp-minis', art);
-      const minis = Array.from({ length: 6 }, () => cubeGlyph(row6, 'mini'));
+      const ring = el('div', 'tp-minis', art);
+      // The five round the central cube, a pentagon from the top.
+      const minis = Array.from({ length: 5 }, (_, i) => {
+        const m = cubeGlyph(ring, 'mini');
+        m.style.setProperty('--a', `${i * 72}deg`);
+        return m;
+      });
       const head = el('div', 'tp-head', root);
       const mode = el('b', '', head);
       const where = el('span', '', head);

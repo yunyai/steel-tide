@@ -36,13 +36,22 @@ describe('Tungsten HUD presentation', () => {
     expect(tungstenPresentation(t, time, 0, 0).panel.where).toBe('Pinning a hull');
   });
 
-  it('shows every mode at once during Overdrive', () => {
-    const { t, time } = tungsten();
+  it('labels Switch with the central cube during Overdrive, and Signature with every mode', () => {
+    const { s, t } = tungsten();
+    overdrive(s);
+    const time = s.game.time;
     t.overdriveUntil = time + 19.2;
-    const view = tungstenPresentation(t, time, 0, 0);
-    expect(view.switchLabel).toBe('ALL');
+    let view = tungstenPresentation(t, time, 0, 0);
+    expect(view.switchLabel).toBe('KINETIC');
+    expect(view.switchTitle).toBe('Central: Kinetic. Tap to swap in the Crush cube.');
     expect(view.signatureLabel).toBe('ALL');
     expect(lines(view)).toContain('Overdrive · all modes · 20s');
+    // Swaps skip a cube that is out.
+    Object.assign(t.cubes.find((c) => c.mode === 1)!, { state: 'hover' });
+    expect(tungstenPresentation(t, time, 0, 0).switchTitle).toBe('Central: Kinetic. Tap to swap in the Shard cube.');
+    t.cubes[0].state = 'hover';
+    view = tungstenPresentation(t, time, 0, 0);
+    expect(view.switchTitle).toBe('Central: Kinetic. Dock the central cube to swap it.');
   });
 
   it('leaves the cube and the store to the panel', () => {
@@ -159,7 +168,7 @@ describe('Tungsten HUD cube card', () => {
     expect(panel(t, time).store.text).toBe('0 / 3M');
   });
 
-  it('gives each of the six its own glyph in Overdrive, with free throws', () => {
+  it('shows the central cube big and the five round it in Overdrive, with free throws', () => {
     const { s, t } = tungsten();
     t.mode = t.cubes[0].mode = 2;
     overdrive(s);
@@ -170,8 +179,10 @@ describe('Tungsten HUD cube card', () => {
     t.charge = 1_500_000;
     t.energy = 0.1;
     const p = panel(t, time);
-    expect(p.glyphs.map((g) => g.color)).toEqual(TUNGSTEN_MODES.map((_, i) => hex(i)));
-    expect(p.glyphs.map((g) => g.hp)).toEqual([1, 1, 0.25, 1, 0, 1]);
+    expect(p.glyph).toEqual({ color: hex(2), hp: 0.25, store: 0.5 });
+    // The ring in mode order, after the central cube's mode.
+    expect(p.glyphs.map((g) => g.color)).toEqual([3, 4, 5, 0, 1].map(hex));
+    expect(p.glyphs.map((g) => g.hp)).toEqual([1, 0, 1, 1, 1]);
     expect(p.glyphs.every((g) => g.store === 0.5)).toBe(true);
     expect(p.throws).toEqual({ pips: 4, full: 4, partial: 0, text: 'Overdrive · free throws', low: false });
     expect(p.store).toEqual({ frac: 0.5, text: '1.5M / 3M' });

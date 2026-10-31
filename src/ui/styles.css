@@ -4123,11 +4123,14 @@ select {
 .tp-glyph svg .edge { fill:none; stroke:var(--c); stroke-width:5; stroke-linejoin:round; filter:drop-shadow(0 0 3px var(--c)); }
 .tp-glyph.empty svg .edge { stroke-dasharray:9 7; opacity:.6; filter:none; }
 .tp-minis { display:none; }
-.tungsten-panel.overdrive .tp-glyph.big { display:none; }
-.tungsten-panel.overdrive .tp-minis { position:absolute; inset:0; display:grid; grid-template-columns:repeat(3,14px); grid-template-rows:repeat(2,20px); gap:2px 0; place-content:center; }
-.tp-glyph.mini { width:14px; height:20px; }
+/* Overdrive: the central cube shrinks to the middle and the five ring it in a pentagon. */
+.tungsten-panel.overdrive .tp-art { width:50px; height:50px; }
+.tungsten-panel.overdrive .tp-glyph.big { position:absolute; left:14px; top:14px; width:22px; height:22px; }
+.tungsten-panel.overdrive .tp-minis { position:absolute; inset:0; display:block; }
+.tungsten-panel.overdrive .tp-minis .tp-glyph.mini { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(var(--a)) translateY(-19px) rotate(calc(-1 * var(--a))); }
+.tp-glyph.mini { width:11px; height:15px; }
 .tp-glyph.mini .ring { display:none; }
-.tp-glyph.mini .fill, .tp-glyph.mini svg { inset:3px 0; width:100%; height:14px; }
+.tp-glyph.mini .fill, .tp-glyph.mini svg { inset:2px 0; width:100%; height:11px; }
 .tp-glyph.mini svg .edge { stroke-width:7; }
 @media(max-width:1350px) { .tungsten-panel { grid-template-columns:auto minmax(80px,auto) repeat(3,minmax(0,1fr)); gap:4px 8px; } }
 

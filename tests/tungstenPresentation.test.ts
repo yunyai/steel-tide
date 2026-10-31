@@ -468,6 +468,32 @@ describe('Tungsten cube effects', () => {
 });
 
 describe('Tungsten throw effects', () => {
+  it('swings a swapping ring cube wide of the central one, so they never pass through each other', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    const t = s.tungsten!;
+    cast(s, OVERDRIVE);
+    play(g, fx, 0.5, [s]);
+    const out = t.cubes[0];
+    cast(s, SWITCH);
+    const into = t.cubes[0];
+    expect(into).not.toBe(out);
+    let closest = Infinity;
+    for (let i = 0; i < 60 && (out.state === 'flying' || into.state === 'flying'); i++) {
+      play(g, fx, 1 / 60, [s]);
+      fx.prepare(0, 720);
+      const a = scene.getObjectByName(`tungsten-free-cube-${s.id}:${out.id}`),
+        b = scene.getObjectByName(`tungsten-free-cube-${s.id}:${into.id}`);
+      if (a?.visible && b?.visible) closest = Math.min(closest, a.position.distanceTo(b.position));
+    }
+    expect(closest).toBeLessThan(Infinity);
+    // Clear of each other's corners, however they are turned.
+    expect(closest).toBeGreaterThan(CUBE.edge * Math.SQRT2);
+    fx.dispose();
+  });
+
   it('dims a spent cube to a sputter where it sank', () => {
     const g = emptyGame('open', 7, 'freeplay');
     const s = place(g, 'tungsten', 0, 0, 0);

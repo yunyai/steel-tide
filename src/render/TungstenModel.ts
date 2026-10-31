@@ -81,7 +81,7 @@ function modeWheel(u: number, out: Color): Color {
  */
 export class TungstenModel {
   readonly root = new Group();
-  /** Docked cubes by slot: 0 floats over the dais (in the halo with the rest during Overdrive), 1..5 the Overdrive halo. */
+  /** Docked cubes by slot: 0 floats over the dais, 1..5 the Overdrive pentagon round it. */
   readonly cubes: { mesh: Mesh; material: MeshStandardMaterial; u: CubeSkinUniforms; sweep: ModeSweep; present: boolean; since: number; mode: number }[] = [];
   private owned: BufferGeometry[] = [];
   private metal = new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.78, roughness: 0.36 });
@@ -220,8 +220,8 @@ export class TungstenModel {
       const c = over ? modeWheel((anim * 0.9 + i * 2) % 6, tmpColor2) : tmpColor2.copy(base);
       m.color.copy(c).multiplyScalar(power * (0.55 + 0.9 * pulse * pulse));
     });
-    // The column stands only while a cube floats over the dais; in Overdrive the dais stands empty, feeding the halo.
-    const held = !over && (!lead || lead.state === 'docked');
+    // The column stands only while a cube floats over the dais.
+    const held = !lead || lead.state === 'docked';
     const column = over ? modeWheel((anim * 0.6) % 6, tmpColor2) : tmpColor2.copy(base);
     this.column.color.copy(column).multiplyScalar(power * (held ? 0.16 + (this.reduce ? 0 : 0.05 * Math.sin(anim * 3)) : 0.04));
     // The veins carry the mode colour; in Overdrive they walk round all six.
@@ -248,9 +248,9 @@ export class TungstenModel {
       if (!v.mesh.visible) continue;
       // It turns on the sim's clock (see dockPose); bobbing and rocking are drawing only.
       const y = LIFT + (this.reduce ? 0 : Math.sin(anim * 1.1 + slot * 1.7) * 2.5);
-      if (slot === 0 && !over) v.mesh.position.set(0, y, 0);
+      if (slot === 0) v.mesh.position.set(0, y, 0);
       else {
-        // Matches dockPoint: local x forward, z starboard. In Overdrive all six share the halo.
+        // Matches dockPoint: local x forward, z starboard; the five wheel round the dais in a pentagon.
         const a = haloAngle(slot, now);
         v.mesh.position.set(Math.cos(a) * CUBE.ringRadius, y + CUBE.ringLift, Math.sin(a) * CUBE.ringRadius);
       }

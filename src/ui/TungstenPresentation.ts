@@ -1,5 +1,5 @@
 import { CUBE, TUNGSTEN_MODES, type SignatureId } from '../skills/misc/TungstenModes';
-import type { Cube, CubeState, TungstenState } from '../skills/misc/TungstenRuntime';
+import { swapCandidate, type Cube, type CubeState, type TungstenState } from '../skills/misc/TungstenRuntime';
 import type { Team } from '../core/types';
 import { cubeLockable } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
@@ -34,7 +34,7 @@ export interface TungstenGlyph {
 export interface TungstenPanel {
   where: string;
   glyph: TungstenGlyph;
-  /** In Overdrive, one glyph per mode in mode order, in place of the big one. */
+  /** In Overdrive, the five ring cubes round the central one, in mode order from the central cube's. */
   glyphs: TungstenGlyph[];
   /** One pip per throw a full magnet holds: `full` whole, the next `partial` filled. */
   throws: { pips: number; full: number; partial: number; text: string; low: boolean };
@@ -88,14 +88,23 @@ export function tungstenPresentation(t: TungstenState, time: number, x: number, 
 
   const next = TUNGSTEN_MODES[(t.mode + 1) % TUNGSTEN_MODES.length];
   return {
-    switchLabel: overdrive > 0 ? 'ALL' : mode.name.toUpperCase(),
-    switchTitle: overdrive > 0 ? 'Every mode is active during Overdrive.' : `${mode.name} now; tap for ${next.name}.\nThrow: ${mode.hit}\nPassive: ${mode.passive}`,
+    switchLabel: mode.name.toUpperCase(),
+    switchTitle: overdrive > 0 ? `Central: ${mode.name}. ${swapLine(t)}` : `${mode.name} now; tap for ${next.name}.\nThrow: ${mode.hit}\nPassive: ${mode.passive}`,
     signatureLabel: overdrive > 0 ? 'ALL' : sig.id.toUpperCase(),
     signatureTitle: overdrive > 0 ? "Every cube fires its own mode's move." : `Now ${sig.name}: ${REACH[sig.id](km(sig.radius))}.`,
     accent: css(mode.color),
     status,
     panel: panel(t, time, x, z),
   };
+}
+
+/** What Switch does in Overdrive: swap a docked ring cube onto the dais. */
+function swapLine(t: TungstenState): string {
+  const c = t.cubes[0];
+  if (c.state === 'broken') return 'It is re-forming.';
+  if (c.state !== 'docked') return 'Dock the central cube to swap it.';
+  const n = swapCandidate(t);
+  return n ? `Tap to swap in the ${TUNGSTEN_MODES[n.mode].name} cube.` : 'No other cube is docked to swap in.';
 }
 
 function panel(t: TungstenState, time: number, x: number, z: number): TungstenPanel {
@@ -129,7 +138,8 @@ function panel(t: TungstenState, time: number, x: number, z: number): TungstenPa
   const guard = t.guardUntil - time;
   const store = { frac: fill, text: `${guard > 0 ? `Shield ${secs(guard)}s · ` : ''}${amount(t.charge)} / ${amount(cap)}` };
 
-  const glyphs = free ? TUNGSTEN_MODES.map((m, i) => ({ color: css(m.color), hp: health(t.cubes.find((o) => o.mode === i && !o.gone)), store: fill })) : [];
+  const ring = [1, 2, 3, 4, 5].map((k) => (c.mode + k) % TUNGSTEN_MODES.length);
+  const glyphs = free ? ring.map((m) => ({ color: css(TUNGSTEN_MODES[m].color), hp: health(t.cubes.find((o) => o.mode === m && !o.gone)), store: fill })) : [];
   return { where, glyph: { color: css(TUNGSTEN_MODES[c.mode].color), hp: health(c), store: fill }, glyphs, throws, cube, store };
 }
 

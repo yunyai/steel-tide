@@ -11,10 +11,12 @@ export const CUBE = {
   reform: 12,
   /** Docked repair per second, as a fraction of max HP. */
   dockRepair: 0.02,
-  /** Halo of all six docked cubes during Overdrive, wheeling slowly round the ship (rad/s); the dais stands empty. */
+  /** Overdrive's pentagon halo of five docked cubes round the central one on the dais, wheeling slowly (rad/s). */
   ringRadius: 240,
   ringLift: 100,
   ringSpin: 0.15,
+  /** Speed (m/s) at which Switch swaps the central cube with a ring cube in Overdrive. */
+  swapSpeed: 700,
   dock: { speed: 1600, damage: 50000, heal: 0.06, dealtHeal: 0.2, cubeRepair: 0.15 },
   lunge: { range: 4000, speed: 1500, damage: 60000, taken: 0.6, minDistance: 300 },
   /**
@@ -102,8 +104,8 @@ export const CUBE = {
 
 /** Height of a docked cube's centre above the waterline: it floats `CUBE.float` over the dais on the deck. */
 export const dockLift = (spec: { freeboard: number }) => spec.freeboard + CUBE.float + CUBE.edge / 2;
-/** Bearing of halo slot `slot` (0..5) in hull space at time `time`: six evenly spaced, wheeling together. */
-export const haloAngle = (slot: number, time: number) => (slot / 6) * Math.PI * 2 + time * CUBE.ringSpin;
+/** Bearing of halo slot `slot` (1..5) in hull space at time `time`: a pentagon round the dais, wheeling together. */
+export const haloAngle = (slot: number, time: number) => ((slot - 1) / 5) * Math.PI * 2 + time * CUBE.ringSpin;
 
 export type TungstenModeId = 'kinetic' | 'crush' | 'shard' | 'repel' | 'tether' | 'mend';
 export type SignatureId = 'ricochet' | 'pile' | 'cone' | 'dash' | 'collide' | 'sanctuary';

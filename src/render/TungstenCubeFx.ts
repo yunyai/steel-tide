@@ -95,6 +95,8 @@ const DIE_SHOW = 1.6;
 /** Seconds a landed die takes to tip onto its face, and how long its six colours hold before fading. */
 const DIE_SETTLE = 0.35;
 const DIE_HOLD = 0.9;
+/** How far (m) a cube flying out to the Overdrive ring bows sideways mid-flight: clear of a swapping cube's corners. */
+const SWAP_BOW = 190;
 const H = CUBE.edge / 2;
 const TETHER = modeOf('tether');
 const tint2 = new Color();
@@ -506,6 +508,18 @@ export class TungstenCubeFx {
       const lift = pileLift(c) + (ult?.lift ?? 0);
       const size = CUBE.edge * c.scale * (ult?.size ?? 1);
       v.mesh.visible = size > 0.5;
+      // A cube flying out to the Overdrive ring bows aside, so a cube swapping onto the dais never passes through it.
+      const P = c.path;
+      if (P?.kind === 'home' && c.slot > 0 && overdriveOn(s) && !this.paint.reduce) {
+        const dx = P.tx - c.x,
+          dz = P.tz - c.z,
+          d = Math.hypot(dx, dz);
+        if (d > 1) {
+          const bow = SWAP_BOW * Math.sin(Math.PI * clamp01(c.flown / Math.max(1, c.flown + Math.hypot(d, P.ty - c.y))));
+          p.x -= (dz / d) * bow;
+          p.z += (dx / d) * bow;
+        }
+      }
       v.mesh.position.set(p.x, p.y + bob + lift + (this.paint.reduce ? 0 : dieHop(c)), p.z);
       v.mesh.scale.setScalar(Math.max(0.01, size));
       if (v.settleAt >= 0) {
@@ -677,17 +691,8 @@ export class TungstenCubeFx {
     const tips = this.hornTips(s);
     const lead = t.cubes[0];
     const mode = modeColor(t.mode);
-    // In Overdrive the dais stands empty: each horn feeds the halo cubes nearest it instead.
-    if (seen && overdriveOn(s)) {
-      for (const c of t.cubes) {
-        if (c.state !== 'docked' || hash01(c.id * 17, Math.floor(now * 9)) > 0.6) continue;
-        const p = this.renderPos(c, this.v);
-        const tip = this.nearestTip(tips, p.x, p.z);
-        this.paint.arc(tip.x, tip.y, tip.z, p.x, p.y - H, p.z, c.id * 97, hot(modeColor(c.mode), 2.2), 0.8, 1.6, 8, 10);
-      }
-    }
     // Idle crackle from the horn tips up to the floating cube's base; livelier as the Shield store fills.
-    else if (seen && lead?.state === 'docked') {
+    if (seen && lead?.state === 'docked') {
       const base = dockLift(s.spec) - H;
       const charge = t.charge / CUBE.chargeCap;
       HORN_TIPS.forEach((h, i) => {
@@ -699,6 +704,26 @@ export class TungstenCubeFx {
         const tip = tips[i];
         this.paint.arc(tip.x, tip.y, tip.z, foot.x, foot.y, foot.z, s.id * 97 + i, hot(mode, 2.2), 0.8, 1.6, 3.5, 6);
       });
+    }
+    // In Overdrive the central cube feeds the five in its halo; with it away, the horn nearest each feeds it.
+    if (seen && overdriveOn(s)) {
+      const hub = lead?.state === 'docked' ? this.renderPos(lead, this.v2) : null;
+      for (const c of t.cubes) {
+        if (c === lead || c.state !== 'docked' || hash01(c.id * 17, Math.floor(now * 9)) > 0.6) continue;
+        const p = this.renderPos(c, this.v);
+        if (hub) {
+          // Face to face, not centre to centre.
+          const d = Math.max(1, Math.hypot(p.x - hub.x, p.y - hub.y, p.z - hub.z)),
+            k = H / d;
+          const ux = (p.x - hub.x) * k,
+            uy = (p.y - hub.y) * k,
+            uz = (p.z - hub.z) * k;
+          this.paint.arc(hub.x + ux, hub.y + uy, hub.z + uz, p.x - ux, p.y - uy, p.z - uz, c.id * 97, hot(modeColor(c.mode), 2.2), 0.8, 1.6, 8, 10);
+        } else {
+          const tip = this.nearestTip(tips, p.x, p.z);
+          this.paint.arc(tip.x, tip.y, tip.z, p.x, p.y - H, p.z, c.id * 97, hot(modeColor(c.mode), 2.2), 0.8, 1.6, 8, 10);
+        }
+      }
     }
     // Shield: field lines from the crown to each guarding cube, and the capture shimmer around it.
     for (const c of t.cubes) {

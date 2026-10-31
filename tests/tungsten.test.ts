@@ -1084,7 +1084,6 @@ describe('Overdrive', () => {
     run(g, 0.05);
     expect(me.mods.speedMul).toBeCloseTo(1.15);
     expect(me.mods.damageTakenMul).toBeCloseTo(0.88);
-    expect(me.activateSkill(E)).toBe(false);
   });
   it('throws every cube abreast for free, and sends the extras home when it ends', () => {
     const { g, me, foe, t } = duel();
@@ -1179,41 +1178,92 @@ describe('Overdrive', () => {
     run(g, 3);
     expect(t.cubes.some((c) => c.state === 'orbit')).toBe(false);
   });
-  it('floats all six cubes in one halo with the dais empty, lifting the first cube rather than snapping it', () => {
+  it('keeps the central cube on the dais and floats the five in a pentagon round it', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 4000;
-    const dais = { x: t.cubes[0].x, y: t.cubes[0].y, z: t.cubes[0].z };
     me.meter = 1;
     me.activateSkill(B);
     g.step(1 / 60);
-    // The first cube rises from the dais to its place in the halo.
-    expect(t.cubes[0].state).toBe('flying');
-    expect(gap(t.cubes[0], dais)).toBeLessThan(80);
-    run(g, 1);
+    // The central cube never leaves the dais for the halo.
+    expect(t.cubes[0].state).toBe('docked');
+    run(g, 0.5);
     expect(t.cubes.every((c) => c.state === 'docked')).toBe(true);
-    const lift = dockLift(me.spec) + CUBE.ringLift;
-    for (const c of t.cubes) {
+    expect(gap(t.cubes[0], me.pos)).toBeLessThan(1);
+    expect(t.cubes[0].y).toBeCloseTo(dockLift(me.spec), 0);
+    const ring = t.cubes.slice(1);
+    for (const c of ring) {
       expect(gap(c, me.pos)).toBeCloseTo(CUBE.ringRadius, 0);
-      expect(c.y).toBeCloseTo(lift, 0);
+      expect(c.y).toBeCloseTo(dockLift(me.spec) + CUBE.ringLift, 0);
     }
-    // Evenly spaced: neighbours one sixth of the ring apart.
-    const angles = t.cubes.map((c) => Math.atan2(c.z - me.pos.z, c.x - me.pos.x)).sort((a, b) => a - b);
-    for (let i = 1; i < 6; i++) expect(angles[i] - angles[i - 1]).toBeCloseTo(Math.PI / 3, 2);
+    // A pentagon: neighbours one fifth of the ring apart.
+    const angles = ring.map((c) => Math.atan2(c.z - me.pos.z, c.x - me.pos.x)).sort((a, b) => a - b);
+    for (let i = 1; i < 5; i++) expect(angles[i] - angles[i - 1]).toBeCloseTo((Math.PI * 2) / 5, 2);
   });
-  it('flies the first cube back to the dais when Overdrive ends and dissolves the rest', () => {
+  it('swaps the central cube with the next docked ring cube on Switch', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 4000;
     me.meter = 1;
     me.activateSkill(B);
+    run(g, 0.5);
+    const old = t.cubes[0],
+      crush = t.cubes.find((c) => c.mode === modeIndex('crush'))!;
+    const slot = crush.slot;
+    expect(me.activateSkill(E), me.skillFailure).toBe(true);
+    expect(t.cubes[0]).toBe(crush);
+    expect(t.mode).toBe(modeIndex('crush'));
+    expect([crush.slot, crush.extra, old.slot, old.extra]).toEqual([0, false, slot, true]);
+    expect(t.cubes).toHaveLength(6);
+    // They fly to each other's places rather than snapping.
+    expect([crush.state, old.state]).toEqual(['flying', 'flying']);
+    run(g, 1);
+    expect([crush.state, old.state]).toEqual(['docked', 'docked']);
+    expect(gap(crush, me.pos)).toBeLessThan(1);
+    expect(gap(old, me.pos)).toBeCloseTo(CUBE.ringRadius, 0);
+  });
+  it('swaps past a ring cube that is out, and needs the central cube and a ring cube docked', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 0.5);
+    park(t.cubes.find((c) => c.mode === modeIndex('crush'))!, 600, -400);
+    expect(me.activateSkill(E), me.skillFailure).toBe(true);
+    expect(t.mode).toBe(modeIndex('shard'));
+    run(g, 1);
+    park(t.cubes[0], -600, -400);
+    expect(me.activateSkill(E)).toBe(false);
+    expect(me.skillFailure).toBe('Switch: dock the central cube to swap it');
+    Object.assign(t.cubes[0], { state: 'docked' });
+    for (const c of t.cubes.slice(1)) park(c, 600, -800);
+    expect(me.activateSkill(E)).toBe(false);
+    expect(me.skillFailure).toBe('Switch: no other cube is docked');
+    Object.assign(t.cubes[0], { state: 'broken', reform: 5 });
+    expect(me.activateSkill(E)).toBe(false);
+    expect(me.skillFailure).toBe('Switch: the cube is re-forming');
+  });
+  it('keeps the swapped-in central cube on the dais in its mode when Overdrive ends', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 0.5);
+    expect(me.activateSkill(E)).toBe(true);
     const keeper = t.cubes[0];
     until(g, () => g.time >= t.overdriveUntil, 30);
-    g.step(1 / 60);
-    expect(keeper.state).toBe('flying');
     run(g, 2);
     expect(t.cubes).toEqual([keeper]);
-    expect(keeper.state).toBe('docked');
+    expect([keeper.state, keeper.slot, keeper.extra, keeper.mode, t.mode]).toEqual(['docked', 0, false, modeIndex('crush'), modeIndex('crush')]);
     expect(gap(keeper, me.pos)).toBeLessThan(1);
     expect(keeper.y).toBeCloseTo(dockLift(me.spec), 0);
+  });
+  it('lets the AI swap toward the mode it wants in Overdrive', () => {
+    const { g, me, foe } = duel();
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 0.5);
+    // Badly hurt, the AI wants Mend.
+    me.hp = me.maxHp * 0.3;
+    expect(aiWantsSkill(me, g, E, foe)).toBe(true);
   });
   it('throws the six abreast without any path crossing another', () => {
     const { g, me, foe, t } = duel();
@@ -1238,7 +1288,7 @@ describe('Overdrive', () => {
       until(g, () => t.cubes.every((c) => c.state === 'hover'));
     }
   });
-  it('lunges to the hovering cube nearest the reticle in Overdrive', () => {
+  it('lunges to the central cube first in Overdrive, else to the hovering cube nearest the reticle', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 4000;
     me.meter = 1;
@@ -1246,7 +1296,14 @@ describe('Overdrive', () => {
     run(g, 1);
     park(t.cubes[0], 0, -2500);
     park(t.cubes[3], 2400, 0);
+    park(t.cubes[4], -2400, 0);
     aim(me, 2300, 100);
+    expect(me.activateSkill(Q), me.skillFailure).toBe(true);
+    expect(t.lunge!.cube).toBe(t.cubes[0].id);
+    t.lunge = null;
+    me.pos.set(0, 0, 0);
+    Object.assign(t.cubes[0], { state: 'docked' });
+    me.skills[Q].cooldown = 0;
     expect(me.activateSkill(Q), me.skillFailure).toBe(true);
     expect(t.lunge!.cube).toBe(t.cubes[3].id);
   });
@@ -1526,7 +1583,7 @@ describe('Tungsten Meteor', () => {
 describe('Tungsten sync', () => {
   const script = (me: Ship, k: number) => {
     me.control.fire = k > 20 && k < 200;
-    const at = [X, E, Z, V, B, T, R, C, Q];
+    const at = [X, E, Z, V, B, E, T, R, C, Q];
     if (k % 40 === 0 && at[k / 40] !== undefined) {
       me.meter = 1;
       me.activateSkill(at[k / 40]);

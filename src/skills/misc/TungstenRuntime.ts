@@ -270,13 +270,10 @@ export function hoverY(s: Ship, x: number, z: number, scale = 1): number {
   return Math.max(CUBE.hoverY, s.game.map.heightAt(x, z) + H) + H * (scale - 1);
 }
 
-/**
- * Where a docked cube sits: floating over the dais, or in Overdrive's halo, where all six wheel round and above
- * the ship as equals and the dais stands empty.
- */
+/** Where a docked cube sits: the central cube floats over the dais, and Overdrive's five wheel round it in a pentagon. */
 export function dockPoint(s: Ship, slot: number, out = tmp): Vector3 {
   const lift = dockLift(s.spec);
-  if (slot === 0 && !overdriveOn(s)) return s.localToWorld(0, lift, 0, out);
+  if (slot === 0) return s.localToWorld(0, lift, 0, out);
   const a = haloAngle(slot, s.game.time);
   return s.localToWorld(Math.cos(a) * CUBE.ringRadius, lift + CUBE.ringLift, Math.sin(a) * CUBE.ringRadius, out);
 }
@@ -491,11 +488,11 @@ export function absorbCube(hit: CubeHitInfo, damage: number, attacker: Ship | nu
 function newPath(kind: CubePathKind, skill: number, tx: number, ty: number, tz: number, speed: number): CubePath {
   return { kind, skill, tx, ty, tz, speed, hit: [], healed: [], dealt: 0, target: 0, bounces: 0 };
 }
-function sendHome(s: Ship, c: Cube, kind: 'dock' | 'home', skill = -1): void {
+function sendHome(s: Ship, c: Cube, kind: 'dock' | 'home', skill = -1, speed = CUBE.dock.speed * TUNGSTEN_MODES[c.mode].speed): void {
   const p = dockPoint(s, c.slot);
   c.state = 'flying';
   c.flown = 0;
-  c.path = newPath(kind, skill, p.x, p.y, p.z, CUBE.dock.speed * TUNGSTEN_MODES[c.mode].speed);
+  c.path = newPath(kind, skill, p.x, p.y, p.z, speed);
 }
 
 /** Cubes a command drives: the cube itself, or every free cube in Overdrive. */
@@ -556,10 +553,13 @@ function throwCubes(s: Ship): boolean {
 
 // ---- Skills ------------------------------------------------------------------------------------
 
-/** The cube Magnet Lunge reels toward: the cube itself, or in Overdrive the hovering cube nearest the reticle. */
+/**
+ * The cube Magnet Lunge reels toward: the cube itself, or in Overdrive the central cube when it hovers and otherwise
+ * the hovering cube nearest the reticle.
+ */
 export function lungeCube(s: Ship): Cube {
   const t = s.tungsten!;
-  if (!overdriveOn(s)) return t.cubes[0];
+  if (!overdriveOn(s) || t.cubes[0].state === 'hover') return t.cubes[0];
   let best: Cube | null = null;
   for (const c of t.cubes)
     if (c.state === 'hover' && !c.gone && (!best || gap(c.x, c.z, s.control.aimX, s.control.aimZ) < gap(best.x, best.z, s.control.aimX, s.control.aimZ))) best = c;
@@ -610,12 +610,44 @@ function haul(s: Ship, h: number, land: number, speed: number, cube: number, dam
 
 export function switchMode(s: Ship): boolean {
   const t = s.tungsten!;
-  if (overdriveOn(s)) return s.failSkill('Switch: every mode is live during Overdrive');
+  if (overdriveOn(s)) return swapCentre(s);
   const c = t.cubes[0];
   if (inFlight(c)) return s.failSkill('Switch: the cube is in flight');
   t.mode = (t.mode + 1) % TUNGSTEN_MODES.length;
   c.mode = t.mode;
   emit(s, 'switch', c, c.x, c.y, c.z);
+  return true;
+}
+
+/** The ring cube Switch would swap onto the dais in Overdrive: the next mode on, skipping cubes not docked. */
+export function swapCandidate(t: TungstenState): Cube | null {
+  for (let k = 1; k < TUNGSTEN_MODES.length; k++) {
+    const m = (t.mode + k) % TUNGSTEN_MODES.length;
+    const c = t.cubes.find((o) => o.mode === m && !o.gone && o !== t.cubes[0]);
+    if (c?.state === 'docked') return c;
+  }
+  return null;
+}
+
+/**
+ * Switch in Overdrive: the central cube and the next docked ring cube trade places, so the mode moves to the dais.
+ * Whichever cube is central when Overdrive ends is the one that stays.
+ */
+function swapCentre(s: Ship): boolean {
+  const t = s.tungsten!;
+  const c = t.cubes[0];
+  if (c.state === 'broken') return s.failSkill('Switch: the cube is re-forming');
+  if (c.state !== 'docked') return s.failSkill('Switch: dock the central cube to swap it');
+  const n = swapCandidate(t);
+  if (!n) return s.failSkill('Switch: no other cube is docked');
+  [c.slot, n.slot] = [n.slot, c.slot];
+  [c.extra, n.extra] = [n.extra, c.extra];
+  const i = t.cubes.indexOf(n);
+  t.cubes[i] = c;
+  t.cubes[0] = n;
+  t.mode = n.mode;
+  for (const k of [n, c]) sendHome(s, k, 'home', -1, CUBE.swapSpeed);
+  emit(s, 'switch', n, n.x, n.y, n.z);
   return true;
 }
 
@@ -950,9 +982,6 @@ export function overdrive(s: Ship): boolean {
     c.pz = c.z;
     t.cubes.push(c);
   }
-  // The cube on the dais rises into the halo with the others.
-  const keeper = t.cubes[0];
-  if (keeper.state === 'docked') sendHome(s, keeper, 'home');
   emit(s, 'overdrive', null, s.pos.x, 0, s.pos.z, CUBE.ringRadius);
   return true;
 }
@@ -971,9 +1000,6 @@ export function updateTungsten(s: Ship, dt: number): void {
   const g = s.game;
   if (t.overdriveUntil > 0 && g.time >= t.overdriveUntil) {
     t.overdriveUntil = 0;
-    // The cube that stays drops from the halo back onto the dais.
-    const keeper = t.cubes[0];
-    if (keeper.state === 'docked') sendHome(s, keeper, 'home');
     emit(s, 'overdriveEnd', null, s.pos.x, 0, s.pos.z);
   }
   if (t.lunge) stepLunge(s, t, dt);
