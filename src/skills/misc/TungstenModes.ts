@@ -177,7 +177,7 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
     signature: { id: 'dash', name: 'Polarity Dash', radius: 1500 },
     hit: '-15% damage; knocks hulls 250 m aside. Wider Shield capture.',
     passive: 'Ship takes 12% less damage.',
-    die: `Flings hulls ${HIT.repel.knock * D * 1.5} m out and tears up enemy fire in the blast.`,
+    die: `Flings hulls ${HIT.repel.knock * D} m out and tears up enemy fire in the blast.`,
     collapse: `The burst flings survivors ${T.repel.fling} m out and tears up enemy fire within ${T.repel.clear / 1000} km.`,
     meteor: 'Survivors are hurled 600 m outward.',
   },

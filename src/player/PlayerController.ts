@@ -11,6 +11,7 @@ import { type Bindings, bindings, layoutFor } from '../input/Keybinds';
 import { controls } from '../input/Settings';
 import { type AimHit, assistAim, cubeLead, flightTimeFn, leadPoint, raycast } from './FireControl';
 import { ShellCam } from './ShellCam';
+import { CUBE } from '../skills/misc/TungstenModes';
 
 // Turns one input device into ship orders and drives that player's camera.
 // The camera orbits the ship and whatever sits under the crosshair is the aim point:
@@ -413,7 +414,10 @@ export class PlayerController {
       this.holdRange = clamp(dist2D(s.pos.x, s.pos.z, held.x, held.z) + this.lockRange, 100, this.maxRange());
     }
     // The aim point comes from last frame's crosshair ray (see updateCamera).
-    c.aimY = this.aimHit?.ship && this.aimHit.ship.pos.y > 20 ? Math.max(this.aimHit.ship.pos.y + 4, this.aimHit.y) : this.assist && this.assist.pos.y > 20 ? this.assist.pos.y + 4 : this.lock && this.lock.pos.y > 20 ? this.lock.pos.y + 4 : this.cubeLock ? this.cubeLock.cube.y : undefined;
+    // A locked cube lifts the aim only while the crosshair is on it: a mouse camera does not follow the lock.
+    const k = this.cubeLock?.cube;
+    const onCube = !!k && (tracking || dist2D(this.aim.x, this.aim.z, k.x, k.z) <= CUBE.edge * k.scale);
+    c.aimY = this.aimHit?.ship && this.aimHit.ship.pos.y > 20 ? Math.max(this.aimHit.ship.pos.y + 4, this.aimHit.y) : this.assist && this.assist.pos.y > 20 ? this.assist.pos.y + 4 : this.lock && this.lock.pos.y > 20 ? this.lock.pos.y + 4 : onCube ? k.y : undefined;
     c.aimX = this.aim.x;
     c.aimZ = this.aim.z;
   }

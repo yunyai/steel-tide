@@ -34,6 +34,8 @@ describe('Tungsten mode guide', () => {
     expect(row('shard', 'Die face')).toContain(`${HIT.shard.out * k} s`);
     expect(row('tether', 'Die face')).toContain(`${HIT.tether.time * k} s`);
     expect(row('mend', 'Die face')).toContain(`${HIT.mend.lifesteal * k * 100}%`);
+    // A shove of v m/s carries a hull v / 1.5 m, so the sim's 1.5x velocity is the knock distance.
+    expect(row('repel', 'Die face')).toContain(`${HIT.repel.knock * k} m out`);
     // Rolling the cube's own mode fires every face.
     expect(row('repel', 'Die face')).toContain('every face');
     const T = CUBE.collapse.twist;

@@ -118,6 +118,18 @@ describe('locking a cube', () => {
     expect(wrapAngle(pc.yaw - bearingTo(me.pos.x, me.pos.z, 2000, -2000))).toBeCloseTo(0, 5);
     expect(me.control.aimY).toBe(c.y);
   });
+
+  it('raises the aim to a locked cube only while the crosshair is on it', () => {
+    const { me, c, pc } = scene();
+    toggle(pc);
+    // The mouse camera does not follow the lock: aiming at a hull beside the cube keeps shells at sea level.
+    pc.aim.set(c.x + 600, 0, c.z);
+    pc.control(1 / 60, idle);
+    expect(me.control.aimY).toBeUndefined();
+    pc.aim.set(c.x + 40, 0, c.z - 30);
+    pc.control(1 / 60, idle);
+    expect(me.control.aimY).toBe(c.y);
+  });
 });
 
 describe('leading a cube', () => {
