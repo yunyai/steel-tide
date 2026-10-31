@@ -128,7 +128,8 @@ describe('cube size', () => {
     const { g, me, t } = duel();
     me.meter = 1;
     me.activateSkill(B);
-    run(g, 0.05);
+    // The first cube lifts off the dais into the halo before it spins there.
+    run(g, 1);
     // Angles in hull space, so the ship's own turning doesn't count.
     const yaw = () => t.cubes[0].yaw + me.heading;
     const halo = () => {
@@ -722,6 +723,8 @@ describe('Overdrive', () => {
     t.energy = 0.5;
     me.activateSkill(B);
     expect(t.energy).toBe(1);
+    // Let the first cube finish its lift into the halo.
+    run(g, 0.5);
     hurl(g, me, 0, -2500);
     expect(t.cubes.every((c) => c.state === 'flying')).toBe(true);
     until(g, () => t.cubes.every((c) => c.state === 'hover'));
@@ -799,6 +802,98 @@ describe('Overdrive', () => {
     expect(t.cubes.every((c) => c.state === 'orbit')).toBe(true);
     run(g, 3);
     expect(t.cubes.some((c) => c.state === 'orbit')).toBe(false);
+  });
+  it('floats all six cubes in one halo with the dais empty, lifting the first cube rather than snapping it', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    const dais = { x: t.cubes[0].x, y: t.cubes[0].y, z: t.cubes[0].z };
+    me.meter = 1;
+    me.activateSkill(B);
+    g.step(1 / 60);
+    // The first cube rises from the dais to its place in the halo.
+    expect(t.cubes[0].state).toBe('flying');
+    expect(gap(t.cubes[0], dais)).toBeLessThan(80);
+    run(g, 1);
+    expect(t.cubes.every((c) => c.state === 'docked')).toBe(true);
+    const lift = dockLift(me.spec) + CUBE.ringLift;
+    for (const c of t.cubes) {
+      expect(gap(c, me.pos)).toBeCloseTo(CUBE.ringRadius, 0);
+      expect(c.y).toBeCloseTo(lift, 0);
+    }
+    // Evenly spaced: neighbours one sixth of the ring apart.
+    const angles = t.cubes.map((c) => Math.atan2(c.z - me.pos.z, c.x - me.pos.x)).sort((a, b) => a - b);
+    for (let i = 1; i < 6; i++) expect(angles[i] - angles[i - 1]).toBeCloseTo(Math.PI / 3, 2);
+  });
+  it('flies the first cube back to the dais when Overdrive ends and dissolves the rest', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    me.meter = 1;
+    me.activateSkill(B);
+    const keeper = t.cubes[0];
+    until(g, () => g.time >= t.overdriveUntil, 30);
+    g.step(1 / 60);
+    expect(keeper.state).toBe('flying');
+    run(g, 2);
+    expect(t.cubes).toEqual([keeper]);
+    expect(keeper.state).toBe('docked');
+    expect(gap(keeper, me.pos)).toBeLessThan(1);
+    expect(keeper.y).toBeCloseTo(dockLift(me.spec), 0);
+  });
+  it('throws the six abreast without any path crossing another', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    me.meter = 1;
+    me.activateSkill(B);
+    // Several halo angles, and throws at several bearings.
+    for (const [wait, x, z] of [[1, 0, -2500], [3.3, 1800, -1600], [2.1, -2200, 900]]) {
+      run(g, wait);
+      for (const c of t.cubes) if (c.state === 'hover') Object.assign(c, { state: 'docked' });
+      run(g, 0.05);
+      const from = t.cubes.map((c) => ({ x: c.x, z: c.z }));
+      t.reload = 0;
+      hurl(g, me, x, z);
+      const to = t.cubes.map((c) => ({ x: c.path!.tx, z: c.path!.tz }));
+      const cross = (a: { x: number; z: number }, b: { x: number; z: number }, c: { x: number; z: number }) => (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+      for (let i = 0; i < 6; i++)
+        for (let j = i + 1; j < 6; j++) {
+          const meet = cross(from[i], to[i], from[j]) * cross(from[i], to[i], to[j]) < 0 && cross(from[j], to[j], from[i]) * cross(from[j], to[j], to[i]) < 0;
+          expect(meet, `paths ${i} and ${j} cross throwing at ${x}, ${z}`).toBe(false);
+        }
+      until(g, () => t.cubes.every((c) => c.state === 'hover'));
+    }
+  });
+  it('lunges to the hovering cube nearest the reticle in Overdrive', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 1);
+    park(t.cubes[0], 0, -2500);
+    park(t.cubes[3], 2400, 0);
+    aim(me, 2300, 100);
+    expect(me.activateSkill(Q), me.skillFailure).toBe(true);
+    expect(t.lunge!.cube).toBe(t.cubes[3].id);
+  });
+  it('heals the ship once per Dock in Overdrive, whichever cube arrives first', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 1);
+    Object.assign(t.cubes[0], { state: 'broken', reform: 30, hp: 0 });
+    t.cubes.slice(1).forEach((c, i) => park(c, 600 + i * 100, -400));
+    me.hp = me.maxHp / 2;
+    expect(me.activateSkill(C), me.skillFailure).toBe(true);
+    // Regeneration trickles in every tick; the Dock heal is the one big jump.
+    const jumps: number[] = [];
+    for (let k = 0; k < 600 && !t.cubes.slice(1).every((c) => c.state === 'docked'); k++) {
+      const before = me.hp;
+      g.step(1 / 60);
+      if (me.hp - before > me.maxHp * 0.03) jumps.push(me.hp - before);
+    }
+    expect(t.cubes.slice(1).every((c) => c.state === 'docked')).toBe(true);
+    expect(jumps).toHaveLength(1);
+    expect(jumps[0] / me.maxHp).toBeCloseTo(CUBE.dock.heal, 2);
   });
   it('keeps a store built in Overdrive when the Shield captures fire after it ends', () => {
     const { g, me, foe, t } = duel();
@@ -905,6 +1000,7 @@ describe('Tungsten sync', () => {
       [() => (t.spent = true), () => (t.spent = false)],
       [() => (t.surgeUntil = 5), () => (t.surgeUntil = 0)],
       [() => (t.reload = 1), () => (t.reload = 0)],
+      [() => (t.dockHeal = true), () => (t.dockHeal = false)],
     ];
     for (const [set, reset] of fields) {
       set();

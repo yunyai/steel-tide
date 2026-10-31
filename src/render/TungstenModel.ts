@@ -1,6 +1,6 @@
 import { AdditiveBlending, BoxGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, Group, MeshBasicMaterial, MeshStandardMaterial, TorusGeometry, type BufferGeometry, type Material, type Mesh } from 'three';
 import type { Ship } from '../ships/Ship';
-import { CUBE, dockLift } from '../skills/misc/TungstenModes';
+import { CUBE, dockLift, haloAngle } from '../skills/misc/TungstenModes';
 import { overdriveOn } from '../skills/misc/TungstenRuntime';
 import { Parts } from './Geometry';
 import { reducedMotion } from './ArchitectPose';
@@ -57,7 +57,7 @@ function modeWheel(u: number, out: Color): Color {
  */
 export class TungstenModel {
   readonly root = new Group();
-  /** Docked cubes by dais slot (0 floats over the dais, 1..5 the Overdrive halo). */
+  /** Docked cubes by slot: 0 floats over the dais (in the halo with the rest during Overdrive), 1..5 the Overdrive halo. */
   readonly cubes: { mesh: Mesh; material: MeshStandardMaterial; u: CubeSkinUniforms; sweep: ModeSweep; present: boolean; since: number; mode: number }[] = [];
   private owned: BufferGeometry[] = [];
   private metal = new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.78, roughness: 0.36 });
@@ -194,8 +194,8 @@ export class TungstenModel {
       const c = over ? modeWheel((anim * 0.9 + i * 2) % 6, tmpColor2) : tmpColor2.copy(base);
       m.color.copy(c).lerp(white, flash * 0.6).multiplyScalar(power * (0.55 + 0.9 * pulse * pulse));
     });
-    // The column stands only while a cube floats over the dais.
-    const held = !lead || lead.state === 'docked';
+    // The column stands only while a cube floats over the dais; in Overdrive the dais stands empty, feeding the halo.
+    const held = !over && (!lead || lead.state === 'docked');
     const column = over ? modeWheel((anim * 0.6) % 6, tmpColor2) : tmpColor2.copy(base);
     this.column.color.copy(column).multiplyScalar(power * (held ? 0.16 + (this.reduce ? 0 : 0.05 * Math.sin(anim * 3)) : 0.04));
 
@@ -220,10 +220,10 @@ export class TungstenModel {
       const lift = c && t ? slamLift(t, c.id) : 0;
       // It turns on the sim's clock (see dockPose); bobbing and rocking are drawing only.
       const y = LIFT + lift + (this.reduce ? 0 : Math.sin(anim * 1.1 + slot * 1.7) * 2.5);
-      if (slot === 0) v.mesh.position.set(0, y, 0);
+      if (slot === 0 && !over) v.mesh.position.set(0, y, 0);
       else {
-        // Matches dockPoint: local x forward, z starboard.
-        const a = ((slot - 1) / 5) * Math.PI * 2 + now * CUBE.ringSpin;
+        // Matches dockPoint: local x forward, z starboard. In Overdrive all six share the halo.
+        const a = haloAngle(slot, now);
         v.mesh.position.set(Math.cos(a) * CUBE.ringRadius, y + CUBE.ringLift, Math.sin(a) * CUBE.ringRadius);
       }
       const rock = (k: number) => (this.reduce ? 0 : Math.sin(anim * (0.7 + k * 0.23) + slot + k) * 0.035);

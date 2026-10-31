@@ -11,8 +11,8 @@ export const CUBE = {
   reform: 12,
   /** Docked repair per second, as a fraction of max HP. */
   dockRepair: 0.02,
-  /** Halo of extra docked cubes during Overdrive, wheeling slowly round the dais (rad/s). */
-  ringRadius: 220,
+  /** Halo of all six docked cubes during Overdrive, wheeling slowly round the ship (rad/s); the dais stands empty. */
+  ringRadius: 240,
   ringLift: 100,
   ringSpin: 0.15,
   dock: { speed: 1600, damage: 50000, heal: 0.06, dealtHeal: 0.2, cubeRepair: 0.15 },
@@ -46,6 +46,8 @@ export const CUBE = {
 
 /** Height of a docked cube's centre above the waterline: it floats `CUBE.float` over the dais on the deck. */
 export const dockLift = (spec: { freeboard: number }) => spec.freeboard + CUBE.float + CUBE.edge / 2;
+/** Bearing of halo slot `slot` (0..5) in hull space at time `time`: six evenly spaced, wheeling together. */
+export const haloAngle = (slot: number, time: number) => (slot / 6) * Math.PI * 2 + time * CUBE.ringSpin;
 
 export type TungstenModeId = 'kinetic' | 'crush' | 'shard' | 'repel' | 'tether' | 'mend';
 

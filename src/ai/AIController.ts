@@ -9,7 +9,7 @@ import { ESCORT_LEASH } from '../modes/Convoy';
 import type { Ship } from '../ships/Ship';
 import { aiWantsSkill } from '../skills/registry';
 import { CUBE, TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
-import { aiThrows } from '../skills/misc/TungstenRuntime';
+import { aiThrows, throwerCube } from '../skills/misc/TungstenRuntime';
 import { solve } from '../weapons/Ballistics';
 import { avoid, evasion, rudderFor, separate } from './Navigation';
 
@@ -526,7 +526,7 @@ export class AIController {
     } else if (slot?.kind === 'air' || slot?.kind === 'vls') {
       time = 0;
     } else if (slot?.kind === 'cube') {
-      const cube = ship.tungsten!.cubes[0];
+      const cube = throwerCube(ship, t.pos.x, t.pos.z) ?? ship.tungsten!.cubes[0];
       time = dist2D(cube.x, cube.z, t.pos.x, t.pos.z) / (CUBE.shot.speed * TUNGSTEN_MODES[cube.mode].speed);
     } else {
       const table = ship.tableFor(ship.ammo);
@@ -538,7 +538,7 @@ export class AIController {
     // Throw the cube through the target, not onto it, so it ploughs the hull and hovers clear beyond; skills
     // take the target itself.
     if (slot?.kind === 'cube' && c.skill < 0) {
-      const cube = ship.tungsten!.cubes[0];
+      const cube = throwerCube(ship, t.pos.x, t.pos.z) ?? ship.tungsten!.cubes[0];
       const dx = c.aimX - cube.x,
         dz = c.aimZ - cube.z,
         n = Math.hypot(dx, dz) || 1;

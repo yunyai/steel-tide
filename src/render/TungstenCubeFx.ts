@@ -5,7 +5,7 @@ import type { Team } from '../core/types';
 import { contactVisible } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
 import { CUBE, HIT, SIGNATURE, TUNGSTEN_MODES, dockLift, modeOf } from '../skills/misc/TungstenModes';
-import type { Cube, TungstenState } from '../skills/misc/TungstenRuntime';
+import { overdriveOn, type Cube, type TungstenState } from '../skills/misc/TungstenRuntime';
 import { audio } from '../fx/Audio';
 import { BK, drift, hash01, type BurstParticles } from './BurstParticles';
 import type { Ribbons } from './Projectiles';
@@ -553,8 +553,17 @@ export class TungstenCubeFx {
     const tips = this.hornTips(s);
     const lead = t.cubes[0];
     const mode = modeColor(t.mode);
+    // In Overdrive the dais stands empty: each horn feeds the halo cubes nearest it instead.
+    if (seen && overdriveOn(s)) {
+      for (const c of t.cubes) {
+        if (c.state !== 'docked' || hash01(c.id * 17, Math.floor(now * 9)) > 0.6) continue;
+        const p = this.renderPos(c, this.v);
+        const tip = this.nearestTip(tips, p.x, p.z);
+        this.paint.arc(tip.x, tip.y, tip.z, p.x, p.y - H, p.z, c.id * 97, hot(modeColor(c.mode), 2.2), 0.8, 1.6, 8, 10);
+      }
+    }
     // Idle crackle from the horn tips up to the floating cube's base; livelier as the Shield store fills.
-    if (seen && lead?.state === 'docked') {
+    else if (seen && lead?.state === 'docked') {
       const base = dockLift(s.spec) - H;
       const charge = t.charge / CUBE.chargeCap;
       HORN_TIPS.forEach((h, i) => {

@@ -148,6 +148,18 @@ describe('Tungsten HUD panel', () => {
     expect(panel(t, time).store).toEqual({ frac: 1, text: '1.1M / 1.1M', low: false });
   });
 
+  it('counts the Overdrive cubes out and home rather than following one of them', () => {
+    const { s, t } = tungsten();
+    overdrive(s);
+    const time = s.game.time;
+    t.cubes.forEach((c) => (c.state = 'docked'));
+    Object.assign(t.cubes[2], { state: 'hover', x: 900, z: 0 });
+    Object.assign(t.cubes[4], { state: 'flying', x: 400, z: 0 });
+    expect(panel(t, time).where).toBe('Overdrive · 2 out · 4 home');
+    Object.assign(t.cubes[0], { state: 'broken', reform: 5 });
+    expect(panel(t, time).where).toBe('Overdrive · 2 out · 3 home · 1 shattered');
+  });
+
   it('gives every Overdrive cube a health bar in its own colour', () => {
     const { s, t } = tungsten();
     t.mode = t.cubes[0].mode = 2;

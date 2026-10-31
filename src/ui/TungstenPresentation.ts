@@ -81,7 +81,7 @@ export function tungstenPresentation(t: TungstenState, time: number, x: number, 
 
 function panel(t: TungstenState, time: number, x: number, z: number): TungstenPanel {
   const c = primary(t);
-  const where = c.state === 'hover' || c.state === 'flying' ? `${PLACE[c.state]} · ${km(Math.hypot(c.x - x, c.z - z))}` : PLACE[c.state];
+  const where = t.overdriveUntil > time ? overdriveWhere(t) : c.state === 'hover' || c.state === 'flying' ? `${PLACE[c.state]} · ${km(Math.hypot(c.x - x, c.z - z))}` : PLACE[c.state];
 
   let energy: string;
   if (t.surgeUntil > time) energy = `Surge ${Math.ceil(t.surgeUntil - time)}s · free throws`;
@@ -115,6 +115,14 @@ function panel(t: TungstenState, time: number, x: number, z: number): TungstenPa
       : [];
 
   return { where, energy: { frac: t.energy, text: energy, low: !free && (t.spent || t.energy < CUBE.shot.cost) }, cube, store, cubes };
+}
+
+/** In Overdrive the six are equals: count them out, home and shattered rather than following one. */
+function overdriveWhere(t: TungstenState): string {
+  const live = t.cubes.filter((k) => !k.gone);
+  const home = live.filter((k) => k.state === 'docked').length,
+    broken = live.filter((k) => k.state === 'broken').length;
+  return `Overdrive · ${live.length - home - broken} out · ${home} home${broken ? ` · ${broken} shattered` : ''}`;
 }
 
 /** The cube a throw is timed from: the main cube, or in Overdrive the first of the six that can be thrown. */

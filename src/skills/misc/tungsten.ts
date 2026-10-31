@@ -2,12 +2,14 @@ import type { SkillIcon } from '../../core/types';
 import { hpFrac, underFire } from '../kit';
 import { def, type SkillDef } from '../types';
 import type { Ship } from '../../ships/Ship';
+import type { Cube } from './TungstenRuntime';
 import { CUBE, SIGNATURE, TUNGSTEN_MODES } from './TungstenModes';
 import {
   collapse,
   dockCubes,
   foesNearCube,
   inFlight,
+  lungeCube,
   lungeToCube,
   meteor,
   overdrive,
@@ -34,10 +36,10 @@ const spec = (id: string, name: string, short: string, cooldown: number, duratio
 });
 const cube = (s: Ship) => s.tungsten!.cubes[0];
 const range = (s: Ship, t: Ship | null) => (t ? Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) : Infinity);
-const free = (s: Ship) => {
-  const c = cube(s);
-  return c.state !== 'broken' && c.state !== 'meteor' && c.state !== 'collapse';
-};
+const isFree = (c: Cube) => !c.gone && c.state !== 'broken' && c.state !== 'meteor' && c.state !== 'collapse';
+/** The cubes the AI weighs: the cube itself, or all six as equals in Overdrive. */
+const pool = (s: Ship) => (overdriveOn(s) ? s.tungsten!.cubes : [cube(s)]);
+const free = (s: Ship) => pool(s).some(isFree);
 
 export const TUNGSTEN_SKILLS: SkillDef[] = [
   def(
@@ -45,10 +47,10 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
     {
       activate: (s, _g, st) => lungeToCube(s, st.index),
       aiShouldUse(s, _g, t) {
-        const c = cube(s);
+        const c = lungeCube(s);
         if (c.state !== 'hover') return false;
         const d = Math.hypot(c.x - s.pos.x, c.z - s.pos.z);
-        return d > 1800 && d < CUBE.lunge.range && (foesNearCube(s, c, 1500).length > 0 || (hpFrac(s) < 0.4 && !t));
+        return d > 1800 && d < CUBE.lunge.range && (foesNearCube(s, c, 1500).length === 1 || (hpFrac(s) < 0.4 && !t));
       },
     },
   ),
@@ -61,12 +63,13 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
   def(spec('tungstenSignature', 'Signature', 'SIG', 14, 0, 'rune', "The current mode's move, from the cube: Ricochet, Slam, Fragment Storm, Repulse, Reel or Restore."), {
     activate: (s, _g, st) => signature(s, st.index),
     aiShouldUse(s, g) {
-      if (!free(s)) return false;
-      const c = cube(s);
-      const sig = TUNGSTEN_MODES[c.mode].signature;
-      if (sig.id === 'restore') return hpFrac(s) < 0.75;
-      if (sig.id === 'repulse') return underFire(s, g, 1200) > 4 || foesNearCube(s, c, sig.radius).length > 0;
-      return foesNearCube(s, c, sig.id === 'ricochet' ? SIGNATURE.ricochet.reach : sig.radius).length > 0;
+      return pool(s).some((c) => {
+        if (!isFree(c)) return false;
+        const sig = TUNGSTEN_MODES[c.mode].signature;
+        if (sig.id === 'restore') return hpFrac(s) < 0.75;
+        if (sig.id === 'repulse') return underFire(s, g, 1200) > 4 || foesNearCube(s, c, sig.radius).length > 0;
+        return foesNearCube(s, c, sig.id === 'ricochet' ? SIGNATURE.ricochet.reach : sig.radius).length > 0;
+      });
     },
   }),
   def(spec('tungstenSurge', 'Magnet Surge', 'SURGE', 18, 0, 'magnet', 'Refill the cube’s energy wherever it is, waking a spent cube. For 6 s throws fly 40% faster, strike 40% harder and cost nothing.'), {
@@ -79,8 +82,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
   def(spec('tungstenDock', 'Dock', 'DOCK', 12, 0, 'heal', 'Call the cube home through anything in the way (50k). On docking the ship repairs 6% plus 20% of the damage dealt and the cube 15%, and a spent cube wakes.'), {
     activate: (s, _g, st) => dockCubes(s, st.index),
     aiShouldUse(s) {
-      const c = cube(s);
-      return c.state === 'hover' && (s.tungsten!.spent || Math.hypot(c.x - s.pos.x, c.z - s.pos.z) > 2500 || hpFrac(s) < 0.5);
+      return pool(s).some((c) => c.state === 'hover' && (s.tungsten!.spent || Math.hypot(c.x - s.pos.x, c.z - s.pos.z) > 2500 || hpFrac(s) < 0.5));
     },
   }),
   def(spec('tungstenShield', 'Tungsten Shield', 'SHIELD', 18, CUBE.guard.time, 'shield', 'The cube guards the reticle side for 8 s and captures every shell, missile, beam and torpedo nearby. Stored damage (up to 600k) rides the next cube hit. In Overdrive all six orbit for 10 s, each capturing fire, battering hulls for 80k, cutting damage to the ship by 30% and storing up to 1.2M.'), {

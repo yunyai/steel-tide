@@ -8,7 +8,7 @@ import type { Ship } from '../../ships/Ship';
 import { stun } from '../../weapons/StrikeSystem';
 import { buff, hpFrac, hurt, mark } from '../kit';
 import { safeStep } from './StepperRuntime';
-import { CUBE, dockLift, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf } from './TungstenModes';
+import { CUBE, dockLift, haloAngle, HIT, SIGNATURE, TUNGSTEN_MODES, modeOf } from './TungstenModes';
 
 export type CubeState = 'docked' | 'flying' | 'hover' | 'guard' | 'orbit' | 'meteor' | 'collapse' | 'broken';
 export type CubePathKind = 'shot' | 'dock' | 'ricochet' | 'home';
@@ -132,6 +132,8 @@ export interface TungstenState {
   surgeUntil: number;
   /** Seconds until the fire button may throw again. */
   reload: number;
+  /** A Dock is under way whose first arrival still owes the ship its repair. */
+  dockHeal: boolean;
 }
 
 const H = CUBE.edge / 2;
@@ -188,6 +190,7 @@ export function newTungstenState(): TungstenState {
     spent: false,
     surgeUntil: 0,
     reload: 0,
+    dockHeal: false,
   };
 }
 
@@ -205,6 +208,7 @@ export function clearTungsten(s: Ship): void {
   t.charge = t.guardUntil = t.overdriveUntil = t.surgeUntil = t.reload = 0;
   t.energy = 1;
   t.spent = false;
+  t.dockHeal = false;
   t.lunge = t.ult = null;
   t.tethers = [];
   t.acts = [];
@@ -232,11 +236,21 @@ const freeThrows = (s: Ship) => overdriveOn(s) || s.tungsten!.surgeUntil > s.gam
  * cube is never left spent; Overdrive and Surge cost nothing, so it throws freely then.
  */
 export function aiThrows(s: Ship, target: Ship | null): boolean {
-  const t = s.tungsten!,
-    c = t.cubes[0];
-  if (!target || t.spent || t.reload > 0 || !(c.state === 'docked' || c.state === 'hover')) return false;
-  if (gap(c.x, c.z, target.pos.x, target.pos.z) > CUBE.shot.range - 100) return false;
+  const t = s.tungsten!;
+  if (!target || t.spent || t.reload > 0) return false;
+  const c = throwerCube(s, target.pos.x, target.pos.z);
+  if (!c || gap(c.x, c.z, target.pos.x, target.pos.z) > CUBE.shot.range - 100) return false;
   return freeThrows(s) || t.energy > CUBE.shot.cost + 0.02;
+}
+
+/** The cube a throw at (x, z) starts from: the cube itself if it can be thrown, or in Overdrive the nearest that can. */
+export function throwerCube(s: Ship, x: number, z: number): Cube | null {
+  const t = s.tungsten!;
+  const ready = (c: Cube) => !c.gone && (c.state === 'docked' || c.state === 'hover');
+  if (!overdriveOn(s)) return ready(t.cubes[0]) ? t.cubes[0] : null;
+  let best: Cube | null = null;
+  for (const c of t.cubes) if (ready(c) && (!best || gap(c.x, c.z, x, z) < gap(best.x, best.z, x, z))) best = c;
+  return best;
 }
 
 /** Centre height over water, or clear of the land beneath. */
@@ -244,11 +258,14 @@ export function hoverY(s: Ship, x: number, z: number, scale = 1): number {
   return Math.max(0, s.game.map.heightAt(x, z)) + CUBE.hoverY + H * (scale - 1);
 }
 
-/** Where a docked cube sits: floating over the dais, or in the Overdrive halo around and above it. */
+/**
+ * Where a docked cube sits: floating over the dais, or in Overdrive's halo, where all six wheel round and above
+ * the ship as equals and the dais stands empty.
+ */
 export function dockPoint(s: Ship, slot: number, out = tmp): Vector3 {
   const lift = dockLift(s.spec);
-  if (slot === 0) return s.localToWorld(0, lift, 0, out);
-  const a = ((slot - 1) / 5) * Math.PI * 2 + s.game.time * CUBE.ringSpin;
+  if (slot === 0 && !overdriveOn(s)) return s.localToWorld(0, lift, 0, out);
+  const a = haloAngle(slot, s.game.time);
   return s.localToWorld(Math.cos(a) * CUBE.ringRadius, lift + CUBE.ringLift, Math.sin(a) * CUBE.ringRadius, out);
 }
 /** A cube settles on the magnet; the cradle cube's arrival wakes a spent magnet. */
@@ -498,6 +515,9 @@ function throwCubes(s: Ship): boolean {
   const boost = t.surgeUntil > s.game.time ? CUBE.surge.speed : 1;
   let thrown = 0,
     blocked = false;
+  // Each takes the place in the line on its own side, so no path crosses another.
+  const side = (c: Cube) => (c.x - s.pos.x) * rx + (c.z - s.pos.z) * rz;
+  cubes.sort((a, b) => side(a) - side(b));
   cubes.forEach((c, i) => {
     const off = (i - (cubes.length - 1) / 2) * CUBE.shot.spread;
     const ax = s.control.aimX + rx * off,
@@ -541,9 +561,19 @@ function throwCubes(s: Ship): boolean {
 
 // ---- Skills ------------------------------------------------------------------------------------
 
+/** The cube Magnet Lunge reels toward: the cube itself, or in Overdrive the hovering cube nearest the reticle. */
+export function lungeCube(s: Ship): Cube {
+  const t = s.tungsten!;
+  if (!overdriveOn(s)) return t.cubes[0];
+  let best: Cube | null = null;
+  for (const c of t.cubes)
+    if (c.state === 'hover' && !c.gone && (!best || gap(c.x, c.z, s.control.aimX, s.control.aimZ) < gap(best.x, best.z, s.control.aimX, s.control.aimZ))) best = c;
+  return best ?? t.cubes[0];
+}
+
 export function lungeToCube(s: Ship, skill: number): boolean {
   const t = s.tungsten!;
-  const c = t.cubes[0];
+  const c = lungeCube(s);
   if (c.state === 'docked') return s.failSkill('Magnet Lunge: throw the cube first');
   if (c.state === 'broken') return s.failSkill('Magnet Lunge: the cube is re-forming');
   if (c.state !== 'hover') return s.failSkill('Magnet Lunge: the cube must be hovering');
@@ -613,6 +643,7 @@ export function dockCubes(s: Ship, skill: number): boolean {
     sendHome(s, c, 'dock', skill);
     emit(s, 'throw', c, c.x, c.y, c.z);
   }
+  t.dockHeal = true;
   return true;
 }
 
@@ -697,8 +728,7 @@ export function raiseShield(s: Ship, _skill: number): boolean {
     c.contacts = [];
   }
   t.guardUntil = s.game.time + (orbit ? CUBE.orbit.time : CUBE.guard.time);
-  const c = t.cubes[0];
-  emit(s, 'shield', c, s.pos.x, 0, s.pos.z, orbit ? CUBE.orbit.radius : CUBE.guard.radius);
+  emit(s, 'shield', null, s.pos.x, 0, s.pos.z, orbit ? CUBE.orbit.radius : CUBE.guard.radius);
   return true;
 }
 
@@ -747,7 +777,10 @@ export function overdrive(s: Ship): boolean {
     c.pz = c.z;
     t.cubes.push(c);
   }
-  emit(s, 'overdrive', t.cubes[0], s.pos.x, 0, s.pos.z, CUBE.ringRadius);
+  // The cube on the dais rises into the halo with the others.
+  const keeper = t.cubes[0];
+  if (keeper.state === 'docked') sendHome(s, keeper, 'home');
+  emit(s, 'overdrive', null, s.pos.x, 0, s.pos.z, CUBE.ringRadius);
   return true;
 }
 
@@ -765,7 +798,10 @@ export function updateTungsten(s: Ship, dt: number): void {
   const g = s.game;
   if (t.overdriveUntil > 0 && g.time >= t.overdriveUntil) {
     t.overdriveUntil = 0;
-    emit(s, 'overdriveEnd', t.cubes[0], s.pos.x, 0, s.pos.z);
+    // The cube that stays drops from the halo back onto the dais.
+    const keeper = t.cubes[0];
+    if (keeper.state === 'docked') sendHome(s, keeper, 'home');
+    emit(s, 'overdriveEnd', null, s.pos.x, 0, s.pos.z);
   }
   if (t.lunge) stepLunge(s, t, dt);
   if (t.ult?.kind === 'collapse') stepCollapse(s, t, dt);
@@ -1011,7 +1047,9 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
   }
   seat(s, c);
   if (p.kind === 'dock') {
-    if (!c.extra) s.heal(s.maxHp * CUBE.dock.heal);
+    // The ship repairs once per Dock, on the first arrival: in Overdrive any cube may come home first.
+    if (t.dockHeal) s.heal(s.maxHp * CUBE.dock.heal);
+    t.dockHeal = false;
     s.heal(p.dealt * CUBE.dock.dealtHeal);
     c.hp = Math.min(c.maxHp, c.hp + c.maxHp * CUBE.dock.cubeRepair);
   }
