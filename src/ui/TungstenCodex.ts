@@ -1,4 +1,4 @@
-import { CUBE, SIGNATURE, TUNGSTEN_MODES, type TungstenModeId } from '../skills/misc/TungstenModes';
+import { CUBE, SIGNATURE, TUNGSTEN_MODES, modeOf, type TungstenModeId } from '../skills/misc/TungstenModes';
 import { h } from './dom';
 
 export interface CodexRow {
@@ -26,7 +26,7 @@ const SIGNATURE_TEXT: Record<TungstenModeId, string> = {
   kinetic: `The cube leaps to the nearest enemy within ${km(SIGNATURE.ricochet.reach)}, then on to the next within ${km(SIGNATURE.ricochet.hop)}: ${SIGNATURE.ricochet.bounces} hulls, ${k(SIGNATURE.ricochet.damage)} each, every leg ${Math.round((SIGNATURE.ricochet.gain - 1) * 100)}% faster.`,
   crush: `The cube leaps onto the enemy nearest the reticle within ${km(TUNGSTEN_MODES[1].signature.radius)}: ${k(SIGNATURE.pile.damage)}, a ${SIGNATURE.pile.stun} s stun, and it holds the hull still for ${SIGNATURE.pile.root} s before dropping beside it.`,
   shard: `${SIGNATURE.cone.shards} shards fan ${SIGNATURE.cone.spread}° toward the reticle, out to ${km(SIGNATURE.cone.range)}: each strikes the first enemy hull in its way for ${k(SIGNATURE.cone.damage)}.`,
-  repel: `The magnet throws the ship ${km(SIGNATURE.dash.distance)} away from the cube (toward the reticle if it is docked), through any hull in the way for ${k(SIGNATURE.dash.damage)}; it takes ${Math.round((1 - CUBE.lunge.taken) * 100)}% less damage on the way.`,
+  repel: `For ${SIGNATURE.mirror.time} s a mirror ${TUNGSTEN_MODES[modeOf('repel')].signature.radius} m round the cube turns every enemy shell that enters it back on its firer, flying straight at ${SIGNATURE.mirror.return}× its speed to where the firer is then; missiles, torpedoes and bombs inside are torn up. The ship stays put.`,
   tether: `The two enemies nearest the cube within ${km(TUNGSTEN_MODES[4].signature.radius)} are reeled into each other over ${SIGNATURE.collide.time} s: ${k(SIGNATURE.collide.damage)} each and a ${SIGNATURE.collide.stun} s stun. A lone hull is reeled into the cube.`,
   mend: `A ${km(TUNGSTEN_MODES[5].signature.radius)} dome at the cube for ${SIGNATURE.sanctuary.time} s: allies inside heal ${SIGNATURE.sanctuary.heal * 100}% a second and take ${Math.round((1 - SIGNATURE.sanctuary.taken) * 100)}% less damage.`,
 };

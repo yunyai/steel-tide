@@ -86,7 +86,7 @@ export function stateHash(g: Game): number {
       const l=a.lunge;h=mix(h,l?1:0);
       if(l)for(const n of [l.x0,l.z0,l.x1,l.z1,l.elapsed,l.time,l.cube,l.damage,l.skill,...l.hit])h=mix(h,n);
       for(const x of a.tethers)for(const n of [x.target,x.cube,x.skill,x.until,x.tick])h=mix(h,n);
-      for(const x of a.acts)for(const n of [['pin','reel','field'].indexOf(x.kind),x.cube,x.skill,x.x,x.z,x.elapsed,x.time,x.radius,x.rate,x.taken,...x.targets])h=mix(h,n);
+      for(const x of a.acts)for(const n of [['pin','reel','field','mirror'].indexOf(x.kind),x.cube,x.skill,x.x,x.z,x.elapsed,x.time,x.radius,x.rate,x.taken,...x.targets])h=mix(h,n);
       const u=a.ult;h=mix(h,u?1:0);
       if(u)for(const n of [u.kind==='collapse'?1:2,u.skill,u.x,u.z,u.elapsed,u.tick,u.stage,u.merged?1:0,...u.cubes,...u.from,...u.spots,...u.falls,...u.struck,...u.bounce])h=mix(h,n);
       for(const st of s.skills)for(const n of [st.cooldown,st.time,st.meter,st.active?1:0])h=mix(h,n);

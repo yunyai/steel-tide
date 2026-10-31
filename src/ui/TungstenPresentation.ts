@@ -1,4 +1,4 @@
-import { CUBE, TUNGSTEN_MODES, type SignatureId } from '../skills/misc/TungstenModes';
+import { CUBE, SIGNATURE, TUNGSTEN_MODES, type SignatureId } from '../skills/misc/TungstenModes';
 import { swapCandidate, type Cube, type CubeState, type TungstenState } from '../skills/misc/TungstenRuntime';
 import type { Team } from '../core/types';
 import { cubeLockable } from '../core/Targeting';
@@ -68,7 +68,7 @@ const REACH: Record<SignatureId, (r: string) => string> = {
   ricochet: (r) => `first hull within ${r} of the cube`,
   pile: (r) => `leaps onto the enemy nearest the reticle within ${r} of the cube`,
   cone: (r) => `${r} toward the reticle`,
-  dash: (r) => `${r} away from the cube`,
+  mirror: (r) => `turns enemy shells within ${r} of the cube back on their firers for ${SIGNATURE.mirror.time} s`,
   collide: (r) => `two enemies within ${r} of the cube`,
   sanctuary: (r) => `a ${r} dome at the cube`,
 };

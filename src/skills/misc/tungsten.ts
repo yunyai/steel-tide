@@ -37,7 +37,7 @@ const spec = (id: string, name: string, short: string, cooldown: number, duratio
 });
 const cube = (s: Ship) => s.tungsten!.cubes[0];
 const range = (s: Ship, t: Ship | null) => (t ? Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) : Infinity);
-const isFree = (c: Cube) => !c.gone && c.state !== 'broken' && c.state !== 'meteor' && c.state !== 'collapse';
+const isFree = (c: Cube) => !c.gone && c.state !== 'broken' && c.state !== 'meteor' && c.state !== 'collapse' && c.state !== 'merged';
 /** The cubes the AI weighs: the cube itself, or all six as equals in Overdrive. */
 const pool = (s: Ship) => (overdriveOn(s) ? s.tungsten!.cubes : [cube(s)]);
 const free = (s: Ship) => pool(s).some(isFree);
@@ -71,7 +71,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       14,
       0,
       'rune',
-      "The current mode's move, from the cube. Kinetic: Ricochet+, six bounces, each faster. Crush: Pile Driver, the cube leaps onto a hull, roots and stuns it. Shard: Shrapnel Cone, 24 shards toward the reticle. Repel: Polarity Dash, the ship is thrown away from the cube through anything in the way. Tether: Collide, two hulls are reeled into each other. Mend: Sanctuary, a dome where allies heal and take less damage.",
+      "The current mode's move, from the cube. Kinetic: Ricochet+, six bounces, each faster. Crush: Pile Driver, the cube leaps onto a hull, roots and stuns it. Shard: Shrapnel Cone, 24 shards toward the reticle. Repel: Polarity Mirror, for 5 s enemy shells near the cube fly back at their firers. Tether: Collide, two hulls are reeled into each other. Mend: Sanctuary, a dome where allies heal and take less damage.",
     ),
     {
       activate: (s, _g, st) => signature(s, st.index),
@@ -82,8 +82,8 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
           switch (sig.id) {
             case 'sanctuary':
               return hpFrac(s) < 0.75 && Math.hypot(c.x - s.pos.x, c.z - s.pos.z) <= sig.radius;
-            case 'dash':
-              return !s.tungsten!.lunge && (hpFrac(s) < 0.4 || underFire(s, g, 1500) > 4);
+            case 'mirror':
+              return underFire(s, g, 1500) >= 3 && Math.hypot(c.x - s.pos.x, c.z - s.pos.z) <= 1500;
             case 'ricochet':
               return foesNearCube(s, c, SIGNATURE.ricochet.reach).length > 0;
             default:

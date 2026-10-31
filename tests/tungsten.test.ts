@@ -40,6 +40,10 @@ function extra(g: Game, id: string, team: 0 | 1, x: number, z: number): Ship {
   s.refreshModifiers();
   return s;
 }
+/** A shell from `from`'s main battery at the point (x, z). */
+function fireAt(g: Game, from: Ship, x: number, z: number) {
+  return g.shells.fire(from, { ammo: 'AP', spec: from.spec.main!.ap!, table: from.tableFor('AP')!, fromX: from.pos.x, fromY: 20, fromZ: from.pos.z, toX: x, toZ: z, dmgMul: 1, guaranteedFire: false, railgun: false });
+}
 const modeIndex = (id: string) => TUNGSTEN_MODES.findIndex((m) => m.id === id);
 function setMode(me: Ship, id: string) {
   const t = me.tungsten!;
@@ -927,27 +931,87 @@ describe('signatures', () => {
     expect(t.cubes[0].state).toBe('hover');
     expect(gap(t.cubes[0], { x: 0, z: -500 })).toBeLessThan(1);
   });
-  it('Repel: Polarity Dash drives the ship 1.5 km away from the cube, through hulls for 100k', () => {
-    const { g, me, t } = duel(-3000);
+  it('Repel: Polarity Mirror turns enemy shells near the cube back on their firers, credited to the Signature', () => {
+    const { g, me, foe } = duel(-3000);
+    setMode(me, 'repel');
+    // Broadside on, so the returned round strikes the belt rather than glancing off the bow.
+    foe.heading = foe.renderHeading = Math.PI / 2;
+    const shell = fireAt(g, foe, me.pos.x, me.pos.z);
+    let mirrored = 0;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'mirror') mirrored++;
+    });
+    until(g, () => gap(shell, me.pos) < 1500, 10);
+    // From the dais, the bubble rides the ship.
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    until(g, () => !shell.alive, 5);
+    expect(mirrored).toBe(1);
+    expect(me.stats.received).toBe(0);
+    // A straight return shot at twice the shell's speed, at the firer.
+    const back = g.shells.shells.find((p) => p.owner === me)!;
+    expect(back.straight).toBe(true);
+    expect(Math.hypot(back.vx, back.vy, back.vz)).toBeCloseTo(shell.spec.velocity * SIGNATURE.mirror.return, 0);
+    expect(back.skill).toBe(me.skills[Z].spec);
+    expect(back.spec).toBe(shell.spec);
+    expect(bearingTo(back.x, back.z, back.x + back.vx, back.z + back.vz)).toBeCloseTo(bearingTo(back.x, back.z, foe.pos.x, foe.pos.z), 2);
+    until(g, () => foe.stats.received > 0, 5);
+    expect(foe.stats.received).toBeGreaterThan(0);
+  });
+  it('Polarity Mirror tears up torpedoes in its bubble and leaves fire outside it alone', () => {
+    const { g, me, foe, t } = duel(-4000);
     setMode(me, 'repel');
     park(t.cubes[0], 0, -1500);
-    const inWay = extra(g, 'leviathan', 1, 0, 800);
-    inWay.heading = Math.PI / 2;
+    g.torps.launch(foe, 0, -1900, Math.PI, SHIP_BY_ID.stepper.torpedoes!);
+    g.torps.launch(foe, 2500, -1500, Math.PI, SHIP_BY_ID.stepper.torpedoes!);
+    const outside = fireAt(g, foe, 3000, 0);
     expect(me.activateSkill(Z), me.skillFailure).toBe(true);
-    expect(t.lunge).not.toBeNull();
-    until(g, () => !t.lunge, 3);
-    expect(me.pos.z).toBeCloseTo(SIGNATURE.dash.distance, -1);
-    expect(Math.abs(me.pos.x)).toBeLessThan(5);
-    expect(inWay.stats.received).toBeCloseTo(SIGNATURE.dash.damage, -3);
-    expect(t.cubes[0].state).toBe('hover');
+    g.step(1 / 60);
+    expect(g.torps.torps.filter((p) => p.alive)).toHaveLength(1);
+    expect(outside.alive).toBe(true);
   });
-  it('Polarity Dash heads for the reticle when the cube is docked', () => {
-    const { g, me, t } = duel(-3000);
+  it('Polarity Mirror rides its cube for 5 s, and ends when the cube breaks', () => {
+    const { g, me, t } = duel(-4000);
     setMode(me, 'repel');
-    aim(me, 3000, 0);
+    park(t.cubes[0], 0, -1500);
+    const act = () => t.acts.find((a) => a.kind === 'mirror');
     expect(me.activateSkill(Z), me.skillFailure).toBe(true);
-    until(g, () => !t.lunge, 3);
-    expect(me.pos.x).toBeCloseTo(SIGNATURE.dash.distance, -1);
+    expect(act()?.radius).toBe(TUNGSTEN_MODES[modeIndex('repel')].signature.radius);
+    park(t.cubes[0], 600, -1500);
+    run(g, 0.1);
+    expect(act()!.x).toBeCloseTo(600, 0);
+    run(g, SIGNATURE.mirror.time);
+    expect(act()).toBeUndefined();
+    me.skills[Z].cooldown = 0;
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    damageCube(me, t.cubes[0], 1e9, null);
+    run(g, 0.05);
+    expect(act()).toBeUndefined();
+  });
+  it('Polarity Mirror never moves the ship, in or out of Overdrive', () => {
+    for (const od of [false, true]) {
+      const { g, me, t } = duel(-3000);
+      setMode(me, 'repel');
+      if (od) {
+        me.meter = 1;
+        me.activateSkill(B);
+        run(g, 1);
+      }
+      const at = { x: me.pos.x, z: me.pos.z };
+      expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+      expect(t.lunge).toBeNull();
+      run(g, 1);
+      expect(gap(me.pos, at)).toBeLessThan(100);
+    }
+  });
+  it('lets the AI raise Polarity Mirror under fire when the Repel cube is near the ship', () => {
+    const { g, me, foe, t } = duel(-3000);
+    setMode(me, 'repel');
+    expect(aiWantsSkill(me, g, Z, foe)).toBe(false);
+    const shells = [0, 1, 2].map((i) => fireAt(g, foe, me.pos.x + i * 40, me.pos.z));
+    until(g, () => shells.every((p) => gap(p, me.pos) < 1400), 10);
+    expect(aiWantsSkill(me, g, Z, foe)).toBe(true);
+    park(t.cubes[0], 0, -2000);
+    expect(aiWantsSkill(me, g, Z, foe)).toBe(false);
   });
   it('Tether: Collide reels the two nearest hulls into each other for 150k and a stun each', () => {
     const { g, me, foe, t } = duel(-1500);

@@ -5,6 +5,7 @@ import { bearingTo, forwardX, forwardZ, segmentBox } from '../../core/math';
 import { distToHull, segmentHitsHull } from '../../core/hull';
 import { canTrack } from '../../core/Targeting';
 import type { Ship } from '../../ships/Ship';
+import { getRangeTable } from '../../weapons/Ballistics';
 import { stun } from '../../weapons/StrikeSystem';
 import { buff, hpFrac, hurt, mark } from '../kit';
 import { safeStep } from './StepperRuntime';
@@ -72,8 +73,9 @@ export interface Cube {
  * A Signature's lasting part. `pin`: the cube holds `targets[0]` down. `reel`: hulls dragged to (x, z), the midpoint
  * of two or the cube for one. `field`: allies within `radius` heal `rate` of max HP a second and take `taken` damage.
  */
+/** `mirror`: a Polarity Mirror riding its cube. */
 export interface TungstenAct {
-  kind: 'pin' | 'reel' | 'field';
+  kind: 'pin' | 'reel' | 'field' | 'mirror';
   cube: number;
   skill: number;
   x: number;
@@ -106,7 +108,7 @@ export interface TungstenUlt {
   bounce: number[];
 }
 
-/** The magnet hauling the ship along a corridor: a Lunge to its cube, or a Polarity Dash (`cube` -1) away from it. */
+/** The magnet hauling the ship along a corridor to its cube: a Magnet Lunge. */
 export interface TungstenLunge {
   x0: number;
   z0: number;
@@ -843,7 +845,7 @@ export function dockCubes(s: Ship, skill: number): boolean {
 }
 
 /** Each mode's Signature from cube `c`: an empty string when it fires, or why it cannot. */
-const MOVES: Record<SignatureId, (s: Ship, c: Cube, skill: number) => string> = { ricochet, pile, cone, dash, collide, sanctuary };
+const MOVES: Record<SignatureId, (s: Ship, c: Cube, skill: number) => string> = { ricochet, pile, cone, mirror, collide, sanctuary };
 
 export function signature(s: Ship, skill: number): boolean {
   if (!cubeReady(s, 'Signature')) return false;
@@ -964,18 +966,52 @@ function cone(s: Ship, c: Cube, skill: number): string {
   return '';
 }
 
-/** Repel, Polarity Dash: the magnet throws the ship away from the cube (toward the reticle from the dais), through hulls. */
-function dash(s: Ship, c: Cube, skill: number): string {
-  if (s.tungsten!.lunge) return 'Polarity Dash: the magnet is already hauling the ship';
-  const D = SIGNATURE.dash;
-  const home = c.state === 'docked' || gap(c.x, c.z, s.pos.x, s.pos.z) < 100;
-  const h = home ? bearingTo(s.pos.x, s.pos.z, s.control.aimX, s.control.aimZ) : bearingTo(c.x, c.z, s.pos.x, s.pos.z);
-  const land = corridor(s, h, D.distance);
-  if (land < 0) return 'Polarity Dash: no clear water to dash into';
-  haul(s, h, land, D.speed, -1, D.damage, skill);
-  const L = s.tungsten!.lunge!;
-  signatureEvent(s, c, L.x1, L.z1);
+/** Repel, Polarity Mirror: a bubble round the cube that turns enemy shells back on their firers (see `reflect`). */
+function mirror(s: Ship, c: Cube, skill: number): string {
+  s.tungsten!.acts.push({ kind: 'mirror', cube: c.id, skill, x: c.x, z: c.z, elapsed: 0, time: SIGNATURE.mirror.time, radius: TUNGSTEN_MODES[c.mode].signature.radius, targets: [], rate: 0, taken: 1 });
+  signatureEvent(s, c);
   return '';
+}
+
+/**
+ * Every enemy shell inside a Polarity Mirror at height `y` dies there, and one like it flies straight back at where
+ * its firer is now, at `SIGNATURE.mirror.return` times its muzzle velocity, credited to the Signature. Missiles,
+ * torpedoes and bombs inside are torn up.
+ */
+function reflect(s: Ship, a: TungstenAct, c: Cube): void {
+  const g = s.game;
+  const spec = skillSpec(s, a.skill);
+  const shells = g.shells.shells;
+  for (let i = 0, n = shells.length; i < n; i++) {
+    const p = shells[i];
+    if (!p.alive || p.team === s.team || Math.hypot(p.x - a.x, p.y - c.y, p.z - a.z) > a.radius) continue;
+    p.alive = false;
+    const o = p.owner;
+    emit(s, 'mirror', c, p.x, p.y, p.z, 0, o);
+    if (p.bomb || !o.alive) continue;
+    g.shells.fire(s, {
+      ammo: p.ammo,
+      spec: p.spec,
+      table: getRangeTable(p.spec, p.maxDist / 1.3),
+      fromX: p.x,
+      fromY: p.y,
+      fromZ: p.z,
+      toX: o.pos.x,
+      toZ: o.pos.z,
+      dmgMul: p.dmgMul,
+      skill: spec,
+      look: p.look,
+      flat: SIGNATURE.mirror.return,
+      guaranteedFire: false,
+      railgun: false,
+    });
+  }
+  for (const m of g.missiles.missiles) if (m.alive && m.team !== s.team && gap(m.x, m.z, a.x, a.z) <= a.radius) g.missiles.kill(m);
+  for (const p of g.torps.torps)
+    if (p.alive && p.team !== s.team && gap(p.x, p.z, a.x, a.z) <= a.radius) {
+      p.alive = false;
+      g.events.emit('explosion', { x: p.x, y: 0, z: p.z, size: 0.6 });
+    }
 }
 
 /** Tether, Collide: the two enemy hulls nearest the cube are reeled into each other (a lone one into the cube). */
@@ -1446,6 +1482,14 @@ function stepActs(s: Ship, t: TungstenState, dt: number): void {
       }
       if (c?.state === 'pin') dropBeside(s, c, o && hostile(s, o) ? o : null);
       return false;
+    }
+    if (a.kind === 'mirror') {
+      // Riding its cube until it breaks or its time runs out.
+      if (!c || c.gone || c.state === 'broken' || a.elapsed > a.time) return false;
+      a.x = c.x;
+      a.z = c.z;
+      reflect(s, a, c);
+      return true;
     }
     if (a.kind === 'reel') {
       // A lone hull is reeled into the cube; a pair into each other at their midpoint.

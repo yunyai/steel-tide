@@ -65,8 +65,9 @@ describe('Tungsten mode guide', () => {
     expect(sig('crush')).toContain(`${SIGNATURE.pile.root} s`);
     expect(sig('shard')).toContain(`${SIGNATURE.cone.shards} shards`);
     expect(sig('shard')).toContain(`${SIGNATURE.cone.damage / 1000}k`);
-    expect(sig('repel')).toContain(`${SIGNATURE.dash.damage / 1000}k`);
-    expect(sig('repel')).toContain(`${SIGNATURE.dash.distance / 1000} km`);
+    expect(sig('repel')).toContain(`${TUNGSTEN_MODES[3].signature.radius} m`);
+    expect(sig('repel')).toContain(`${SIGNATURE.mirror.time} s`);
+    expect(sig('repel')).toContain(`${SIGNATURE.mirror.return}×`);
     expect(sig('tether')).toContain(`${SIGNATURE.collide.damage / 1000}k`);
     expect(sig('mend')).toContain(`${SIGNATURE.sanctuary.heal * 100}%`);
     expect(sig('mend')).toContain(`${Math.round((1 - SIGNATURE.sanctuary.taken) * 100)}% less`);

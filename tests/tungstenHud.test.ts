@@ -27,7 +27,7 @@ describe('Tungsten HUD presentation', () => {
     expect(view.signatureLabel).toBe('CONE');
     expect(view.signatureTitle).toBe('Now Shrapnel Cone: 2.0 km toward the reticle.');
     t.mode = 3;
-    expect(tungstenPresentation(t, time, 0, 0).signatureTitle).toBe('Now Polarity Dash: 1.5 km away from the cube.');
+    expect(tungstenPresentation(t, time, 0, 0).signatureTitle).toBe('Now Polarity Mirror: turns enemy shells within 0.7 km of the cube back on their firers for 5 s.');
   });
 
   it('says where a pinning cube is', () => {

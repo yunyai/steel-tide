@@ -88,6 +88,7 @@ const LIFE: Partial<Record<TungstenEvent['kind'], number>> = {
   arrive: 0.9,
   capture: 0.45,
   block: 0.4,
+  mirror: 0.45,
   shield: 1,
   contact: 0.7,
   overdrive: 1.8,
@@ -254,6 +255,9 @@ export class TungstenCubeFx {
       case 'block':
         if (throttle('block', 0.1)) play('ricochet', 'ricochet', 0.4, 0.8, 2);
         break;
+      case 'mirror':
+        if (throttle('mirror', 0.08)) play('ricochet', 'ricochet', 0.5, 1.4, 2);
+        break;
       case 'shield':
         play('shield', 'shield', 0.7, 0.9);
         break;
@@ -278,7 +282,7 @@ export class TungstenCubeFx {
         if (sig === 'ricochet') play('ricochet', 'ricochet', 0.8, 1);
         else if (sig === 'pile') play('charge', 'energy-heavy', 0.8, 0.8);
         else if (sig === 'cone') play('explosion', 'blast-shock', 0.8, 1.3, 2);
-        else if (sig === 'dash') play('charge', 'energy-heavy', 0.9, 1.3);
+        else if (sig === 'mirror') play('shield', 'shield', 0.8, 1.3);
         else if (sig === 'collide') play('charge', 'energy-charge', 0.8, 0.8);
         else play('charge', 'ward-rise', 0.8, 0.9);
         break;
@@ -820,6 +824,8 @@ export class TungstenCubeFx {
         if (!this.paint.reduce) this.paint.ring(o.renderPos.x, o.renderPos.z, L * (1 - 0.4 * ((now * 1.5) % 1)), hot(WHITE, 1.1), 0.35 * (1 - k));
         this.paint.foamRing(o.renderPos.x, o.renderPos.z, L * 0.9, 0.45 * (1 - k), a.cube);
         this.paint.loop(o.renderPos.x, o.renderPos.y + o.spec.freeboard + 6, o.renderPos.z, o.spec.beam * 0.9, hot(color, 2), 0.6 * pulse);
+      } else if (a.kind === 'mirror' && c) {
+        this.mirrorBubble(this.renderPos(c, this.v), a.radius, color, clamp01(a.elapsed / 0.3) * clamp01((a.time - a.elapsed) / 0.5), a.cube);
       }
     }
     // Lunge: the hull drawn down a magnetic rail toward the cube, field lines leading it in.
@@ -957,7 +963,7 @@ export class TungstenCubeFx {
         return;
       }
       case 'signature':
-        this.signature(b, age, f, color, seen);
+        this.signature(b, age, f, color);
         return;
       case 'slam': {
         const base = this.paint.surface(e.x, e.z);
@@ -1013,6 +1019,16 @@ export class TungstenCubeFx {
             v = 60 + 120 * R(i, 1);
           p.push(BK.Spark, e.x + Math.cos(a) * drift(age, v, 3), e.y + drift(age, 60 * R(i, 2), 3, 80), e.z + Math.sin(a) * drift(age, v, 3), 1, hot(WHITE, 2), 1 - f, 0, 0, Math.cos(a) * 3, 1, Math.sin(a) * 3, 1.2);
         }
+        return;
+      }
+      case 'mirror': {
+        // A shell turned on the bubble: a flash where it struck, and a streak flung back toward its firer.
+        if (age < 0.1) p.push(BK.Flare, e.x, e.y, e.z, 90, hot(color, 2), 1 - age / 0.1);
+        const dx = b.tx - e.x,
+          dz = b.tz - e.z,
+          d = Math.hypot(dx, dz) || 1;
+        const run = 260 * ease(age / 0.3);
+        this.trails.push(e.x + (dx / d) * run * 0.3, e.y, e.z + (dz / d) * run * 0.3, e.x + (dx / d) * run, e.y, e.z + (dz / d) * run, hot(color, 2.4), 0.9 * (1 - f), 4, 2);
         return;
       }
       case 'spent': {
@@ -1131,7 +1147,32 @@ export class TungstenCubeFx {
     }
   }
 
-  private signature(b: Burst, age: number, f: number, color: Color, seen: boolean): void {
+  /** Polarity Mirror: a faceted dome of light round the cube, cut off at the sea, a hex lattice on the water beneath. */
+  private mirrorBubble(o: Vector3, r: number, color: Color, fade: number, seed: number): void {
+    if (fade < 0.01) return;
+    const base = this.paint.surface(o.x, o.z);
+    const spin = this.paint.reduce ? 0 : this.game.renderTime * 0.25 + seed;
+    const pts = (lat: number, lon: number, out: Vector3) => {
+      const phi = (lat / 6) * (Math.PI / 2),
+        th = (lon / 12) * TAU + spin;
+      return out.set(o.x + r * Math.cos(phi) * Math.cos(th), Math.max(base + 2, o.y + r * Math.sin(phi)), o.z + r * Math.cos(phi) * Math.sin(th));
+    };
+    const a = this.v2,
+      b = this.v3;
+    for (let lat = 0; lat < 6; lat++)
+      for (let lon = 0; lon < 12; lon++) {
+        // Flat facets: straight edges along each latitude and each meridian.
+        pts(lat, lon, a);
+        pts(lat, lon + 1, b);
+        this.lines.push(a.x, a.y, a.z, b.x, b.y, b.z, hot(color, 1.6), 0.45 * fade, 3, 1.2);
+        pts(lat + 1, lon, b);
+        this.lines.push(a.x, a.y, a.z, b.x, b.y, b.z, hot(color, 1.3), 0.35 * fade, 2, 1.2);
+      }
+    this.paint.ring(o.x, o.z, r, hot(color, 1.8), 0.7 * fade);
+    this.paint.ring(o.x, o.z, r * 0.97, hot(color, 0.9), 0.3 * fade, BK.Hex, spin * 0.4);
+  }
+
+  private signature(b: Burst, age: number, f: number, color: Color): void {
     const e = b.e,
       p = this.particles;
     const sig = TUNGSTEN_MODES[e.mode].signature.id;
@@ -1168,11 +1209,10 @@ export class TungstenCubeFx {
           y = e.y + (base + 10 - e.y) * (d / C.range);
         this.trails.push(e.x + ux * d0, y + 20, e.z + uz * d0, e.x + ux * d, y, e.z + uz * d, tint2.copy(WHITE).lerp(color, age / life).multiplyScalar(2.6), 0.85 * (1 - age / life), 5, 2);
       }
-    } else if (sig === 'dash') {
-      // Polarity Dash: the cube's field kicks the hull away, a shock ring on the sea and the landing marked.
-      this.paint.ring(e.x, e.z, 80 + 420 * ease(age / 0.5), hot(color, 2), 0.85 * (1 - f));
-      this.paint.foamRing(e.x, e.z, 60 + 320 * ease(age / 0.6), 0.5 * (1 - f), b.id);
-      if (seen) this.paint.ring(tx, tz, e.ship.spec.length * 0.5 * (0.6 + 0.4 * ease(age / 0.4)), hot(color, 1.5), 0.6 * (1 - f));
+    } else if (sig === 'mirror') {
+      // Polarity Mirror: the field snaps out to the bubble's edge; the act holds the bubble up.
+      this.paint.ring(e.x, e.z, e.radius * ease(age / 0.4), hot(color, 2), 0.8 * (1 - f));
+      this.paint.loop(e.x, e.y, e.z, 40 + 160 * ease(age / 0.3), hot(WHITE, 1.8), 0.7 * (1 - clamp01(age / 0.4)));
     } else if (sig === 'collide') {
       // Collide: the meeting point, closing as the hulls are hauled in.
       this.paint.ring(tx, tz, e.radius * (1 - ease(age / SIGNATURE.collide.time)), hot(color, 1.8), 0.8 * (1 - f));

@@ -111,7 +111,7 @@ export const dockLift = (spec: { freeboard: number }) => spec.freeboard + CUBE.f
 export const haloAngle = (slot: number, time: number) => ((slot - 1) / 5) * Math.PI * 2 + time * CUBE.ringSpin;
 
 export type TungstenModeId = 'kinetic' | 'crush' | 'shard' | 'repel' | 'tether' | 'mend';
-export type SignatureId = 'ricochet' | 'pile' | 'cone' | 'dash' | 'collide' | 'sanctuary';
+export type SignatureId = 'ricochet' | 'pile' | 'cone' | 'mirror' | 'collide' | 'sanctuary';
 
 export interface TungstenMode {
   id: TungstenModeId;
@@ -179,7 +179,7 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
   },
   {
     id: 'repel', name: 'Repel', short: 'REP', color: 0x3d6bff, speed: 1, damage: 0.85, stops: false,
-    signature: { id: 'dash', name: 'Polarity Dash', radius: 1500 },
+    signature: { id: 'mirror', name: 'Polarity Mirror', radius: 700 },
     hit: '-15% damage; knocks hulls 250 m aside. Wider Shield capture.',
     passive: 'Ship takes 12% less damage.',
     die: `Flings hulls ${HIT.repel.knock * D} m out and tears up enemy fire in the blast.`,
@@ -216,8 +216,11 @@ export const SIGNATURE = {
   pile: { damage: 200000, root: 3, stun: 2, speed: 2400, height: 450 },
   /** Shard: `shards` rays across a `spread`-degree cone toward the reticle, each striking the first hull it meets. */
   cone: { shards: 24, spread: 40, range: 2000, damage: 25000 },
-  /** Repel: the ship dashes `distance` away from the cube (or toward the reticle from the dais), through hulls, taking the Lunge's 40% less damage. */
-  dash: { distance: 1500, speed: 2000, damage: 100000 },
+  /**
+   * Repel: for `time` s every enemy shell that comes within the radius of the cube flies straight back at where its
+   * firer is, at `return` times its muzzle velocity; missiles, torpedoes and bombs inside are torn up.
+   */
+  mirror: { time: 5, return: 2 },
   /** Tether: the two nearest hulls are reeled into each other over `time` (a lone hull into the cube). */
   collide: { time: 1, damage: 150000, stun: 1.5 },
   /** Mend: a dome at the cube: allies inside heal `heal` of max HP a second and take `taken` damage. */

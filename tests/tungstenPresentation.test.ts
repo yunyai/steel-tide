@@ -25,6 +25,7 @@ const METEOR = 7;
 const OVERDRIVE = 8;
 const CRUSH = 1;
 const SHARD = 2;
+const REPEL = 3;
 const MEND = 5;
 
 afterEach(() => vi.unstubAllGlobals());
@@ -446,8 +447,8 @@ describe('Tungsten cube effects', () => {
       fx.prepare(team, 720);
       return fx.count;
     };
-    // Sanctuary and Shrapnel Cone fired from the dais: nothing for the enemy to see.
-    for (const mode of [MEND, SHARD]) {
+    // Sanctuary, Shrapnel Cone and Polarity Mirror fired from the dais: nothing for the enemy to see.
+    for (const mode of [MEND, SHARD, REPEL]) {
       const { g, s, fx } = hidden(mode);
       cast(s, SIGNATURE);
       play(g, fx, 0.3);
@@ -464,6 +465,27 @@ describe('Tungsten cube effects', () => {
     cast(s, SIGNATURE);
     play(g, fx, 0.3);
     expect(look(s, fx, 0)).toBeGreaterThan(before);
+    fx.dispose();
+  });
+
+  it('holds a Polarity Mirror bubble round the cube for as long as the act lives', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const fx = new TungstenCubeFx(new Scene(), g);
+    s.tungsten!.mode = s.tungsten!.cubes[0].mode = REPEL;
+    park(s, 0, -2000);
+    play(g, fx, 0.1, [s]);
+    fx.prepare(0, 720);
+    const idle = fx.lines.count;
+    cast(s, SIGNATURE);
+    play(g, fx, 2, [s]);
+    fx.prepare(0, 720);
+    expect(s.tungsten!.acts.some((a) => a.kind === 'mirror')).toBe(true);
+    expect(fx.lines.count).toBeGreaterThan(idle + 100);
+    play(g, fx, 4, [s]);
+    fx.prepare(0, 720);
+    expect(s.tungsten!.acts.some((a) => a.kind === 'mirror')).toBe(false);
+    expect(fx.lines.count).toBeLessThan(idle + 20);
     fx.dispose();
   });
 });
