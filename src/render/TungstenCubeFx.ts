@@ -35,6 +35,8 @@ interface FreeCube {
   /** Recent render positions and times, newest last: x, y, z, t. */
   trail: number[];
   tumble: number;
+  /** Drawn heading, eased toward the sim's so a capped 60 Hz turn reads smooth at any frame rate. */
+  yaw: number;
   axisX: number;
   axisZ: number;
   lastX: number;
@@ -333,12 +335,15 @@ export class TungstenCubeFx {
         mesh.frustumCulled = false;
         this.scene.add(mesh);
         this.renderPos(c, this.v);
-        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, mode: c.mode };
+        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, mode: c.mode };
         this.views.set(k, v);
       }
       v.live = true;
       v.gone = -1;
       v.mode = c.mode;
+      // A cube looks the same every quarter turn: take the short way round to the sim's heading.
+      const turn = c.yaw - v.yaw - Math.round((c.yaw - v.yaw) / (Math.PI / 2)) * (Math.PI / 2);
+      v.yaw += turn * Math.min(1, dt * 30);
       const p = this.renderPos(c, this.v);
       const moved = Math.hypot(p.x - v.lastX, p.z - v.lastZ);
       if (moved > 0.5 && c.state === 'flying') {
@@ -346,8 +351,8 @@ export class TungstenCubeFx {
         // Only a throw rolls it: turning the axis under a settled cube would tip it onto an edge.
         const ax = (p.z - v.lastZ) / moved,
           az = -(p.x - v.lastX) / moved;
-        const cy = Math.cos(c.yaw),
-          sy = Math.sin(c.yaw);
+        const cy = Math.cos(v.yaw),
+          sy = Math.sin(v.yaw);
         v.axisX = ax * cy - az * sy;
         v.axisZ = ax * sy + az * cy;
       }
@@ -439,7 +444,7 @@ export class TungstenCubeFx {
       v.mesh.visible = size > 0.5;
       v.mesh.position.set(p.x, p.y + bob + lift, p.z);
       v.mesh.scale.setScalar(Math.max(0.01, size));
-      this.q.setFromAxisAngle(this.up, c.yaw + (parked && !this.paint.reduce ? Math.sin(anim * 0.4 + c.id) * 0.05 : 0));
+      this.q.setFromAxisAngle(this.up, v.yaw + (parked && !this.paint.reduce ? Math.sin(anim * 0.4 + c.id) * 0.05 : 0));
       this.v2.set(v.axisX, 0, v.axisZ);
       this.q2.setFromAxisAngle(this.v2, v.tumble);
       v.mesh.quaternion.copy(this.q).multiply(this.q2);

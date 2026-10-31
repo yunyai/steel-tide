@@ -10,6 +10,7 @@ import { CUBE, dockLift, HIT, TUNGSTEN_MODES } from '../src/skills/misc/Tungsten
 import { absorbCube, cubeIntercept, damageCube, type Cube } from '../src/skills/misc/TungstenRuntime';
 import { aiWantsSkill } from '../src/skills/registry';
 import { stun } from '../src/weapons/StrikeSystem';
+import { bearingTo, forwardX, forwardZ } from '../src/core/math';
 import { AIController } from '../src/ai/AIController';
 import type { Ship } from '../src/ships/Ship';
 
@@ -260,6 +261,48 @@ describe('throwing', () => {
     run(g, 0.5);
     expect(t.cubes[0].state).toBe('docked');
   });
+  it('rolls up and over an island to a reticle beyond it, never dipping into the ground', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 3000;
+    const c = t.cubes[0];
+    const ground = (x: number, z: number) => (z < -900 && z > -1300 && Math.abs(x) < 600 ? 40 : -50);
+    g.map.heightAt = ground;
+    hurl(g, me, 0, -2000);
+    expect(c.state).toBe('flying');
+    // The cube's base, under its whole footprint along the throw, stays on or above the ground.
+    const H = CUBE.edge / 2;
+    let clear = Infinity;
+    for (let k = 0; k < 600 && c.state === 'flying'; k++) {
+      g.step(1 / 60);
+      for (let a = -H; a <= H; a += 16) clear = Math.min(clear, c.y - H - Math.max(0, ground(c.x, c.z + a)));
+    }
+    expect(c.state).toBe('hover');
+    expect(gap(c, { x: 0, z: -2000 })).toBeLessThan(5);
+    expect(clear).toBeGreaterThan(-0.5);
+    expect(c.y).toBeCloseTo(CUBE.hoverY);
+  });
+  it('stops on an island when the reticle is on it, sitting on the ground', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 3000;
+    const c = t.cubes[0];
+    g.map.heightAt = (x, z) => (z < -1500 && Math.abs(x) < 900 ? 30 : -50);
+    hurl(g, me, 0, -2000);
+    until(g, landed(c));
+    expect(gap(c, { x: 0, z: -2000 })).toBeLessThan(5);
+    expect(c.y).toBeCloseTo(30 + CUBE.edge / 2);
+  });
+  it('rests a spent cube on the ground on land rather than sinking into it', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 3000;
+    const c = t.cubes[0];
+    g.map.heightAt = (x, z) => (z < -1500 && Math.abs(x) < 900 ? 30 : -50);
+    t.energy = CUBE.shot.cost;
+    hurl(g, me, 0, -2000);
+    expect(t.spent).toBe(true);
+    until(g, landed(c));
+    run(g, 4);
+    expect(c.y).toBeCloseTo(30 + CUBE.edge / 2);
+  });
 });
 
 describe('thrown cube hits', () => {
@@ -328,6 +371,10 @@ describe('Magnet Surge', () => {
 });
 
 describe('Dock', () => {
+  it('comes back every 10 s', () => {
+    const { me } = duel();
+    expect(me.skills[C].spec.cooldown).toBe(10);
+  });
   it('needs the cube out', () => {
     const { me } = duel();
     expect(me.activateSkill(C)).toBe(false);
@@ -627,10 +674,62 @@ describe('Tungsten Shield', () => {
     const { g, me, foe, t } = duel();
     me.activateSkill(V);
     run(g, 1);
-    t.charge = 590000;
+    t.charge = 990000;
     g.missiles.launch(foe, 0, 0, 0, 50000, { uninterceptable: true });
     run(g, 5);
     expect(t.charge).toBe(CUBE.chargeCap);
+  });
+  it('stores up to 1M, and 3M in Overdrive', () => {
+    expect(CUBE.chargeCap).toBe(1_000_000);
+    expect(CUBE.chargeCap * CUBE.orbit.cap).toBe(3_000_000);
+  });
+  it('squares the guarding cube up on its nearest face, turning no faster than the guard turn', () => {
+    const { g, me, t } = duel();
+    const c = t.cubes[0];
+    expect(me.activateSkill(V)).toBe(true);
+    run(g, 1);
+    // Swing the reticle 100° round the ship: the nearest face is 10° away, not 100°.
+    const b = bearingTo(me.pos.x, me.pos.z, 0, -1500) + (100 * Math.PI) / 180;
+    aim(me, me.pos.x + forwardX(b) * 1500, me.pos.z + forwardZ(b) * 1500);
+    const y0 = c.yaw;
+    let most = 0;
+    for (let k = 0; k < 60; k++) {
+      const y = c.yaw;
+      g.step(1 / 60);
+      most = Math.max(most, Math.abs(c.yaw - y));
+    }
+    expect(most).toBeLessThanOrEqual(CUBE.guard.turn / 60 + 1e-9);
+    expect(Math.abs(c.yaw - y0)).toBeLessThanOrEqual(Math.PI / 4 + 1e-6);
+    // A face points straight at the reticle.
+    const q = Math.PI / 2,
+      off = (((c.yaw + bearingTo(me.pos.x, me.pos.z, me.control.aimX, me.control.aimZ)) % q) + q) % q;
+    expect(Math.min(off, q - off)).toBeLessThan(1e-3);
+  });
+  it('strikes a hull it touches with the store behind it, once per interval, keeping the store', () => {
+    const strike = (store: number) => {
+      const { g, me, foe, t } = duel();
+      expect(me.activateSkill(V)).toBe(true);
+      run(g, 1);
+      const c = t.cubes[0];
+      t.charge = store;
+      const hits: number[] = [];
+      let last = foe.stats.received;
+      // Hold the foe against the cube for just over two intervals.
+      for (let k = 0; k < 100; k++) {
+        foe.pos.x = c.x;
+        foe.pos.z = c.z - 100;
+        g.step(1 / 60);
+        if (foe.stats.received > last) hits.push(foe.stats.received - last);
+        last = foe.stats.received;
+      }
+      expect(t.charge).toBe(store);
+      return hits;
+    };
+    const empty = strike(0),
+      full = strike(1_000_000);
+    expect(empty).toHaveLength(3);
+    expect(empty[0]).toBeCloseTo(40000, -2);
+    expect(full[0]).toBeCloseTo(140000, -2);
   });
   it('spends the store on the next cube hit', () => {
     const { g, me, foe, t } = duel();
@@ -701,6 +800,28 @@ describe('cube health', () => {
 });
 
 describe('Overdrive', () => {
+  it('batters hulls from the orbit with 5% of the store behind each strike', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 4000;
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 1);
+    expect(me.activateSkill(V)).toBe(true);
+    run(g, 2);
+    t.charge = 3_000_000;
+    const c = t.cubes[0];
+    let hit = 0;
+    for (let k = 0; k < 60 && !hit; k++) {
+      // Just outside the cube, away from the ship and the rest of the ring.
+      const d = Math.max(1, gap(c, me.pos));
+      foe.pos.x = c.x + ((c.x - me.pos.x) / d) * 100;
+      foe.pos.z = c.z + ((c.z - me.pos.z) / d) * 100;
+      g.step(1 / 60);
+      hit = foe.stats.received;
+    }
+    expect(hit).toBeCloseTo(230000, -2);
+    expect(t.charge).toBe(3_000_000);
+  });
   it('raises five more cubes in the other modes with every passive live', () => {
     const { g, me, t } = duel();
     me.meter = 1;
@@ -797,7 +918,7 @@ describe('Overdrive', () => {
       expect(hit?.capture).toBe(true);
     }
     absorbCube({ owner: me, cube: t.cubes[0], t: 0, capture: true }, 5e6, null, 0, 0, 0);
-    expect(t.charge).toBe(CUBE.chargeCap * 2);
+    expect(t.charge).toBe(CUBE.chargeCap * 3);
     run(g, CUBE.orbit.time - 3);
     expect(t.cubes.every((c) => c.state === 'orbit')).toBe(true);
     run(g, 3);

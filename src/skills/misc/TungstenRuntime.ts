@@ -255,7 +255,8 @@ export function throwerCube(s: Ship, x: number, z: number): Cube | null {
 
 /** Centre height over water, or clear of the land beneath. */
 export function hoverY(s: Ship, x: number, z: number, scale = 1): number {
-  return Math.max(0, s.game.map.heightAt(x, z)) + CUBE.hoverY + H * (scale - 1);
+  // Over water its base hovers clear of the waves; on land it sits on the ground.
+  return Math.max(CUBE.hoverY, s.game.map.heightAt(x, z) + H) + H * (scale - 1);
 }
 
 /**
@@ -502,8 +503,8 @@ function cubeReady(s: Ship, name: string): boolean {
 /**
  * The fire button hurls the cube (every free cube in Overdrive, abreast) at the reticle, up to `CUBE.shot.range`
  * from where it is. It tumbles there, ploughing through every hull in its way, and hovers. Each throw spends
- * energy unless throws are free; the throw that empties it leaves the cube spent where it lands. False when
- * nothing was thrown: every cube already over its spot, or land in the way.
+ * energy unless throws are free; the throw that empties it leaves the cube spent where it lands. It rolls up and
+ * over islands, and a reticle on land stops it there. False when every cube is already over its spot.
  */
 function throwCubes(s: Ship): boolean {
   const t = s.tungsten!;
@@ -513,8 +514,7 @@ function throwCubes(s: Ship): boolean {
   const rx = Math.cos(b),
     rz = Math.sin(b);
   const boost = t.surgeUntil > s.game.time ? CUBE.surge.speed : 1;
-  let thrown = 0,
-    blocked = false;
+  let thrown = 0;
   // Each takes the place in the line on its own side, so no path crosses another.
   const side = (c: Cube) => (c.x - s.pos.x) * rx + (c.z - s.pos.z) * rz;
   cubes.sort((a, b) => side(a) - side(b));
@@ -524,34 +524,19 @@ function throwCubes(s: Ship): boolean {
       az = s.control.aimZ + rz * off;
     const d = gap(c.x, c.z, ax, az);
     if (d < 100) return;
-    const ux = (ax - c.x) / d,
-      uz = (az - c.z) / d;
-    let reach = Math.min(d, CUBE.shot.range);
-    // It hovers over the last clear water short of an island; a cube already over land may cross to water.
-    let wet = s.game.map.heightAt(c.x, c.z) < -2;
-    for (let a = 30; a <= reach; a += 30) {
-      const px = c.x + ux * a,
-        pz = c.z + uz * a;
-      const land = s.game.map.heightAt(px, pz) > -2 || Math.abs(px) > MAP_HALF - 200 || Math.abs(pz) > MAP_HALF - 200;
-      if (!land) wet = true;
-      else if (wet) {
-        reach = Math.max(0, a - (H + 20));
-        break;
-      }
-    }
-    if (reach < 100) {
-      blocked = true;
-      return;
-    }
-    const x = c.x + ux * reach,
-      z = c.z + uz * reach;
+    const reach = Math.min(d, CUBE.shot.range) / d;
+    // Only the map's edge stops it short.
+    const edge = MAP_HALF - 200;
+    const x = Math.max(-edge, Math.min(edge, c.x + (ax - c.x) * reach)),
+      z = Math.max(-edge, Math.min(edge, c.z + (az - c.z) * reach));
+    if (gap(c.x, c.z, x, z) < 100) return;
     c.state = 'flying';
     c.flown = 0;
     c.path = newPath('shot', -1, x, hoverY(s, x, z), z, CUBE.shot.speed * TUNGSTEN_MODES[c.mode].speed * boost);
     emit(s, 'throw', c, c.x, c.y, c.z);
     thrown++;
   });
-  if (!thrown) return blocked && s.failSkill('Tungsten cube: land in the way');
+  if (!thrown) return false;
   if (!freeThrows(s)) {
     t.energy = Math.max(0, t.energy - CUBE.shot.cost);
     t.spent = t.energy <= 0;
@@ -890,7 +875,7 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
     case 'hover': {
       // Turning slowly where it hovers; a spent cube sinks to rest low in the water.
       c.yaw += CUBE.spin * dt;
-      const rest = t.spent && !c.extra ? Math.max(0, g.map.heightAt(c.x, c.z)) + H * c.scale - CUBE.energy.sink : hoverY(s, c.x, c.z, c.scale);
+      const rest = t.spent && !c.extra ? Math.max(H * c.scale - CUBE.energy.sink, g.map.heightAt(c.x, c.z) + H * c.scale) : hoverY(s, c.x, c.z, c.scale);
       c.y += Math.max(-60 * dt, Math.min(60 * dt, rest - c.y));
       break;
     }
@@ -899,7 +884,12 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
       const b = bearingTo(s.pos.x, s.pos.z, s.control.aimX, s.control.aimZ);
       const r = s.spec.length / 2 + CUBE.guard.offset;
       moveToward(s, c, s.pos.x + forwardX(b) * r, s.pos.z + forwardZ(b) * r, CUBE.guard.speed * dt);
-      c.yaw = -b;
+      // Square the nearest face up to the reticle: never more than 45° to turn, at a capped rate.
+      const q = Math.PI / 2;
+      const goal = -b + Math.round((c.yaw + b) / q) * q;
+      const turn = CUBE.guard.turn * dt;
+      c.yaw += Math.max(-turn, Math.min(turn, goal - c.yaw));
+      strike(s, c, CUBE.guard);
       break;
     }
     case 'orbit': {
@@ -910,14 +900,7 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
       const a = t.orbitAngle + (i / ring.length) * Math.PI * 2;
       moveToward(s, c, s.pos.x + Math.cos(a) * CUBE.orbit.radius, s.pos.z + Math.sin(a) * CUBE.orbit.radius, CUBE.guard.speed * dt);
       c.yaw = -a;
-      const spec = skillSpec(s, 5);
-      for (const o of g.ships) {
-        if (!hostile(s, o) || distToHull(o, c.x, c.z) > H * 1.2 + 20 || !due(c, o.id, CUBE.orbit.every, g.time)) continue;
-        cubeHit(s, c, o, CUBE.orbit.damage, spec, false, false);
-        const d = Math.max(1, gap(o.pos.x, o.pos.z, s.pos.x, s.pos.z));
-        o.shove(((o.pos.x - s.pos.x) / d) * CUBE.orbit.knock * 1.5, ((o.pos.z - s.pos.z) / d) * CUBE.orbit.knock * 1.5);
-        emit(s, 'contact', c, c.x, c.y, c.z, 0, o);
-      }
+      strike(s, c, CUBE.orbit);
       break;
     }
     default:
@@ -942,6 +925,22 @@ function stepCube(s: Ship, t: TungstenState, c: Cube, dt: number): void {
     const push = Math.min(h - d, CUBE.shoveSpeed * dt);
     o.pos.x += ux * push;
     o.pos.z += uz * push;
+  }
+}
+
+/**
+ * A Shield cube strikes the hulls it touches, once per `k.every` each: `k.damage` plus `k.store` of the store, which
+ * is kept, and a knock away from the ship. Credited to the Shield.
+ */
+function strike(s: Ship, c: Cube, k: { damage: number; store: number; knock: number; every: number }): void {
+  const g = s.game;
+  const spec = skillSpec(s, 5);
+  for (const o of g.ships) {
+    if (!hostile(s, o) || distToHull(o, c.x, c.z) > H * 1.2 + 20 || !due(c, o.id, k.every, g.time)) continue;
+    cubeHit(s, c, o, k.damage + s.tungsten!.charge * k.store, spec, false, false);
+    const d = Math.max(1, gap(o.pos.x, o.pos.z, s.pos.x, s.pos.z));
+    o.shove(((o.pos.x - s.pos.x) / d) * k.knock * 1.5, ((o.pos.z - s.pos.z) / d) * k.knock * 1.5);
+    emit(s, 'contact', c, c.x, c.y, c.z, 0, o);
   }
 }
 
@@ -1006,7 +1005,14 @@ function stepPath(s: Ship, t: TungstenState, c: Cube, dt: number): void {
   c.y += dy * f;
   c.z += dz * f;
   c.flown += Math.min(step, d);
-  if (Math.hypot(c.x - ox, c.z - oz) > 1e-6) c.yaw = -bearingTo(ox, oz, c.x, c.z);
+  const moved = Math.hypot(c.x - ox, c.z - oz);
+  if (moved > 1e-6) {
+    c.yaw = -bearingTo(ox, oz, c.x, c.z);
+    // It rolls up and over land: never lower than the ground under it and just ahead of it.
+    const ux = (c.x - ox) / moved,
+      uz = (c.z - oz) / moved;
+    for (let a = -H; a <= 2 * H; a += H / 4) c.y = Math.max(c.y, hoverY(s, c.x + ux * a, c.z + uz * a, c.scale));
+  }
   if (p.kind !== 'home') {
     const spec = skillSpec(s, p.skill);
     const h = H * c.scale;

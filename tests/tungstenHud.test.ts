@@ -131,15 +131,16 @@ describe('Tungsten HUD panel', () => {
     expect(panel(t, time).where).toBe('Shattered');
   });
 
-  it('fills the Shield store against its cap, doubled in Overdrive', () => {
+  it('fills the Shield store against its cap, tripled in Overdrive', () => {
     const { t, time } = tungsten();
     t.guardUntil = time + 3;
-    expect(panel(t, time).store).toEqual({ frac: 0, text: '0k / 600k', low: false });
-    t.charge = 240000;
-    expect(panel(t, time).store).toEqual({ frac: 0.4, text: '240k / 600k', low: false });
+    expect(panel(t, time).store).toEqual({ frac: 0, text: '0k / 1.0M', low: false });
+    t.charge = 250000;
+    expect(panel(t, time).store).toEqual({ frac: 0.25, text: '250k / 1.0M', low: false });
     t.guardUntil = 0;
     t.overdriveUntil = time + 5;
-    expect(panel(t, time).store).toEqual({ frac: 0.2, text: '240k / 1.2M', low: false });
+    expect(panel(t, time).store!.frac).toBeCloseTo(0.25 / 3);
+    expect(panel(t, time).store!.text).toBe('250k / 3.0M');
   });
 
   it('shows a store kept from Overdrive as full, not over its cap', () => {

@@ -79,13 +79,13 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       return free(s) && (st.spent || st.energy < 0.3) && (foesNearCube(s, cube(s), 1500).length > 0 || (!!t && range(s, t) < CUBE.shot.range));
     },
   }),
-  def(spec('tungstenDock', 'Dock', 'DOCK', 12, 0, 'heal', 'Call the cube home through anything in the way (50k). On docking the ship repairs 6% plus 20% of the damage dealt and the cube 15%, and a spent cube wakes.'), {
+  def(spec('tungstenDock', 'Dock', 'DOCK', 10, 0, 'heal', 'Call the cube home through anything in the way (50k). On docking the ship repairs 6% plus 20% of the damage dealt and the cube 15%, and a spent cube wakes.'), {
     activate: (s, _g, st) => dockCubes(s, st.index),
     aiShouldUse(s) {
       return pool(s).some((c) => c.state === 'hover' && (s.tungsten!.spent || Math.hypot(c.x - s.pos.x, c.z - s.pos.z) > 2500 || hpFrac(s) < 0.5));
     },
   }),
-  def(spec('tungstenShield', 'Tungsten Shield', 'SHIELD', 18, CUBE.guard.time, 'shield', 'The cube guards the reticle side for 8 s and captures every shell, missile, beam and torpedo nearby. Stored damage (up to 600k) rides the next cube hit. In Overdrive all six orbit for 10 s, each capturing fire, battering hulls for 80k, cutting damage to the ship by 30% and storing up to 1.2M.'), {
+  def(spec('tungstenShield', 'Tungsten Shield', 'SHIELD', 18, CUBE.guard.time, 'shield', 'The cube guards the reticle side for 8 s and captures every shell, missile, beam and torpedo nearby. Stored damage (up to 1M) rides the next cube hit, and hulls the cube touches take 40k plus 10% of the store. In Overdrive all six orbit for 10 s, each capturing fire, battering hulls for 80k plus 5% of the store, cutting damage to the ship by 30% and storing up to 3M.'), {
     activate: (s, _g, st) => raiseShield(s, st.index),
     // The skill runs as long as the cubes hold: longer in Overdrive, and not past a hold cut short.
     update(s, g, _dt, st) {

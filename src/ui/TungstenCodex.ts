@@ -58,7 +58,7 @@ export function tungstenCodexEntries(): CodexTab[] {
       { label: 'Throw', text: `Throws are free and hurl all six abreast, ${CUBE.shot.spread} m apart, each with its own mode's hit.` },
       { label: 'Passive', text: "Every mode's passive is live at once." },
       { label: 'Signature', text: "Every cube fires its own mode's Signature from where it is." },
-      { label: 'Shield', text: `All six orbit the ship for ${O.time} s, each capturing fire and battering hulls for ${k(O.damage)}. The ship takes ${Math.round((1 - O.taken) * 100)}% less damage and the store holds ${(CUBE.chargeCap * O.cap) / 1e6}M.` },
+      { label: 'Shield', text: `All six orbit the ship for ${O.time} s, each capturing fire and battering hulls for ${k(O.damage)} plus ${Math.round(O.store * 100)}% of the store. The ship takes ${Math.round((1 - O.taken) * 100)}% less damage and the store holds ${(CUBE.chargeCap * O.cap) / 1e6}M.` },
       { label: 'Collapse', text: `The six merge into one rainbow singularity, ${CUBE.collapse.merged}x as strong and ${CUBE.collapse.mergedRadius}x as wide.` },
       { label: 'Meteor', text: `Six meteors fall in a ${CUBE.meteor.ring} m ring round the reticle, each in its own mode for ${CUBE.meteor.share * 100}% of the damage.` },
     ],

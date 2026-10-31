@@ -17,13 +17,18 @@ export const CUBE = {
   ringSpin: 0.15,
   dock: { speed: 1600, damage: 50000, heal: 0.06, dealtHeal: 0.2, cubeRepair: 0.15 },
   lunge: { range: 4000, speed: 1500, damage: 60000, taken: 0.6, minDistance: 300 },
-  guard: { time: 8, offset: 150, radius: 180, repelRadius: 260, taken: 0.25, speed: 1500 },
-  chargeCap: 600000,
+  /**
+   * Shield: the cube guards the reticle side, squaring a face up to it at up to `turn` rad/s. Hulls it touches take
+   * `damage` plus `store` of the Shield store (kept, not spent) once per `every` and are knocked `knock` m.
+   */
+  guard: { time: 8, offset: 150, radius: 180, repelRadius: 260, taken: 0.25, speed: 1500, turn: 4, damage: 40000, store: 0.1, knock: 300, every: 0.75 },
+  chargeCap: 1_000_000,
   /**
    * Shield in Overdrive: the cubes ring the ship (`radius`), batter hulls and each wears a capture field
-   * (`field`, `repelField` in Repel); the ship takes `taken` damage, and the store holds `cap` times as much.
+   * (`field`, `repelField` in Repel), striking for `damage` plus `store` of the store; the ship takes `taken` damage,
+   * and the store holds `cap` times as much.
    */
-  orbit: { radius: 420, rate: 0.9, damage: 80000, knock: 450, every: 0.75, time: 10, field: 240, repelField: 300, taken: 0.7, cap: 2 },
+  orbit: { radius: 420, rate: 0.9, damage: 80000, store: 0.05, knock: 450, every: 0.75, time: 10, field: 240, repelField: 300, taken: 0.7, cap: 3 },
   /** Parked cubes push enemy hulls out of their footprint at up to this speed (m/s). */
   shoveSpeed: 240,
   collapse: { range: 4500, travel: 0.6, pull: 3, radius: 1600, core: 700, coreDps: 15000, tick: 0.25, burst: 400000, edge: 120000, burstRadius: 1200, merged: 1.5, mergedRadius: 1.2 },
@@ -34,7 +39,7 @@ export const CUBE = {
    * the magnet's energy; in Overdrive the cubes fly abreast, `spread` apart.
    */
   shot: { range: 4000, speed: 1800, damage: 80000, reload: 1.5, cost: 0.25, spread: 200 },
-  /** The magnet's energy recharges slowly anywhere and fast docked. A cube thrown empty sinks `sink` m into the sea until it docks or is full again. */
+  /** The magnet's energy recharges slowly anywhere and fast docked. A cube thrown empty sinks `sink` m into the sea (or rests on land) until it docks or is full again. */
   energy: { regen: 0.03, dockRegen: 0.3, sink: 10 },
   /** Magnet Surge: full energy and an overcharge: throws fly faster, hit harder and cost nothing. */
   surge: { time: 6, speed: 1.4, damage: 1.4 },
