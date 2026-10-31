@@ -575,6 +575,31 @@ describe('Tungsten ultimate effects', () => {
     fx.dispose();
   });
 
+  it("traces the Kinetic meteor's hop onto the next hull", () => {
+    const hop = (nextX: number) => {
+      const g = emptyGame('open', 7, 'freeplay');
+      const s = place(g, 'tungsten', 0, 0, 0);
+      place(g, 'leviathan', 1, 0, -2000);
+      // Inside the blast the second hull is no target for the hop.
+      place(g, 'leviathan', 1, nextX, -2000);
+      const fx = new TungstenCubeFx(new Scene(), g);
+      s.control.aimX = 0;
+      s.control.aimZ = -2000;
+      cast(s, METEOR);
+      const M = CUBE.meteor;
+      play(g, fx, M.rise + M.grow + M.fall + M.bounce.hop / 2);
+      fx.prepare(0, 720);
+      const n = fx.count;
+      fx.dispose();
+      return { n, ult: s.tungsten!.ult };
+    };
+    const bounced = hop(1300),
+      still = hop(500);
+    expect(bounced.ult!.bounce).toHaveLength(6);
+    expect(still.ult!.bounce).toHaveLength(0);
+    expect(bounced.n).toBeGreaterThan(still.n);
+  });
+
   it('closes the hole after the burst and when the battle ends', () => {
     const { g, s, scene, fx } = collapsing();
     play(g, fx, CUBE.collapse.travel + CUBE.collapse.pull + 0.6, [s]);

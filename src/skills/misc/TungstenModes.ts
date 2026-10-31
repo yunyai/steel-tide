@@ -31,8 +31,55 @@ export const CUBE = {
   orbit: { radius: 420, rate: 0.9, damage: 80000, store: 0.05, knock: 450, every: 0.75, time: 10, field: 240, repelField: 300, taken: 0.7, cap: 3 },
   /** Parked cubes push enemy hulls out of their footprint at up to this speed (m/s). */
   shoveSpeed: 240,
-  collapse: { range: 4500, travel: 0.6, pull: 3, radius: 1600, core: 700, coreDps: 15000, tick: 0.25, burst: 400000, edge: 120000, burstRadius: 1200, merged: 1.5, mergedRadius: 1.2 },
-  meteor: { range: 5000, rise: 1.2, grow: 1, fall: 0.8, shrink: 0.6, height: 1800, scale: 4, damage: 700000, edge: 175000, radius: 900, ring: 500, share: 0.4 },
+  collapse: {
+    range: 4500,
+    travel: 0.6,
+    pull: 3,
+    radius: 1600,
+    core: 700,
+    coreDps: 15000,
+    tick: 0.25,
+    burst: 400000,
+    edge: 120000,
+    burstRadius: 1200,
+    merged: 1.5,
+    mergedRadius: 1.2,
+    /**
+     * Each mode's twist; a merged Collapse has all six. Kinetic: the hole drifts at `drift` m/s toward the nearest
+     * enemy in the pull. Crush: `pull` times the drag, hulls in the core disarmed, `burst` times the burst. Shard: it
+     * swallows enemy shells and missiles in the pull, and the burst throws `fragments` sub-impacts of `damage`.
+     * Repel: the burst flings survivors `fling` m out and tears up enemy fire within `clear`. Tether: the drag
+     * outruns a fleeing hull by `margin` m/s, and the burst chains every hull in the pull for `time` s. Mend: `share`
+     * of the core's damage is split over allies within `radius` and the ship; the burst heals the ship `burst`.
+     */
+    twist: {
+      kinetic: { drift: 150 },
+      crush: { pull: 1.5, burst: 1.25 },
+      shard: { fragments: 16, damage: 40000 },
+      repel: { fling: 900, clear: 2000 },
+      tether: { margin: 40, time: 4 },
+      mend: { share: 0.5, radius: 2000, burst: 0.1 },
+    },
+  },
+  /**
+   * `bounce`: the Kinetic meteor hops `hop` s, `height` m high, onto the nearest enemy within `reach` of its impact
+   * that the blast missed, striking for `share` of the damage over `radius` of the blast radius.
+   */
+  meteor: {
+    range: 5000,
+    rise: 1.2,
+    grow: 1,
+    fall: 0.8,
+    shrink: 0.6,
+    height: 1800,
+    scale: 4,
+    damage: 700000,
+    edge: 175000,
+    radius: 900,
+    ring: 500,
+    share: 0.4,
+    bounce: { reach: 1500, share: 0.4, hop: 0.7, height: 400, radius: 0.7 },
+  },
   /**
    * The fire button hurls the cube at the reticle (`speed` times the mode's factor), up to `range` from where it
    * is, once per `reload` while held. It ploughs through every hull in its way for `damage` and spends `cost` of
@@ -86,7 +133,7 @@ export const TUNGSTEN_MODES: readonly TungstenMode[] = [
     signature: { id: 'ricochet', name: 'Ricochet+', radius: 2000 },
     hit: 'Flies 1.5x faster; hits gain up to +60% with distance flown.',
     passive: 'Ship +15% speed and acceleration; skill cooldowns -15%.',
-    meteor: 'Falls twice as fast; a second ring hits wider for 30%.',
+    meteor: 'Bounces to the nearest enemy within 1.5 km for 40%; a second ring hits wider for 30%.',
   },
   {
     id: 'crush', name: 'Crush', short: 'CRU', color: 0xffae2b, speed: 0.75, damage: 1.6, stops: true,

@@ -1291,6 +1291,8 @@ describe('Overdrive', () => {
 describe('Collapse', () => {
   it('drags enemies in, bursts with falloff and leaves the cube at the centre', () => {
     const { g, me, foe, t } = duel();
+    // Repel's twist leaves the pull and the burst damage alone.
+    setMode(me, 'repel');
     const far = extra(g, 'leviathan', 1, 1100, -1500);
     foe.pos.x = 100;
     aim(me, 0, -1500);
@@ -1305,6 +1307,128 @@ describe('Collapse', () => {
     expect(t.ult).toBeNull();
     expect(t.cubes[0].state).toBe('hover');
     expect(gap(t.cubes[0], { x: 0, z: -1500 })).toBeLessThan(50);
+  });
+});
+
+describe('Collapse twists', () => {
+  const TW = CUBE.collapse.twist;
+  /** A Collapse on (0, -1500) in `mode`, with the duel's foe moved to (fx, fz). */
+  function collapseIn(mode: string, fx = 100, fz = -1500) {
+    const { g, me, foe, t } = duel();
+    setMode(me, mode);
+    foe.pos.x = fx;
+    foe.pos.z = fz;
+    aim(me, 0, -1500);
+    const events: GameEventMap['tungsten'][] = [];
+    g.events.on('tungsten', (e) => events.push(e));
+    me.meter = 1;
+    expect(me.activateSkill(R), me.skillFailure).toBe(true);
+    return { g, me, foe, t, events };
+  }
+  const C = CUBE.collapse;
+  const burstAt = C.travel + C.pull;
+  const shell = (g: Game, from: Ship, x: number, z: number, tx: number, tz: number) =>
+    g.shells.fire(from, { ammo: 'AP', spec: from.spec.main!.ap!, table: from.tableFor('AP')!, fromX: x, fromY: 40, fromZ: z, toX: tx, toY: 40, toZ: tz, dmgMul: 1, guaranteedFire: false, railgun: false, flat: 1 });
+
+  it('Kinetic: the hole drifts toward the nearest enemy, and the cube with it', () => {
+    const { g, t } = collapseIn('kinetic', 900, -1500);
+    run(g, C.travel + 1);
+    const u = t.ult!;
+    expect(u.x).toBeGreaterThan(TW.kinetic.drift * 0.9 - 5);
+    expect(u.x).toBeLessThan(TW.kinetic.drift * 1 + 5);
+    expect(t.cubes[0].x).toBeCloseTo(u.x, 0);
+  });
+
+  it('Crush: pulls harder, disarms hulls in the core and bursts a quarter harder', () => {
+    const pulled = (mode: string) => {
+      const { g, foe } = collapseIn(mode);
+      const far = extra(g, 'leviathan', 1, 1100, -1500);
+      run(g, C.travel + 1.4);
+      return { g, foe, far, x: far.pos.x };
+    };
+    const crush = pulled('crush'),
+      repel = pulled('repel');
+    expect(crush.x).toBeLessThan(repel.x - 40);
+    expect(crush.foe.mods.disarmed).toBe(true);
+    expect(repel.foe.mods.disarmed).toBe(false);
+    run(crush.g, 2);
+    expect(crush.foe.stats.received).toBeGreaterThan(C.burst * TW.crush.burst * 0.95);
+  });
+
+  it('Shard: swallows enemy shells in the pull and bursts into sixteen 40k fragments', () => {
+    const { g, foe, events } = collapseIn('shard');
+    run(g, C.travel + 0.5);
+    shell(g, foe, 800, -1500, 800, 1500);
+    run(g, 0.1);
+    expect(g.shells.shells.filter((p) => p.alive)).toHaveLength(0);
+    expect(events.some((e) => e.kind === 'capture')).toBe(true);
+    run(g, 3);
+    const frags = events.filter((e) => e.kind === 'fragment');
+    expect(frags).toHaveLength(TW.shard.fragments);
+    for (const f of frags) expect(Math.hypot(f.x, f.z + 1500)).toBeLessThanOrEqual(C.burstRadius + 1);
+  });
+
+  it('Repel: the burst flings survivors 900 m out and tears up fire within 2 km', () => {
+    const { g, foe } = collapseIn('repel', 300, -1500);
+    run(g, burstAt - 0.05);
+    const d0 = Math.hypot(foe.pos.x, foe.pos.z + 1500);
+    shell(g, foe, 1800, -1500, 1800, 1500);
+    run(g, 0.1);
+    expect(g.shells.shells.filter((p) => p.alive)).toHaveLength(0);
+    run(g, 3);
+    // Like every knockback, a long hull is flung less far.
+    const fling = TW.repel.fling * Math.min(1, 180 / foe.spec.length);
+    expect(Math.hypot(foe.pos.x, foe.pos.z + 1500) - d0).toBeGreaterThan(fling * 0.75);
+  });
+
+  it('Tether: hauls a fleeing hull in faster than it runs, and chains it for 4 s past the burst', () => {
+    const { g, foe, t } = collapseIn('tether', 1000, -1500);
+    foe.heading = Math.PI / 2;
+    foe.throttle = 4;
+    run(g, C.travel);
+    foe.speed = 120;
+    const x0 = foe.pos.x;
+    run(g, 1);
+    expect(foe.pos.x).toBeLessThan(x0 - 20);
+    run(g, C.pull - 1 + 0.05);
+    const chain = t.tethers.find((k) => k.target === foe.id);
+    expect(chain).toBeDefined();
+    expect(chain!.until - g.time).toBeCloseTo(TW.tether.time - 0.05, 1);
+  });
+
+  it("Mend: half the core's damage heals allies within 2 km, split evenly, and the burst heals the ship 10%", () => {
+    const { g, me, foe } = collapseIn('mend');
+    const near = extra(g, 'leviathan', 0, 800, -800);
+    const far = extra(g, 'leviathan', 0, 3000, 1500);
+    near.hp = near.maxHp / 2;
+    far.hp = far.maxHp / 2;
+    me.hp = me.maxHp / 2;
+    run(g, burstAt - 0.1);
+    const core = foe.stats.received;
+    expect(core).toBeGreaterThan(0);
+    // Both allies repair on their own; the near one also takes its share of the core.
+    expect(near.hp - far.hp).toBeCloseTo((core * TW.mend.share) / 2, -3);
+    const before = me.hp;
+    run(g, 0.2);
+    expect(me.hp - before).toBeGreaterThan(me.maxHp * TW.mend.burst);
+  });
+
+  it('merges all six twists in an Overdrive Collapse', () => {
+    const { g, me, foe, t } = duel();
+    foe.pos.x = 600;
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 0.5);
+    aim(me, 0, -1500);
+    const events: GameEventMap['tungsten'][] = [];
+    g.events.on('tungsten', (e) => events.push(e));
+    me.skills[R].meter = 1;
+    expect(me.activateSkill(R), me.skillFailure).toBe(true);
+    run(g, C.travel + 1);
+    expect(t.ult!.x).toBeGreaterThan(50);
+    run(g, C.pull);
+    expect(events.filter((e) => e.kind === 'fragment')).toHaveLength(TW.shard.fragments);
+    expect(t.tethers.some((k) => k.target === foe.id)).toBe(true);
   });
 });
 
@@ -1340,6 +1464,62 @@ describe('Tungsten Meteor', () => {
     run(g, 3.05);
     expect(impacts).toBe(6);
     expect(t.cubes.every((c) => c.scale > 1)).toBe(true);
+  });
+  it('drops every mode at the same pace', () => {
+    const { g, me } = duel(-2000);
+    me.meter = 1;
+    me.activateSkill(B);
+    aim(me, 0, -2000);
+    me.skills[T].meter = 1;
+    const at: number[] = [];
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'meteorImpact' && e.radius === CUBE.meteor.radius) at.push(g.time);
+    });
+    const t0 = g.time;
+    expect(me.activateSkill(T)).toBe(true);
+    run(g, 3.2);
+    expect(at).toHaveLength(6);
+    for (const k of at) expect(k - t0).toBeCloseTo(CUBE.meteor.rise + CUBE.meteor.grow + CUBE.meteor.fall, 1);
+  });
+  it('Kinetic: the meteor bounces onto the nearest enemy it missed for 40%', () => {
+    const M = CUBE.meteor,
+      B2 = M.bounce;
+    const { g, me, t } = duel(-2000);
+    const next = extra(g, 'leviathan', 1, 1300, -2000);
+    aim(me, 0, -2000);
+    const hits: GameEventMap['tungsten'][] = [];
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'meteorImpact') hits.push(e);
+    });
+    me.meter = 1;
+    expect(me.activateSkill(T)).toBe(true);
+    run(g, M.rise + M.grow + M.fall + 0.05);
+    expect(hits).toHaveLength(1);
+    const ring = next.stats.received;
+    // The wider 30% ring reaches it first.
+    expect(ring).toBeGreaterThan(0);
+    run(g, B2.hop);
+    expect(hits).toHaveLength(2);
+    expect(hits[1].radius).toBeCloseTo(M.radius * B2.radius);
+    expect(Math.hypot(hits[1].x - 1300, hits[1].z + 2000)).toBeLessThan(5);
+    expect(next.stats.received - ring).toBeCloseTo(M.damage * B2.share, -4);
+    run(g, M.shrink + 0.1);
+    expect(t.ult).toBeNull();
+    expect(t.cubes[0].scale).toBeCloseTo(1);
+    expect(gap(t.cubes[0], { x: 1300, z: -2000 })).toBeLessThan(300);
+  });
+  it('Kinetic: with nothing else in reach the meteor stays where it fell', () => {
+    const { g, me, t } = duel(-2000);
+    aim(me, 0, -2000);
+    let impacts = 0;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'meteorImpact') impacts++;
+    });
+    me.meter = 1;
+    me.activateSkill(T);
+    run(g, 5);
+    expect(impacts).toBe(1);
+    expect(gap(t.cubes[0], { x: 0, z: -2000 })).toBeLessThan(50);
   });
 });
 

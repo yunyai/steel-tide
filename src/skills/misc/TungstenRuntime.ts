@@ -98,6 +98,8 @@ export interface TungstenUlt {
   /** Meteor: cubes that began to fall, and cubes that struck. */
   falls: number[];
   struck: number[];
+  /** Kinetic meteor hops, six numbers each: cube id, from (x, z), onto (x, z), and 1 once it struck there. */
+  bounce: number[];
 }
 
 /** The magnet hauling the ship along a corridor: a Lunge to its cube, or a Polarity Dash (`cube` -1) away from it. */
@@ -919,7 +921,7 @@ function beginUlt(s: Ship, kind: 'collapse' | 'meteor', skill: number, range: nu
     const a = (i / n) * Math.PI * 2;
     return [x + Math.cos(a) * CUBE.meteor.ring, z + Math.sin(a) * CUBE.meteor.ring];
   });
-  t.ult = { kind, skill, x, z, elapsed: 0, cubes: cubes.map((c) => c.id), from: cubes.flatMap((c) => [c.x, c.y, c.z]), spots, tick: 0, stage: 0, merged: n > 1, falls: [], struck: [] };
+  t.ult = { kind, skill, x, z, elapsed: 0, cubes: cubes.map((c) => c.id), from: cubes.flatMap((c) => [c.x, c.y, c.z]), spots, tick: 0, stage: 0, merged: n > 1, falls: [], struck: [], bounce: [] };
   t.guardUntil = Math.min(t.guardUntil, s.game.time);
   for (const c of cubes) {
     c.state = kind;
@@ -1350,12 +1352,39 @@ function stepActs(s: Ship, t: TungstenState, dt: number): void {
   });
 }
 
+/** Whether the Collapse carries `mode`'s twist: its cube's own mode, or all six when merged. */
+function twisted(t: TungstenState, u: TungstenUlt): (mode: number) => boolean {
+  if (u.merged) return () => true;
+  const m = cubeById(t, u.cubes[0])?.mode ?? t.mode;
+  return (mode) => mode === m;
+}
+
 function stepCollapse(s: Ship, t: TungstenState, dt: number): void {
-  const C = CUBE.collapse;
+  const C = CUBE.collapse,
+    W = C.twist;
   const u = t.ult!;
   u.elapsed += dt;
+  const has = twisted(t, u);
   const k = u.merged ? C.merged : 1,
     rk = u.merged ? C.mergedRadius : 1;
+  const R = C.radius * rk;
+  // Kinetic: the hole hunts the nearest hull in its pull.
+  if (has(KINETIC) && u.elapsed >= C.travel) {
+    let prey: Ship | null = null,
+      bd = R;
+    for (const o of foesNear(s, u.x, u.z, R)) {
+      const d = gap(o.pos.x, o.pos.z, u.x, u.z);
+      if (d < bd) {
+        bd = d;
+        prey = o;
+      }
+    }
+    if (prey && bd > 1) {
+      const step = Math.min(bd, W.kinetic.drift * dt);
+      u.x += ((prey.pos.x - u.x) / bd) * step;
+      u.z += ((prey.pos.z - u.z) / bd) * step;
+    }
+  }
   const hy = hoverY(s, u.x, u.z) + 40;
   const f = smooth(Math.min(1, u.elapsed / C.travel));
   u.cubes.forEach((id, i) => {
@@ -1367,24 +1396,49 @@ function stepCollapse(s: Ship, t: TungstenState, dt: number): void {
   });
   if (u.elapsed < C.travel) return;
   const spec = skillSpec(s, u.skill);
+  const lead = cubeById(t, u.cubes[0]) ?? t.cubes[0];
   if (u.stage === 0) {
     u.stage = 1;
-    emit(s, 'collapseHold', cubeById(t, u.cubes[0]), u.x, hy, u.z, C.radius * rk);
+    emit(s, 'collapseHold', lead, u.x, hy, u.z, R);
   }
-  const R = C.radius * rk;
-  for (const o of foesNear(s, u.x, u.z, R)) drag(o, u.x, u.z, 60 + 200 * (1 - gap(o.pos.x, o.pos.z, u.x, u.z) / R), 60);
+  const pull = has(CRUSH) ? W.crush.pull : 1;
+  for (const o of foesNear(s, u.x, u.z, R)) {
+    let v = (60 + 200 * (1 - gap(o.pos.x, o.pos.z, u.x, u.z) / R)) * pull;
+    // Tether: a fleeing hull is hauled in faster than it runs.
+    if (has(TETHER)) v = Math.max(v, Math.abs(o.speed) + W.tether.margin);
+    drag(o, u.x, u.z, v, 60);
+  }
+  if (has(SHARD)) swallow(s, lead, u.x, u.z, R);
   u.tick += dt;
   while (u.tick >= C.tick) {
     u.tick -= C.tick;
-    for (const o of foesNear(s, u.x, u.z, C.core * rk)) hurt(s, o, C.coreDps * C.tick * k, spec);
+    let dealt = 0;
+    for (const o of foesNear(s, u.x, u.z, C.core * rk)) {
+      dealt += hurt(s, o, C.coreDps * C.tick * k, spec);
+      if (has(CRUSH))
+        buff(o, 'debuff:tungstenCrushed', C.tick * 1.5, (m) => {
+          m.disarmed = true;
+        });
+    }
+    if (has(MEND) && dealt > 0) mendShare(s, u.x, u.z, dealt * W.mend.share);
   }
   if (u.elapsed < C.travel + C.pull - 1e-9) return;
   const r = C.burstRadius * rk;
-  const lead = cubeById(t, u.cubes[0]) ?? t.cubes[0];
+  const burst = has(CRUSH) ? W.crush.burst : 1;
   for (const o of foesNear(s, u.x, u.z, r)) {
     const d = gap(o.pos.x, o.pos.z, u.x, u.z);
-    cubeHit(s, lead, o, (C.burst - (C.burst - C.edge) * (d / r)) * k, spec, false);
+    cubeHit(s, lead, o, (C.burst - (C.burst - C.edge) * (d / r)) * k * burst, spec, false);
   }
+  if (has(SHARD)) fragments(s, lead, u.x, u.z, W.shard.fragments, r * 0.25, r, W.shard.damage, spec);
+  if (has(REPEL)) {
+    for (const o of foesNear(s, u.x, u.z, r)) {
+      const d = Math.max(1, gap(o.pos.x, o.pos.z, u.x, u.z));
+      o.shove(((o.pos.x - u.x) / d) * W.repel.fling * 1.5, ((o.pos.z - u.z) / d) * W.repel.fling * 1.5);
+    }
+    repulse(s, u.x, u.z, W.repel.clear);
+  }
+  if (has(TETHER)) for (const o of foesNear(s, u.x, u.z, R)) tether(s, lead, o, u.skill, W.tether.time);
+  if (has(MEND)) s.heal(s.maxHp * W.mend.burst);
   emit(s, 'collapseBurst', lead, u.x, hy, u.z, r);
   u.cubes.forEach((id, i) => {
     const c = cubeById(t, id);
@@ -1397,86 +1451,165 @@ function stepCollapse(s: Ship, t: TungstenState, dt: number): void {
   t.ult = null;
 }
 
+/** Shard's Collapse: enemy shells and missiles within `r` are pulled into the hole. */
+function swallow(s: Ship, c: Cube, x: number, z: number, r: number): void {
+  const g = s.game;
+  for (const p of g.shells.shells)
+    if (p.alive && p.team !== s.team && gap(p.x, p.z, x, z) <= r) {
+      p.alive = false;
+      emit(s, 'capture', c, p.x, p.y, p.z, 0);
+    }
+  for (const m of g.missiles.missiles)
+    if (m.alive && m.team !== s.team && gap(m.x, m.z, x, z) <= r) {
+      g.missiles.kill(m);
+      emit(s, 'capture', c, m.x, m.y, m.z, 0);
+    }
+}
+
+/** Mend's Collapse: `amount` of healing split evenly over the ship and every ally within reach of (x, z). */
+function mendShare(s: Ship, x: number, z: number, amount: number): void {
+  const r = CUBE.collapse.twist.mend.radius;
+  const allies = s.game.ships.filter((o) => o.alive && o.team === s.team && (o === s || gap(o.pos.x, o.pos.z, x, z) <= r));
+  for (const o of allies) o.heal(amount / allies.length);
+}
+
+/** `n` fragment sub-impacts of `damage` each, ringed between `r0` and `r1` round (x, z). */
+function fragments(s: Ship, c: Cube, x: number, z: number, n: number, r0: number, r1: number, damage: number, spec: SkillSpec): void {
+  const g = s.game;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + g.rng() * 0.3;
+    const r = r0 + g.rng() * (r1 - r0);
+    const fx = x + Math.cos(a) * r,
+      fz = z + Math.sin(a) * r;
+    for (const o of foesNear(s, fx, fz, 150)) cubeHit(s, c, o, damage, spec, false);
+    emit(s, 'fragment', c, fx, 0, fz, 150);
+  }
+}
+
 function stepMeteor(s: Ship, t: TungstenState, dt: number): void {
   const M = CUBE.meteor;
   const u = t.ult!;
   u.elapsed += dt;
   const e = u.elapsed;
+  const impact = M.rise + M.grow + M.fall;
   let pending = false;
   u.cubes.forEach((id, i) => {
     const c = cubeById(t, id);
     if (!c) return;
-    const fall = c.mode === KINETIC ? M.fall / 2 : M.fall;
-    const sx = u.spots[i * 2],
+    let sx = u.spots[i * 2],
       sz = u.spots[i * 2 + 1];
-    const impact = M.rise + M.grow + fall;
     if (e < M.rise) {
       const k = smooth(e / M.rise);
       c.x = u.from[i * 3] + (sx - u.from[i * 3]) * k;
       c.y = u.from[i * 3 + 1] + (M.height - u.from[i * 3 + 1]) * k;
       c.z = u.from[i * 3 + 2] + (sz - u.from[i * 3 + 2]) * k;
       pending = true;
-    } else if (e < M.rise + M.grow) {
+      return;
+    }
+    if (e < M.rise + M.grow) {
       c.x = sx;
       c.z = sz;
       c.y = M.height;
       c.scale = 1 + (M.scale - 1) * smooth((e - M.rise) / M.grow);
       pending = true;
-    } else if (e < impact - 1e-9) {
-      const k = (e - M.rise - M.grow) / fall;
+      return;
+    }
+    const low = H * M.scale * 0.3;
+    if (e < impact - 1e-9) {
+      const k = (e - M.rise - M.grow) / M.fall;
       c.x = sx;
       c.z = sz;
       c.scale = M.scale;
-      c.y = M.height * (1 - k * k) + H * M.scale * 0.3 * k * k;
+      c.y = M.height * (1 - k * k) + low * k * k;
       if (!u.falls.includes(id)) {
         u.falls.push(id);
         emit(s, 'meteorFall', c, sx, 0, sz, M.radius);
       }
       if (c.mode === TETHER) for (const o of foesNear(s, sx, sz, 2000)) drag(o, sx, sz, 250, M.radius * 0.3);
       pending = true;
-    } else {
-      if (!u.struck.includes(id)) {
-        u.struck.push(id);
-        meteorImpact(s, t, u, c, sx, sz);
+      return;
+    }
+    if (!u.struck.includes(id)) {
+      u.struck.push(id);
+      meteorImpact(s, t, u, c, sx, sz);
+    }
+    let since = e - impact;
+    // Kinetic: still huge, it hops onto the next hull and strikes again before it shrinks.
+    const b = bounceOf(u, id);
+    if (b >= 0) {
+      const B = M.bounce;
+      const [x0, z0, x1, z1] = u.bounce.slice(b + 1, b + 5);
+      if (since < B.hop) {
+        const k = since / B.hop;
+        c.x = x0 + (x1 - x0) * k;
+        c.z = z0 + (z1 - z0) * k;
+        c.y = low + B.height * 4 * k * (1 - k);
+        pending = true;
+        return;
       }
-      const k = Math.min(1, (e - impact) / M.shrink);
-      c.scale = M.scale + (1 - M.scale) * smooth(k);
-      const top = hoverY(s, sx, sz, c.scale);
-      c.y = H * M.scale * 0.3 + (top - H * M.scale * 0.3) * smooth(k);
-      if (k < 1) pending = true;
-      else {
-        c.scale = 1;
-        land(s, c);
+      if (!u.bounce[b + 5]) {
+        u.bounce[b + 5] = 1;
+        meteorBlast(s, u, c, x1, z1, M.radius * B.radius, B.share);
+        s.game.events.emit('explosion', { x: x1, y: 5, z: z1, size: u.merged ? 2 : 3.5 });
+        emit(s, 'meteorImpact', c, x1, 0, z1, M.radius * B.radius);
       }
+      since -= B.hop;
+      sx = x1;
+      sz = z1;
+    }
+    const k = Math.min(1, since / M.shrink);
+    c.x = sx;
+    c.z = sz;
+    c.scale = M.scale + (1 - M.scale) * smooth(k);
+    const top = hoverY(s, sx, sz, c.scale);
+    c.y = low + (top - low) * smooth(k);
+    if (k < 1) pending = true;
+    else {
+      c.scale = 1;
+      land(s, c);
     }
   });
   if (!pending) t.ult = null;
 }
 
+/** Where cube `id`'s hop sits in `u.bounce`, or -1 when it does not bounce. */
+function bounceOf(u: TungstenUlt, id: number): number {
+  for (let i = 0; i < u.bounce.length; i += 6) if (u.bounce[i] === id) return i;
+  return -1;
+}
+
+/** The meteor's blast at (x, z): `frac` of its damage, falling off to the edge of `r`. */
+function meteorBlast(s: Ship, u: TungstenUlt, c: Cube, x: number, z: number, r: number, frac: number): void {
+  const M = CUBE.meteor;
+  const share = u.merged ? M.share : 1;
+  const spec = skillSpec(s, u.skill);
+  for (const o of foesNear(s, x, z, r)) {
+    const d = gap(o.pos.x, o.pos.z, x, z);
+    cubeHit(s, c, o, (M.damage - (M.damage - M.edge) * (d / r)) * share * frac, spec, false);
+  }
+}
+
 function meteorImpact(s: Ship, t: TungstenState, u: TungstenUlt, c: Cube, x: number, z: number): void {
   const M = CUBE.meteor;
   const g = s.game;
-  const spec = skillSpec(s, u.skill);
   const share = u.merged ? M.share : 1;
   const R = M.radius;
-  const blast = (r: number, frac: number) => {
-    for (const o of foesNear(s, x, z, r)) {
+  meteorBlast(s, u, c, x, z, R, 1);
+  if (c.mode === KINETIC) {
+    meteorBlast(s, u, c, x, z, R * 1.6, 0.3);
+    // The hop goes to the nearest hull the blast missed.
+    let next: Ship | null = null,
+      bd: number = M.bounce.reach;
+    for (const o of foesNear(s, x, z, M.bounce.reach)) {
       const d = gap(o.pos.x, o.pos.z, x, z);
-      cubeHit(s, c, o, (M.damage - (M.damage - M.edge) * (d / r)) * share * frac, spec, false);
+      if (d > R && d <= bd) {
+        bd = d;
+        next = o;
+      }
     }
-  };
-  blast(R, 1);
-  if (c.mode === KINETIC) blast(R * 1.6, 0.3);
-  else if (c.mode === CRUSH) for (const o of foesNear(s, x, z, R)) stun(o, 1.5);
-  else if (c.mode === SHARD)
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2 + g.rng() * 0.3;
-      const r = R * (0.5 + g.rng() * 0.9);
-      const fx = x + Math.cos(a) * r,
-        fz = z + Math.sin(a) * r;
-      for (const o of foesNear(s, fx, fz, 150)) cubeHit(s, c, o, 40000 * share, spec, false);
-      emit(s, 'fragment', c, fx, 0, fz, 150);
-    }
+    if (next) u.bounce.push(c.id, x, z, next.pos.x, next.pos.z, 0);
+  } else if (c.mode === CRUSH) for (const o of foesNear(s, x, z, R)) stun(o, 1.5);
+  else if (c.mode === SHARD) fragments(s, c, x, z, 12, R * 0.5, R * 1.4, 40000 * share, skillSpec(s, u.skill));
   else if (c.mode === REPEL)
     for (const o of foesNear(s, x, z, R)) {
       const d = Math.max(1, gap(o.pos.x, o.pos.z, x, z));

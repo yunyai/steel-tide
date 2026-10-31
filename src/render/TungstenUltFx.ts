@@ -47,10 +47,10 @@ export interface UltCubeLook {
   power: number;
 }
 
-/** A meteor cube's own clock: its fall time and when it strikes, in seconds since the ult began. */
-function meteorClock(c: Cube) {
+/** The meteor's clock: its fall time and when it strikes, in seconds since the ult began; every mode falls alike. */
+function meteorClock() {
   const M = CUBE.meteor;
-  const fall = c.mode === KINETIC ? M.fall / 2 : M.fall;
+  const fall = M.fall;
   return { fall, drop: M.rise + M.grow, impact: M.rise + M.grow + fall };
 }
 
@@ -85,7 +85,7 @@ export class TungstenUltFx {
     }
     if (c.state !== 'meteor' || !u || u.kind !== 'meteor') return null;
     const e = this.elapsed(u);
-    const { fall, drop, impact } = meteorClock(c);
+    const { fall, drop, impact } = meteorClock();
     const M = CUBE.meteor;
     if (e < M.rise) return { lift: 0, size: 1, heat: 0, power: 2.2 };
     if (e < drop) return { lift: 0, size: 1, heat: 0, power: 2.2 + 3 * smooth((e - M.rise) / M.grow) };
@@ -121,8 +121,8 @@ export class TungstenUltFx {
       if (!c) return;
       const sx = u.spots[i * 2],
         sz = u.spots[i * 2 + 1];
-      const { fall, drop, impact } = meteorClock(c);
-      if (e >= impact) return;
+      const { fall, drop, impact } = meteorClock();
+      if (e >= impact) return this.hop(u, c, e - impact);
       const color = modeColor(c.mode);
       const k = clamp01(e / impact);
       // Telegraph: where it will land, with a ring closing on the centre as the strike nears.
@@ -228,6 +228,62 @@ export class TungstenUltFx {
         z = look.z + Math.sin(a) * r;
       const rim = HORIZON * 2 * scale;
       p.arc(look.x + Math.cos(a) * rim, SINGULARITY_Y - 10, look.z + Math.sin(a) * rim, x, p.surface(x, z), z, s.id * 53 + i, hot(color, 2.6), 0.9 * form, 3, 40, 10);
+    }
+    this.twists(s, look, reach, core, form, team, reduce);
+  }
+
+  /** The Kinetic meteor's hop: the rest of its arc traced ahead of it, and the ring it is about to strike. */
+  private hop(u: TungstenUlt, c: Cube, since: number): void {
+    const M = CUBE.meteor,
+      B = M.bounce;
+    let i = 0;
+    while (i < u.bounce.length && u.bounce[i] !== c.id) i += 6;
+    if (i >= u.bounce.length || since >= B.hop) return;
+    const [x0, z0, x1, z1] = u.bounce.slice(i + 1, i + 5);
+    const p = this.paint;
+    const color = modeColor(c.mode);
+    const k = since / B.hop,
+      r = M.radius * B.radius;
+    p.ring(x1, z1, r, hot(color, 1.8), 0.4 + 0.5 * k);
+    p.ring(x1, z1, r * (1 - k), hot(WHITE, 1.5), 0.3 + 0.5 * k);
+    const low = (CUBE.edge / 2) * M.scale * 0.3;
+    const at = (a: number) => low + B.height * 4 * a * (1 - a);
+    for (let j = 0; j < 12; j += 2) {
+      const a = k + ((1 - k) * j) / 12,
+        b = k + ((1 - k) * (j + 1)) / 12;
+      p.lines.push(x0 + (x1 - x0) * a, at(a), z0 + (z1 - z0) * a, x0 + (x1 - x0) * b, at(b), z0 + (z1 - z0) * b, hot(color, 1.6), 0.6, 6, 2);
+    }
+  }
+
+  /** Each mode's twist on the hole, all six when merged. */
+  private twists(s: Ship, look: { x: number; z: number; merged: boolean; mode: number }, reach: number, core: number, form: number, team: Team | -1, reduce: boolean): void {
+    const p = this.paint;
+    const now = this.game.renderTime;
+    const has = (m: number) => look.merged || look.mode === m;
+    // Crush: amber pressure rings squeezing in on the core.
+    if (has(CRUSH))
+      for (let i = 0; i < 3; i++) {
+        const k = reduce ? (i + 1) / 4 : (now * 0.7 + i / 3) % 1;
+        p.ring(look.x, look.z, reach - (reach - core) * k, hot(modeColor(CRUSH), 1.7), 0.55 * form * k);
+      }
+    // Tether: every hull in the pull is chained to the hole.
+    if (has(TETHER)) this.dragLines(s, look.x, look.z, reach, hot(modeColor(TETHER), 2.2), 0.8 * form, team, SINGULARITY_Y * 0.5);
+    // Mend: green motes stream from the core to every ally it heals.
+    if (has(MEND)) {
+      const r = CUBE.collapse.twist.mend.radius;
+      const green = hot(modeColor(MEND), 2.2);
+      for (const o of this.game.ships) {
+        if (!o.alive || o.team !== s.team || o.withdrawn) continue;
+        if (o !== s && Math.hypot(o.renderPos.x - look.x, o.renderPos.z - look.z) > r) continue;
+        if (team !== -1 && o.team !== team && !contactVisible(o, team)) continue;
+        for (let j = 0; j < p.n(6); j++) {
+          const k = reduce ? (j + 0.5) / 6 : (now * 0.5 + j / 6 + hash01(o.id, j) * 0.1) % 1;
+          const x = look.x + (o.renderPos.x - look.x) * k,
+            z = look.z + (o.renderPos.z - look.z) * k;
+          const y = SINGULARITY_Y * (1 - k) + (o.renderPos.y + o.spec.freeboard + 10) * k + Math.sin(Math.PI * k) * 120;
+          p.particles.push(BK.Glow, x, y, z, 16, green, 0.8 * form * Math.sin(Math.PI * k));
+        }
+      }
     }
   }
 
@@ -340,6 +396,13 @@ export class TungstenUltFx {
     p.ring(e.x, e.z, e.radius * 1.1 * ease(age / 1.1), hot(color, 1.8), 0.7 * (1 - f));
     p.loop(e.x, y, e.z, e.radius * 0.8 * ease(age / 0.45), hot(color, 2.2), 0.8 * (1 - clamp01(age / 0.6)), 10);
     p.foamRing(e.x, e.z, front * 0.95, 0.65 * (1 - f), id);
+    // Repel: the hole turns white and throws everything out, a white front racing past the burst to tear up fire.
+    if (e.mode === REPEL || e.radius > CUBE.collapse.burstRadius + 1) {
+      const clear = CUBE.collapse.twist.repel.clear;
+      if (age < 0.18) p.particles.push(BK.Flare, e.x, y, e.z, 2200 * (1 - age / 0.18) + 300, hot(WHITE, 2.6), 1 - age / 0.18);
+      p.ring(e.x, e.z, clear * ease(age / 0.7), hot(WHITE, 2), 0.8 * (1 - clamp01(age / 1)));
+      p.loop(e.x, y, e.z, clear * 0.6 * ease(age / 0.5), hot(WHITE, 1.8), 0.6 * (1 - clamp01(age / 0.6)), 14);
+    }
     if (!p.reduce && age < 0.7) this.distortions.push({ x: e.x, y: 40, z: e.z, radius: front / 0.48, strength: 0.9 * (1 - age / 0.7), priority: 4 });
     // A shell of sparks thrown out in every direction.
     for (let i = 0; i < p.n(120); i++) {
