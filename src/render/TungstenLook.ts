@@ -245,14 +245,14 @@ float cubeHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719)))
       glow = mix(glow, face, uDie);
     }
     // A full Shield store runs the etching white-hot, and brighter.
-    glow = mix(glow, vec3(1.0, 0.94, 0.84), uStore * 0.8);
+    glow = mix(glow, vec3(1.0, 0.94, 0.84), uStore * 0.7);
     // Pulses run outward from the sigil to the rim.
     float pulse = pow(0.5 + 0.5 * sin((etch.g * 3.0 - uTime * 0.9) * 6.2831), 8.0);
     // Far away the fine traces mip away; a floor keeps a distant cube reading in its colour.
     float far = smoothstep(900.0, 4500.0, length(vViewPosition));
     float mask = max(etch.r, far * 0.3);
     float stutter = uFlicker > 0.0 ? mix(1.0, step(0.45, fract(sin(floor(uTime * 22.0) * 91.7) * 47.3)), uFlicker) : 1.0;
-    float lum = uPower * stutter * (mask * (0.55 + 1.6 * pulse) + etch.b * 0.9) * (1.0 + uStore * 1.2);
+    float lum = uPower * stutter * (mask * (0.55 + 1.6 * pulse) + etch.b * 0.9) * (1.0 + uStore * 0.5);
     totalEmissiveRadiance = glow * lum + glow * band * 3.0 + uGlow * seam * 4.0;
     // A rim in the mode colour keeps the silhouette against dark water.
     float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 3.0);
