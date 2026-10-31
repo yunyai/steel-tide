@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Box3, Color, InstancedBufferAttribute, Mesh, Scene, Vector3, type MeshBasicMaterial, type Object3D, type ShaderMaterial } from 'three';
 import { ShipView } from '../src/render/ShipModel';
-import { DAIS, HORN_TIPS, TungstenModel } from '../src/render/TungstenModel';
+import { DAIS, HORN_TIPS, SPINE, TungstenModel } from '../src/render/TungstenModel';
+import { Effects } from '../src/fx/Effects';
+import type { ParticleSystem } from '../src/fx/Particles';
 import { TungstenCubeFx } from '../src/render/TungstenCubeFx';
 import { dieFaceNormal, modeColor, storeLook } from '../src/render/TungstenLook';
 import { CUBE, dockLift } from '../src/skills/misc/TungstenModes';
@@ -133,6 +135,41 @@ describe('Tungsten model', () => {
       if (o instanceof Mesh && !m.cubes.some((c) => c.mesh === o)) meshes.push(o);
     });
     expect(meshes.length).toBeLessThanOrEqual(8);
+    m.dispose();
+  });
+
+  it('stands the dais collar above the rails, which stop at it instead of running under the cube', () => {
+    const spec = SHIP_BY_ID.tungsten;
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat), spec);
+    const pos = (m.root.getObjectByName('tungsten-spine') as Mesh).geometry.getAttribute('position');
+    const rim = DAIS.deck + DAIS.rimH;
+    let crossing = 0,
+      railTop = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i),
+        y = pos.getY(i),
+        z = Math.abs(pos.getZ(i));
+      // Beside the dais, out where the rails would pass the collar.
+      if (Math.abs(x) < 10 && z > 28 && z < 45 && y > DAIS.deck + 1) crossing++;
+      // The rails and their coils forward of the dais, clear of the bridge.
+      if (x > DAIS.rim + 4 && x < 150 && z > 28) railTop = Math.max(railTop, y);
+    }
+    expect(crossing).toBe(0);
+    expect(railTop).toBeGreaterThan(DAIS.deck + SPINE.lift);
+    expect(railTop).toBeLessThanOrEqual(rim);
+    // The emitter plate stands well up inside the collar.
+    expect(DAIS.plate).toBeGreaterThanOrEqual(DAIS.rimH / 2);
+    m.dispose();
+  });
+
+  it('runs the hull light strip in the vein colour, not a fixed cyan', () => {
+    const spec = SHIP_BY_ID.tungsten;
+    expect(spec.model.lightStrip).toBeUndefined();
+    const m = new TungstenModel((geo, mat) => new Mesh(geo, mat), spec);
+    const box = new Box3().setFromObject(m.root.getObjectByName('tungsten-veins')!);
+    // The veins reach down the hull side to the strip as well as along the deck edge.
+    expect(box.min.y).toBeLessThan(spec.freeboard * 0.8);
+    expect(box.max.y).toBeGreaterThan(spec.freeboard);
     m.dispose();
   });
 
@@ -826,5 +863,29 @@ describe('Tungsten ultimate effects', () => {
     expectFiniteFx(fx, scene);
     expect(stateHash(g)).toBe(before);
     fx.dispose();
+  });
+});
+
+describe('Tungsten hull effects', () => {
+  /** Smoke puffs over a ship in two seconds, with every fire lit and the hull low, or untouched. */
+  function smoke(id: string, hurt: boolean): number {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, id, 0, 0, 0);
+    if (hurt) {
+      s.fires.fill(30);
+      s.hp = s.maxHp * 0.2;
+    }
+    let puffs = 0;
+    const sink = (count: boolean) => ({ spawn: () => void (count && puffs++) }) as unknown as ParticleSystem;
+    const fx = new Effects(g, sink(true), sink(false), sink(false));
+    fx.views = [new Vector3(0, 200, 300)];
+    for (let i = 0; i < 120; i++) fx.update(1 / 60);
+    fx.dispose();
+    return puffs;
+  }
+
+  it('burns without smoke on the Tungsten, though fires still smoke on a gun ship', () => {
+    expect(smoke('iowa', true)).toBeGreaterThan(smoke('iowa', false));
+    expect(smoke('tungsten', true)).toBe(smoke('tungsten', false));
   });
 });

@@ -421,7 +421,7 @@ export class Effects {
           const w = s.localToWorld(lx + rnd(-4, 4), deckHeight(spec, lx) + rnd(1, 4), rnd(-0.3, 0.3) * spec.beam);
           this.add.spawn({ x: w.x, y: w.y, z: w.z, vx: rnd(-1, 1), vy: rnd(3, 8), vz: rnd(-1, 1), life: rnd(0.5, 1), size: 4 * scale, size1: 1.5 * scale, color: 0xffd070, color1: 0xff2a00, kind: PK.Glow });
         }
-        const ns = this.emit(`s${s.id}:${i}`, 5 * lod, dt);
+        const ns = spec.model.smokeless ? 0 : this.emit(`s${s.id}:${i}`, 5 * lod, dt);
         for (let j = 0; j < ns; j++) {
           const w = s.localToWorld(lx, deckHeight(spec, lx) + 5, 0);
           this.alpha.spawn({ x: w.x, y: w.y, z: w.z, vx: WIND_X * 1.5 + rnd(-1, 1), vy: rnd(5, 9), vz: WIND_Z * 1.5 + rnd(-1, 1), life: rnd(8, 12), size: 5 * scale, size1: 34 * scale, color: 0x1d1b19, color1: 0x56524d, alpha: 0.75, drag: 0.2 });
@@ -429,7 +429,7 @@ export class Effects {
       }
 
       // Knocked-out turrets smoke.
-      if (s.alive) {
+      if (s.alive && !spec.model.smokeless) {
         for (let i = 0; i < s.turrets.length; i++) {
           const tu = s.turrets[i];
           if (tu.disabled <= 0 || !this.emit(`t${s.id}:${i}`, 3 * lod, dt)) continue;
@@ -483,7 +483,7 @@ export class Effects {
       }
 
       // Light damage smoke at low health.
-      if (s.alive && s.hp / s.maxHp < 0.35) {
+      if (s.alive && !spec.model.smokeless && s.hp / s.maxHp < 0.35) {
         const n = this.emit(`h${s.id}`, 2 * lod, dt);
         for (let j = 0; j < n; j++) {
           const w = s.localToWorld(rnd(-0.3, 0.3) * L, spec.freeboard + 4, 0);

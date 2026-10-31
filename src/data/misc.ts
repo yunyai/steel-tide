@@ -57,8 +57,8 @@ export const MISC: ShipSpec[] = [
       // A low angular bridge forward and the reactor aft, clear of the cube turning over the dais amidships.
       // The hit box only: TungstenModel draws the stepped bridge and the reactor over these footprints.
       blocks: [{x:118,len:48,w:30,h:8,y:0},{x:122,len:26,w:20,h:7,y:8},{x:-122,len:54,w:36,h:10,y:0}],
-      funnels: [], masts: [],
-      lightStrip: 0x3ff0ff,
+      // TungstenModel draws the light strip in the mode colour, with the deck-edge veins.
+      funnels: [], masts: [], smokeless: true,
     },
   },
   {

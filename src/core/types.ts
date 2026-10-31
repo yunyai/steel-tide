@@ -360,6 +360,8 @@ export interface ModelSpec {
   domes?: { x: number; r: number }[];
   /** A continuous glowing light line along both sides of the hull, in this colour. */
   lightStrip?: number;
+  /** No smoke from fires or damage: a hull with nothing to burn but light. */
+  smokeless?: boolean;
   /** An orrery: `count` glowing spheres of radius `size` circling `r` out, `y` above the deck at `x` (Astraea). */
   orbs?: { x: number; y: number; r: number; count: number; size: number; color: number };
   /** A smoking volcanic cone on deck at `x`, `r` across the base and `h` high, its crater glowing (Brokkr). */

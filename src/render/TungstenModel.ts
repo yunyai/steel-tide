@@ -12,15 +12,15 @@ import { MODE_COLORS, ModeSweep, cubeGeometry, cubeSkin, storeLook, type CubeSki
 export const DAIS = {
   /** The deck it stands on: the Tungsten's freeboard. */
   deck: 14,
-  /** Octagonal collar: circumradius of its outer face and its rim above the deck. */
+  /** Octagonal collar: circumradius of its outer face and its rim above the deck, standing over the rails. */
   rim: 40,
-  rimH: 5,
-  /** The emitter plate sunk inside the collar, above the deck, and its field rings. */
-  plate: 1.6,
+  rimH: 12,
+  /** The emitter plate raised inside the collar, above the deck, and its field rings. */
+  plate: 7,
   rings: [11, 20, 29],
   /** Four emitter horns on the collar's diagonal faces, leaning in under the cube. */
   hornR: 34,
-  hornH: 13,
+  hornH: 7,
   hornLean: 0.42,
 } as const;
 
@@ -37,13 +37,12 @@ export const HORN_TIPS: readonly { x: number; y: number; z: number }[] = [1, 3, 
 });
 
 /**
- * The mass-driver spine: twin magnetic rails on pylons, bow to stern, that pass either side of the dais (bridging it
- * without a pylon), wound with coils fore and aft. Heights are above the waterline; everything stays under the
- * floating cube's base.
+ * The mass-driver spine: twin magnetic rails on low pylons, bow to stern, broken by the dais (they end in buffers at
+ * its collar), wound with coils fore and aft. They stay under the collar's rim, so the cube floats clear over the dais.
  */
 export const SPINE = {
   /** Rails' underside above the deck, their size and how far inboard of the hull side they run. */
-  lift: 15,
+  lift: 4.5,
   railH: 3,
   railW: 2.6,
   inset: 5,
@@ -51,12 +50,12 @@ export const SPINE = {
   maxZ: 35,
   from: -186,
   to: 178,
-  /** Pylons every `pitch`, none within `gap` of the dais. */
+  /** Pylons every `pitch`. The rails end `gap` either side of the dais, just off its collar. */
   pitch: 20,
-  gap: 26,
+  gap: 43,
   /** Coils: rings round each rail at these stations (both ends), radius and tube. */
-  coils: [40, 60, 80, 100],
-  coilR: 4.2,
+  coils: [54, 74, 94, 114],
+  coilR: 4,
   coilTube: 1.1,
 } as const;
 
@@ -297,16 +296,23 @@ function massDriver(spec: ShipSpec, frame: Parts, glow: Parts, veins: Parts): vo
     p.box(len + 0.4, h, w, (x0 + x1) / 2, (railY(spec, x0) + railY(spec, x1)) / 2 + dy, (z0 + z1) / 2, paint, { ry: -Math.atan2(z1 - z0, x1 - x0) });
   };
   for (const side of [-1, 1]) {
-    // The rails: a dark body, a copper conductor along its crown and a lit seam on its inner face.
-    for (let x = S.from; x < S.to; x += 8) {
-      const x1 = Math.min(S.to, x + 8);
-      segment(frame, x, x1, side, S.railH, S.railW, 0, 0, DARK);
-      segment(frame, x, x1, side, 0.5, 1.1, S.railH, 0, COPPER);
-      segment(glow, x, x1, side, 0.5, 0.3, S.railH * 0.45, -S.railW / 2 - 0.05, 0xffffff);
+    // The rails: a dark body, a copper conductor along its crown and a lit seam on its inner face, aft and forward of
+    // the dais, each run ending in a buffer at the collar.
+    for (const [from, to] of [
+      [S.from, -S.gap],
+      [S.gap, S.to],
+    ]) {
+      for (let x = from; x < to; x += 8) {
+        const x1 = Math.min(to, x + 8);
+        segment(frame, x, x1, side, S.railH, S.railW, 0, 0, DARK);
+        segment(frame, x, x1, side, 0.5, 1.1, S.railH, 0, COPPER);
+        segment(glow, x, x1, side, 0.5, 0.3, S.railH * 0.45, -S.railW / 2 - 0.05, 0xffffff);
+      }
     }
-    // Pylons down to the deck, leaving the dais clear: there the rails bridge it.
+    for (const x of [-S.gap, S.gap]) frame.box(4, S.lift + S.railH + 0.8, S.railW + 2.4, x, deckHeight(spec, x) - 0.2, side * railZ(spec, x), STEEL, { taper: 0.2 });
+    // Pylons down to the deck.
     for (let x = S.from + 6; x <= S.to - 6; x += S.pitch) {
-      if (Math.abs(x) < S.gap) continue;
+      if (Math.abs(x) < S.gap + 4) continue;
       const deck = deckHeight(spec, x),
         z = side * railZ(spec, x);
       frame.box(4.5, S.lift + 0.4, 3.2, x, deck - 0.2, z, STEEL, { taper: 0.35 });
@@ -378,8 +384,15 @@ function massDriver(spec: ShipSpec, frame: Parts, glow: Parts, veins: Parts): vo
     frame.box(6, S.lift + S.railH, 5, S.from - 2, deckHeight(spec, S.from) - 0.2, side * railZ(spec, S.from), STEEL, { taper: 0.2 });
   }
 
-  // Plating seams down both sides, a strake along them, and the field veins at the deck edge.
+  // Plating seams down both sides, a strake along them, the field veins at the deck edge and the light strip a little
+  // below it, both in the mode colour.
+  const n = Math.round(Math.min(40, Math.max(12, spec.length / 10))),
+    seg = (spec.length * 0.86) / n;
   for (const side of [-1, 1]) {
+    for (let i = 0; i < n; i++) {
+      const x = -spec.length * 0.43 + seg * (i + 0.5);
+      veins.box(seg * 1.02, 0.35, 0.1, x, fb * 0.72, side * (hullHalfWidth(spec, x) + 0.06), 0xffffff);
+    }
     for (let x = -spec.length / 2 + 15; x < spec.length / 2 - 15; x += 25) frame.box(0.35, fb - 1.6, 0.25, x, 0.8, side * (hullHalfWidth(spec, x) + 0.04), PLATE_STEEL);
     for (let x = -spec.length / 2 + 6; x < spec.length / 2 - 12; x += 10) {
       const x1 = x + 10;
