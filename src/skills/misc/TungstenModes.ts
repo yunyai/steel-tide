@@ -41,8 +41,12 @@ export const CUBE = {
   shot: { range: 4000, speed: 1800, damage: 80000, reload: 1.5, cost: 0.25, spread: 200 },
   /** The magnet's energy recharges slowly anywhere and fast docked. A cube thrown empty sinks `sink` m into the sea (or rests on land) until it docks or is full again. */
   energy: { regen: 0.03, dockRegen: 0.3, sink: 10 },
-  /** Magnet Surge: full energy and an overcharge: throws fly faster, hit harder and cost nothing. */
-  surge: { time: 6, speed: 1.4, damage: 1.4 },
+  /**
+   * Loaded Die: the cube rolls to the reticle (a `ring` round it in Overdrive), up to `range` from where it is, for
+   * free. It lands for `damage` to every foe within `radius`, then the face it rolls fires its mode's hit at
+   * `strength` times its strength; rolling the cube's own mode fires every face.
+   */
+  die: { cooldown: 16, range: 4000, radius: 600, damage: 120000, ring: 300, strength: 2 },
   /** A cube turns slowly about its vertical, docked or out on the water (rad/s). */
   spin: 0.25,
   overdrive: { time: 20 },

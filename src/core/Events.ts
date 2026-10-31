@@ -8,7 +8,7 @@ export type TungstenEventKind =
   | 'throw' | 'hit' | 'land' | 'dock' | 'break' | 'reform' | 'switch' | 'signature' | 'slam' | 'reel'
   | 'lunge' | 'arrive' | 'capture' | 'block' | 'shield' | 'contact'
   | 'collapse' | 'collapseHold' | 'collapseBurst' | 'meteorRise' | 'meteorFall' | 'meteorImpact' | 'fragment'
-  | 'overdrive' | 'overdriveEnd' | 'spent' | 'charged' | 'surge';
+  | 'overdrive' | 'overdriveEnd' | 'spent' | 'charged' | 'die';
 
 export interface GameEventMap {
   gunFired: { ship: Ship; x: number; y: number; z: number; bearing: number; caliber: number; secondary: boolean; look?: GunLook };
@@ -64,7 +64,8 @@ export interface GameEventMap {
   architectShot: { ship: Ship; x:number;y:number;z:number;tx:number;ty:number;tz:number;width:number;kind:'assembly'|'killbox';slot?:number };
   crossStep: { ship: Ship; x: number; z: number; radius: number; phase: 'start' | 'finish' };
   /** The Tungsten's cube: throws, hits, docking, Shield captures, signatures and both cube ultimates. `mode` indexes TUNGSTEN_MODES. */
-  tungsten: { ship: Ship; kind: TungstenEventKind; cube: number; x: number; y: number; z: number; radius: number; mode: number; target?: Ship };
+  /** `face` and `jackpot`: what a Loaded Die rolled. */
+  tungsten: { ship: Ship; kind: TungstenEventKind; cube: number; x: number; y: number; z: number; radius: number; mode: number; target?: Ship; face?: number; jackpot?: boolean };
   stepImpact: { ship: Ship; x: number; z: number; radius: number; kind: 'flicker' | 'copies' };
   blink: { ship: Ship; fromX: number; fromZ: number; fromHeading?: number; dodge?: boolean; step?: 'flash' | 'ram' | 'broad' | 'over' | 'back' };
   /** A ship refused to sink, or was raised from its wreck. */

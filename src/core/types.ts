@@ -257,7 +257,8 @@ export type SkillIcon =
   | 'gravity'
   | 'radar'
   | 'shift'
-  | 'fist';
+  | 'fist'
+  | 'dice';
 
 export interface SkillSpec {
   element?:import('../data/architectLoadout').ArchitectElement;

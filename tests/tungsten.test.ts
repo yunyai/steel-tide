@@ -7,9 +7,10 @@ import { navalRules } from '../server/rules';
 import { TurnApplier } from '../src/net/navalTurns';
 import { stateHash } from '../src/net/hash';
 import { CUBE, dockLift, HIT, TUNGSTEN_MODES } from '../src/skills/misc/TungstenModes';
-import { absorbCube, cubeIntercept, damageCube, type Cube } from '../src/skills/misc/TungstenRuntime';
+import { absorbCube, cubeIntercept, damageCube, PATH_KINDS, type Cube } from '../src/skills/misc/TungstenRuntime';
 import { aiWantsSkill } from '../src/skills/registry';
 import { stun } from '../src/weapons/StrikeSystem';
+import type { GameEventMap } from '../src/core/Events';
 import { bearingTo, forwardX, forwardZ } from '../src/core/math';
 import { AIController } from '../src/ai/AIController';
 import type { Ship } from '../src/ships/Ship';
@@ -71,7 +72,7 @@ describe('Tungsten roster', () => {
       'Magnet Lunge',
       'Switch',
       'Signature',
-      'Magnet Surge',
+      'Loaded Die',
       'Dock',
       'Tungsten Shield',
       'Collapse',
@@ -332,34 +333,148 @@ describe('thrown cube hits', () => {
   });
 });
 
-describe('Magnet Surge', () => {
-  it('refills the energy and wakes a spent cube where it lies', () => {
+describe('Loaded Die', () => {
+  /** Forces the die to land on `face`. */
+  const loaded = (g: Game, face: number) => ((g as unknown as { rng: () => number }).rng = () => (face + 0.5) / 6);
+  function roll(face: number | null, mode: string, foeAt = { x: 0, z: -2500 }) {
     const { g, me, foe, t } = duel();
-    foe.pos.x = 3000;
-    park(t.cubes[0], 0, -2000);
+    setMode(me, mode);
+    if (face !== null) loaded(g, face);
+    foe.pos.x = foeAt.x;
+    foe.pos.z = foeAt.z;
+    aim(me, 0, -2500);
+    const rolls: GameEventMap['tungsten'][] = [];
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'die') rolls.push(e);
+    });
+    return { g, me, foe, t, rolls };
+  }
+  const cast = (g: Game, me: Ship, rolls: unknown[], n = 1) => {
+    expect(me.activateSkill(X), me.skillFailure).toBe(true);
+    until(g, () => rolls.length >= n, 6);
+    expect(rolls).toHaveLength(n);
+  };
+
+  it('replaces Magnet Surge on X with a free 16 s roll', () => {
+    const { me } = duel();
+    expect(me.skills[X].spec.id).toBe('tungstenDie');
+    expect(me.skills[X].spec.cooldown).toBe(16);
+    expect(me.skills.some((k) => k.spec.id === 'tungstenSurge')).toBe(false);
+    expect('surgeUntil' in me.tungsten!).toBe(false);
+  });
+  it('rolls the cube to the reticle through anything in the way and blasts every foe within 600 m', () => {
+    const { g, me, foe, t, rolls } = roll(0, 'repel');
+    const inWay = extra(g, 'leviathan', 1, 0, -1200);
+    const near = extra(g, 'leviathan', 1, 450, -2500);
+    const far = extra(g, 'leviathan', 1, 1300, -2500);
+    expect(me.activateSkill(X), me.skillFailure).toBe(true);
+    expect(t.cubes[0].path?.kind).toBe('die');
+    until(g, () => rolls.length > 0, 6);
+    expect(gap(t.cubes[0], { x: 0, z: -2500 })).toBeLessThan(5);
+    expect(t.cubes[0].state).toBe('hover');
+    expect(inWay.stats.received).toBe(0);
+    expect(far.stats.received).toBe(0);
+    expect(near.stats.received).toBeGreaterThan(CUBE.die.damage - 1);
+    expect(foe.stats.received).toBeGreaterThan(CUBE.die.damage - 1);
+  });
+  it('rolls its face from the seeded RNG, so the same seed rolls the same face', () => {
+    const face = () => {
+      const { g, me, rolls } = roll(null, 'kinetic');
+      cast(g, me, rolls);
+      return rolls[0].face!;
+    };
+    const a = face();
+    expect(a).toBeGreaterThanOrEqual(0);
+    expect(a).toBeLessThan(6);
+    expect(face()).toBe(a);
+  });
+  it('Kinetic face: the blast grows with the distance rolled, at double the Kinetic bonus', () => {
+    const { g, me, foe, t, rolls } = roll(0, 'repel');
+    cast(g, me, rolls);
+    expect(rolls[0].face).toBe(0);
+    expect(rolls[0].jackpot).toBe(false);
+    const gain = 1 + 2 * HIT.kinetic.bonus * Math.min(1, t.cubes[0].flown / HIT.kinetic.full);
+    expect(gain).toBeGreaterThan(1.5);
+    expect(foe.stats.received).toBeCloseTo(CUBE.die.damage * gain, -3);
+  });
+  it('Crush face: a 2 s stun and a mark', () => {
+    const { g, me, foe, rolls } = roll(1, 'repel');
+    cast(g, me, rolls);
+    expect(foe.mods.stunned).toBe(true);
+    expect(foe.mods.marked).toBe(true);
+    expect(foe.stats.received).toBeCloseTo(CUBE.die.damage, -3);
+  });
+  it('Shard face: knocks out two turrets for 8 s', () => {
+    const { g, me, foe, rolls } = roll(2, 'repel');
+    cast(g, me, rolls);
+    expect(foe.turrets.filter((k) => k.disabled > 7.5)).toHaveLength(2);
+  });
+  it('Repel face: flings hulls 500 m out and tears up fire near it', () => {
+    const { g, me, foe, rolls } = roll(3, 'kinetic', { x: 4000, z: 0 });
+    // A destroyer, short enough to take the full knock.
+    const dd = extra(g, 'fletcher', 1, 300, -2500);
+    g.torps.launch(foe, 300, -2300, Math.PI, SHIP_BY_ID.stepper.torpedoes!);
+    expect(g.torps.torps.some((p) => p.alive)).toBe(true);
+    cast(g, me, rolls);
+    expect(g.torps.torps.some((p) => p.alive)).toBe(false);
+    run(g, 4);
+    expect(dd.pos.x).toBeGreaterThan(300 + 400);
+  });
+  it('Tether face: chains every hull it blasts for 8 s', () => {
+    const { g, me, foe, t, rolls } = roll(4, 'kinetic');
+    cast(g, me, rolls);
+    const chain = t.tethers.find((k) => k.target === foe.id);
+    expect(chain?.until).toBeCloseTo(g.time + 2 * HIT.tether.time, 1);
+  });
+  it('Mend face: the ship heals half the damage dealt', () => {
+    const { g, me, foe, rolls } = roll(5, 'kinetic');
+    me.hp = me.maxHp / 2;
+    expect(me.activateSkill(X)).toBe(true);
+    // The heal is the jump in the tick the die lands.
+    let jump = 0;
+    for (let k = 0; k < 360 && !rolls.length; k++) {
+      const hp = me.hp;
+      g.step(1 / 60);
+      if (rolls.length) jump = me.hp - hp;
+    }
+    expect(jump).toBeCloseTo(foe.stats.received * 0.5, -3);
+  });
+  it('rolls a jackpot when the face matches the cube, firing every face at once', () => {
+    const { g, me, foe, t, rolls } = roll(1, 'crush', { x: 300, z: -2500 });
+    me.hp = me.maxHp / 2;
+    cast(g, me, rolls);
+    expect(rolls[0].jackpot).toBe(true);
+    expect(foe.mods.stunned).toBe(true);
+    expect(foe.turrets.filter((k) => k.disabled > 7.5)).toHaveLength(2);
+    expect(t.tethers.some((k) => k.target === foe.id)).toBe(true);
+    expect(me.hp).toBeGreaterThan(me.maxHp / 2 + foe.stats.received * 0.4);
+    expect(foe.stats.received).toBeGreaterThan(CUBE.die.damage * 1.5);
+  });
+  it('rolls a spent cube without waking it', () => {
+    const { g, me, t, rolls } = roll(0, 'repel');
+    park(t.cubes[0], 0, -1000);
     t.energy = 0;
     t.spent = true;
-    expect(me.activateSkill(X)).toBe(true);
-    expect(t.energy).toBe(1);
-    expect(t.spent).toBe(false);
-    hurl(g, me, 0, -3000);
-    expect(t.cubes[0].state).toBe('flying');
+    cast(g, me, rolls);
+    expect(t.spent).toBe(true);
+    expect(t.energy).toBeLessThan(0.5);
   });
-  it('overcharges throws: faster, harder and free while it lasts', () => {
-    const fling = (surge: boolean) => {
-      const { g, me, foe, t } = duel();
-      if (surge) me.activateSkill(X);
-      hurl(g, me, 0, -3000);
-      const t0 = g.time;
-      until(g, landed(t.cubes[0]));
-      return { time: g.time - t0, dealt: foe.stats.received, energy: t.energy };
-    };
-    const plain = fling(false),
-      surged = fling(true);
-    expect(surged.time).toBeLessThan(plain.time / CUBE.surge.speed + 0.05);
-    expect(surged.dealt).toBeCloseTo(plain.dealt * CUBE.surge.damage, -3);
-    expect(surged.energy).toBe(1);
-    expect(plain.energy).toBeLessThan(1);
+  it('spends the store on its first hit', () => {
+    const { g, me, foe, t, rolls } = roll(1, 'repel');
+    t.charge = 300000;
+    cast(g, me, rolls);
+    expect(t.charge).toBe(0);
+    expect(foe.stats.received).toBeCloseTo(CUBE.die.damage + 300000, -3);
+  });
+  it('rolls all six into a 300 m ring round the reticle in Overdrive', () => {
+    const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 1);
+    cast(g, me, rolls, 6);
+    for (const c of t.cubes) expect(gap(c, { x: 0, z: -2500 })).toBeCloseTo(CUBE.die.ring, -1);
+    const angles = t.cubes.map((c) => Math.atan2(c.z + 2500, c.x)).sort((a, b) => a - b);
+    for (let i = 1; i < 6; i++) expect(angles[i] - angles[i - 1]).toBeCloseTo(Math.PI / 3, 1);
   });
   it('fails while the cube is re-forming', () => {
     const { me, t } = duel();
@@ -367,6 +482,12 @@ describe('Magnet Surge', () => {
     expect(me.activateSkill(X)).toBe(false);
     expect(me.skillFailure).toMatch(/re-forming/);
     expect(me.skills[X].cooldown).toBe(0);
+  });
+  it('is cast by the AI when a foe stands within reach', () => {
+    const { g, me, foe } = duel(-2500);
+    expect(aiWantsSkill(me, g, X, foe)).toBe(true);
+    foe.pos.z = -6000;
+    expect(aiWantsSkill(me, g, X, foe)).toBe(false);
   });
 });
 
@@ -879,8 +1000,14 @@ describe('Overdrive', () => {
     g.ai.set(me, new AIController(me, g));
     me.meter = 1;
     me.activateSkill(B);
-    run(g, 10);
-    expect(me.skills.some((st) => !st.spec.ult && st.cooldown > 0)).toBe(true);
+    // Watch for casts rather than cooldowns left at the end: a kill cuts cooldowns short.
+    let cast = false;
+    for (let k = 0; k < 600; k++) {
+      const before = me.skills.map((st) => st.cooldown);
+      g.step(1 / 60);
+      if (me.skills.some((st, i) => !st.spec.ult && st.cooldown > before[i] + 0.5)) cast = true;
+    }
+    expect(cast).toBe(true);
   });
   it('orbits the cubes as a shield that batters hulls', () => {
     const { g, me, foe, t } = duel();
@@ -1119,7 +1246,6 @@ describe('Tungsten sync', () => {
     const fields: [() => void, () => void][] = [
       [() => (t.energy = 0.5), () => (t.energy = 1)],
       [() => (t.spent = true), () => (t.spent = false)],
-      [() => (t.surgeUntil = 5), () => (t.surgeUntil = 0)],
       [() => (t.reload = 1), () => (t.reload = 0)],
       [() => (t.dockHeal = true), () => (t.dockHeal = false)],
     ];
@@ -1129,6 +1255,14 @@ describe('Tungsten sync', () => {
       reset();
       expect(stateHash(g)).toBe(h);
     }
+    // A die roll hashes apart from a throw to the same spot.
+    const path = (kind: 'shot' | 'die') => ({ kind, skill: X, tx: 0, ty: CUBE.hoverY, tz: -2000, speed: 1, hit: [], healed: [], dealt: 0, target: 0, bounces: 0 });
+    expect(PATH_KINDS).toContain('die');
+    t.cubes[0].path = path('shot');
+    const shot = stateHash(g);
+    t.cubes[0].path = path('die');
+    expect(stateHash(g)).not.toBe(shot);
+    t.cubes[0].path = null;
   });
   it('replays Tungsten LAN turns in lockstep', () => {
     const st = navalRules.defaults();

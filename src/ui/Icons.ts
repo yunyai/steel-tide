@@ -54,6 +54,8 @@ const GLYPHS: Record<string, string> = {
   beast: `<ellipse ${F} cx="0" cy="4.5" rx="5.2" ry="4.4"/><circle ${F} cx="-7" cy="-2.5" r="2.4"/><circle ${F} cx="-2.6" cy="-7.5" r="2.4"/><circle ${F} cx="2.6" cy="-7.5" r="2.4"/><circle ${F} cx="7" cy="-2.5" r="2.4"/>`,
   hammer: `<path ${F} d="M-10 -10.5 H6 V-3.5 H-10 Z"/><path ${F} d="M6 -9 H9.5 V-5 H6 Z" opacity=".6"/><path ${S} stroke-width="3.2" d="M-2 -3.5 V11"/>`,
   eye: `<path ${S} d="M-11 0 C-6 -7.5 6 -7.5 11 0 C6 7.5 -6 7.5 -11 0 Z"/><circle ${F} r="3.6"/>`,
+  // Loaded Die: a die on its corner, three pips up.
+  dice: `<path ${S} d="M0 -10.5 L9 -5.5 V5.5 L0 10.5 L-9 5.5 V-5.5 Z M-9 -5.5 L0 -0.5 L9 -5.5 M0 -0.5 V10.5"/><circle ${F} cx="-3" cy="-6.2" r="1.3"/><circle ${F} cx="0" cy="-5.2" r="1.3"/><circle ${F} cx="3" cy="-4.2" r="1.3"/><circle ${F} cx="-4.5" cy="3" r="1.3"/><circle ${F} cx="4.5" cy="3" r="1.3"/>`,
   swap: `<path ${S} stroke-width="2.2" d="M-9.5 -4.5 H8 M4 -8.5 L8 -4.5 L4 -0.5 M9.5 4.5 H-8 M-4 0.5 L-8 4.5 L-4 8.5"/>`,
   gravity: `<circle ${F} r="3.6"/><ellipse ${S} rx="10.5" ry="4" transform="rotate(-20)"/><ellipse ${S} rx="7" ry="2.4" opacity=".55" transform="rotate(-20)"/>`,
   radar: `<path ${S} d="M-9.5 -2.5 A9 9 0 0 0 2.5 9.5 Z"/><path ${S} d="M-3.5 3.5 L3 -3"/><path ${S} d="M2.5 -6.5 A5 5 0 0 1 6.5 -2.5 M3 -10.5 A9 9 0 0 1 10.5 -3"/><path ${S} d="M-6 6 L-10 10.5 H-3"/>`,

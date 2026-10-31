@@ -16,7 +16,7 @@ import {
   overdriveOn,
   raiseShield,
   signature,
-  surge,
+  rollDie,
   switchMode,
   tungstenWantedMode,
 } from './TungstenRuntime';
@@ -72,13 +72,17 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       });
     },
   }),
-  def(spec('tungstenSurge', 'Magnet Surge', 'SURGE', 18, 0, 'magnet', 'Refill the cube’s energy wherever it is, waking a spent cube. For 6 s throws fly 40% faster, strike 40% harder and cost nothing.'), {
-    activate: (s) => surge(s),
-    aiShouldUse(s, _g, t) {
-      const st = s.tungsten!;
-      return free(s) && (st.spent || st.energy < 0.3) && (foesNearCube(s, cube(s), 1500).length > 0 || (!!t && range(s, t) < CUBE.shot.range));
+  def(
+    spec('tungstenDie', 'Loaded Die', 'DIE', CUBE.die.cooldown, 0, 'dice', "Roll the cube to the reticle, up to 4 km, over anything in the way; free, and a spent cube stays spent. It lands for 120k to every foe within 600 m, then the face it rolls fires at double strength: Kinetic hits harder the farther it rolled, Crush stuns, Shard knocks out turrets, Repel flings hulls and tears up fire, Tether chains and Mend heals the ship. Roll the cube's own mode for a jackpot: every face at once. In Overdrive all six roll into a ring round the reticle."),
+    {
+      activate: (s, _g, st) => rollDie(s, st.index),
+      aiShouldUse(s, _g, t) {
+        // Not while the cube shields the ship or the magnet reels it in.
+        if (!t || s.tungsten!.lunge) return false;
+        return pool(s).some((c) => isFree(c) && c.state !== 'guard' && c.state !== 'orbit' && Math.hypot(c.x - t.pos.x, c.z - t.pos.z) < CUBE.die.range);
+      },
     },
-  }),
+  ),
   def(spec('tungstenDock', 'Dock', 'DOCK', 10, 0, 'heal', 'Call the cube home through anything in the way (50k). On docking the ship repairs 6% plus 20% of the damage dealt and the cube 15%, and a spent cube wakes.'), {
     activate: (s, _g, st) => dockCubes(s, st.index),
     aiShouldUse(s) {

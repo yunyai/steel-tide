@@ -11,10 +11,10 @@ import type { Ship } from '../src/ships/Ship';
 import type { Game } from '../src/core/Game';
 import { emptyGame, place, run } from './helpers';
 
-// Skill slots: Q Lunge, E Switch, Z Signature, X Surge, C Dock, V Shield, R Collapse, T Meteor, B Overdrive.
+// Skill slots: Q Lunge, E Switch, Z Signature, X Die, C Dock, V Shield, R Collapse, T Meteor, B Overdrive.
 const SWITCH = 1;
 const SIGNATURE = 2;
-const SURGE = 3;
+const DIE = 3;
 const DOCK = 4;
 const SHIELD = 5;
 const COLLAPSE = 6;
@@ -440,18 +440,44 @@ describe('Tungsten throw effects', () => {
     expect(spent.flat).toBe(lit.flat);
   });
 
-  it('flares the docked cube when Magnet Surge fires', () => {
-    const g = emptyGame('open', 7, 'freeplay');
-    const s = place(g, 'tungsten', 0, 0, 0);
-    const fx = new TungstenCubeFx(new Scene(), g);
-    play(g, fx, 0.2, [s]);
-    fx.prepare(0, 720);
-    const idle = fx.particles.stats.additive.count;
-    cast(s, SURGE);
-    play(g, fx, 0.05, [s]);
-    fx.prepare(0, 720);
-    expect(fx.particles.stats.additive.count).toBeGreaterThan(idle);
-    fx.dispose();
+  it('shows the face the Loaded Die rolled, then its own colour, and erupts where it lands', () => {
+    const landing = (die: boolean) => {
+      const g = emptyGame('open', 7, 'freeplay');
+      const s = place(g, 'tungsten', 0, 0, 0);
+      // Rolls the Repel face on a Kinetic cube.
+      (g as unknown as { rng: () => number }).rng = () => 3.5 / 6;
+      const fx = new TungstenCubeFx(new Scene(), g);
+      const t = s.tungsten!;
+      s.control.aimX = 0;
+      s.control.aimZ = -2000;
+      let down = false;
+      g.events.on('tungsten', (e) => {
+        if (e.kind === 'land') down = true;
+      });
+      if (die) cast(s, DIE);
+      else {
+        s.control.fire = true;
+        play(g, fx, 1 / 60, [s]);
+        s.control.fire = false;
+      }
+      for (let i = 0; i < 300 && !down; i++) play(g, fx, 1 / 60, [s]);
+      expect(down).toBe(true);
+      play(g, fx, 0.4, [s]);
+      fx.prepare(0, 720);
+      const glow = fx.skin(s, t.cubes[0].id)!.uGlow.value.getHex();
+      const additive = fx.particles.stats.additive.count;
+      play(g, fx, 2.5, [s]);
+      fx.prepare(0, 720);
+      const after = fx.skin(s, t.cubes[0].id)!.uGlow.value.getHex();
+      fx.dispose();
+      return { glow, additive, after };
+    };
+    const rolled = landing(true),
+      thrown = landing(false);
+    expect(rolled.glow).toBe(modeColor(3).getHex());
+    expect(thrown.glow).toBe(modeColor(0).getHex());
+    expect(rolled.after).toBe(modeColor(0).getHex());
+    expect(rolled.additive).toBeGreaterThan(thrown.additive);
   });
 });
 

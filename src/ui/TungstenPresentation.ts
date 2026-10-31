@@ -60,8 +60,6 @@ export function tungstenPresentation(t: TungstenState, time: number, x: number, 
   const status: TungstenStatusLine[] = [];
 
   if (overdrive > 0) status.push({ text: `Overdrive · all modes · ${Math.ceil(overdrive)}s`, buff: true, icon: 'fleet' });
-  const surge = t.surgeUntil - time;
-  if (surge > 0) status.push({ text: `Surge · ${Math.ceil(surge)}s`, buff: true, icon: 'magnet' });
   const guard = t.guardUntil - time;
   if (guard > 0) status.push({ text: `Shield ${Math.ceil(guard)}s`, buff: true, icon: 'shield' });
   const tethered = t.tethers.filter((k) => k.until > time).length;
@@ -84,8 +82,7 @@ function panel(t: TungstenState, time: number, x: number, z: number): TungstenPa
   const where = t.overdriveUntil > time ? overdriveWhere(t) : c.state === 'hover' || c.state === 'flying' ? `${PLACE[c.state]} · ${km(Math.hypot(c.x - x, c.z - z))}` : PLACE[c.state];
 
   let energy: string;
-  if (t.surgeUntil > time) energy = `Surge ${Math.ceil(t.surgeUntil - time)}s · free throws`;
-  else if (t.overdriveUntil > time) energy = 'Overdrive · free throws';
+  if (t.overdriveUntil > time) energy = 'Overdrive · free throws';
   else if (t.spent) {
     const docked = c.state === 'docked';
     const wait = secs((1 - t.energy) / (docked ? CUBE.energy.dockRegen : CUBE.energy.regen));
@@ -95,7 +92,7 @@ function panel(t: TungstenState, time: number, x: number, z: number): TungstenPa
     const n = secs(t.energy / CUBE.shot.cost);
     energy = `${n} throw${n === 1 ? '' : 's'}${t.energy < 1 ? ' · recharging' : ''}`;
   }
-  const free = t.surgeUntil > time || t.overdriveUntil > time;
+  const free = t.overdriveUntil > time;
 
   const cube: TungstenGauge =
     c.state === 'broken'
@@ -136,11 +133,11 @@ function thrower(t: TungstenState, time: number): Cube {
 export function cubeReticle(t: TungstenState, time: number, aimX: number, aimZ: number): { text: string; out: boolean } {
   const c = thrower(t, time);
   if (c.state === 'broken') return { text: `Cube re-forming · ${secs(c.reform)}s`, out: true };
-  if (t.spent) return { text: 'Spent: Dock or Surge to throw', out: true };
+  if (t.spent) return { text: 'Spent: Dock to throw', out: true };
   if (c.state !== 'docked' && c.state !== 'hover') return { text: c.state === 'flying' ? 'Cube in flight' : 'Cube busy', out: true };
   const d = Math.hypot(aimX - c.x, aimZ - c.z);
   if (d > CUBE.shot.range) return { text: `Beyond the ${CUBE.shot.range / 1000} km throw: it lands short`, out: true };
-  const speed = CUBE.shot.speed * TUNGSTEN_MODES[c.mode].speed * (t.surgeUntil > time ? CUBE.surge.speed : 1);
+  const speed = CUBE.shot.speed * TUNGSTEN_MODES[c.mode].speed;
   return { text: `Throw ${km(d)}, ${(d / speed).toFixed(1)} s`, out: false };
 }
 

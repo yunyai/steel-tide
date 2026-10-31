@@ -47,6 +47,9 @@ interface FreeCube {
   gone: number;
   /** Last capture or block, for the face flash. */
   struck: number;
+  /** The face a Loaded Die rolled and when it landed (-1 for none), shown for `DIE_SHOW` s. */
+  face: number;
+  faceAt: number;
   mode: number;
 }
 
@@ -73,8 +76,10 @@ const LIFE: Partial<Record<TungstenEvent['kind'], number>> = {
   overdriveEnd: 1.1,
   spent: 1.4,
   charged: 0.7,
-  surge: 0.9,
+  die: 1.6,
 };
+/** Seconds a landed die shows the face it rolled before its own colour sweeps back. */
+const DIE_SHOW = 1.6;
 const H = CUBE.edge / 2;
 const TETHER = modeOf('tether');
 const tint2 = new Color();
@@ -158,6 +163,13 @@ export class TungstenCubeFx {
       const v = this.views.get(this.key(e.ship, e.cube));
       if (v) v.struck = this.game.time;
     }
+    if (e.kind === 'die') {
+      const v = this.views.get(this.key(e.ship, e.cube));
+      if (v) {
+        v.face = e.face ?? e.mode;
+        v.faceAt = this.game.time;
+      }
+    }
     this.sound(e);
   }
 
@@ -227,8 +239,9 @@ export class TungstenCubeFx {
       case 'charged':
         play('charge', 'ward-rise', 0.45, 1.3);
         break;
-      case 'surge':
-        play('charge', 'energy-heavy', 0.9, 1.2);
+      case 'die':
+        play('explosion', 'blast-shock', 0.9, e.jackpot ? 0.8 : 1.15, 2);
+        if (e.jackpot) play('charge', 'transform', 0.8, 1.2);
         break;
       case 'signature': {
         const sig = TUNGSTEN_MODES[e.mode].signature.id;
@@ -335,7 +348,7 @@ export class TungstenCubeFx {
         mesh.frustumCulled = false;
         this.scene.add(mesh);
         this.renderPos(c, this.v);
-        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, mode: c.mode };
+        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, face: -1, faceAt: -1, mode: c.mode };
         this.views.set(k, v);
       }
       v.live = true;
@@ -448,12 +461,12 @@ export class TungstenCubeFx {
       this.v2.set(v.axisX, 0, v.axisZ);
       this.q2.setFromAxisAngle(this.v2, v.tumble);
       v.mesh.quaternion.copy(this.q).multiply(this.q2);
-      v.sweep.apply(v.u, c.mode, now, this.paint.reduce);
-      const flash = clamp01(1 - (this.game.time - v.struck) / 0.25);
-      // Magnet Surge: a bright pulse through the etching as it fires, then a stronger glow while it runs.
-      const surge = t.surgeUntil ? clamp01(1 - (this.game.time - (t.surgeUntil - CUBE.surge.time)) / 0.6) : 0;
+      // A landed die wipes to the face it rolled, then back to its own mode.
+      const rolled = v.face >= 0 && this.game.time - v.faceAt < DIE_SHOW;
+      v.sweep.apply(v.u, rolled ? v.face : c.mode, now, this.paint.reduce);
+      const flash = Math.max(clamp01(1 - (this.game.time - v.struck) / 0.25), rolled ? clamp01(1 - (this.game.time - v.faceAt) / 0.5) : 0);
       const sputter = this.paint.reduce ? 0.2 : hash01(c.id, Math.floor(now * 12)) < 0.18 ? 0.3 : 0.12;
-      const power = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + (t.surgeUntil > this.game.time ? 0.5 : 0) + flash * 1.5 + surge * 2.5;
+      const power = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + flash * 1.5;
       v.u.uTime.value = anim;
       v.u.uPower.value = ult ? ult.power : spent ? sputter : power;
       v.u.uFlicker.value = Math.max(c.hp < c.maxHp * 0.3 ? 1 - c.hp / (c.maxHp * 0.3) : 0, spent ? 0.5 : 0);
@@ -834,20 +847,30 @@ export class TungstenCubeFx {
         }
         return;
       }
-      case 'charged':
-      case 'surge': {
-        // The etching wakes (and on a Surge, blazes): a flare off the cube and a ring of field round it.
-        const surge = e.kind === 'surge';
+      case 'charged': {
+        // The etching wakes: a flare off the cube and a ring of field round it.
         const o = c?.state === 'docked' ? this.anchor(s, 0, dockLift(s.spec), 0, this.v) : c ? this.renderPos(c, this.v) : this.v.set(e.x, e.y, e.z);
-        if (age < 0.2) p.push(BK.Flare, o.x, o.y, o.z, (surge ? 320 : 160) * (1 - age / 0.2) + 60, hot(WHITE, surge ? 1.8 : 1.2), 1 - age / 0.2);
-        p.push(BK.Glow, o.x, o.y, o.z, CUBE.edge * (surge ? 3 : 2), hot(color, surge ? 1.4 : 0.9), 0.5 * (1 - f));
+        if (age < 0.2) p.push(BK.Flare, o.x, o.y, o.z, 160 * (1 - age / 0.2) + 60, hot(WHITE, 1.2), 1 - age / 0.2);
+        p.push(BK.Glow, o.x, o.y, o.z, CUBE.edge * 2, hot(color, 0.9), 0.5 * (1 - f));
         this.paint.loop(o.x, o.y, o.z, CUBE.edge * (0.8 + 1.4 * ease(age / 0.5)), hot(color, 2.2), 0.8 * (1 - f));
-        if (surge)
-          for (let i = 0; i < n(24); i++) {
-            const a = R(i, 0) * TAU,
-              v = 120 + 200 * R(i, 1);
-            p.push(BK.Spark, o.x + Math.cos(a) * drift(age, v, 2.4), o.y + drift(age, 80 * (R(i, 2) - 0.3), 2.4, 40), o.z + Math.sin(a) * drift(age, v, 2.4), 1.6, hot(color, 2.6), 1 - f, 0, 0, Math.cos(a) * 4, 1, Math.sin(a) * 4, 1.4);
-          }
+        return;
+      }
+      case 'die': {
+        // The die erupts out to its blast radius in the colour of the face it rolled; a jackpot rings in all six.
+        const base = this.paint.surface(e.x, e.z);
+        const face = modeColor(e.face ?? e.mode);
+        const k = ease(age / 0.5);
+        if (e.jackpot) for (let m = 0; m < 6; m++) this.paint.ring(e.x, e.z, e.radius * k * (0.7 + m * 0.06), hot(modeColor(m), 2), 0.7 * (1 - f));
+        else this.paint.ring(e.x, e.z, e.radius * k, hot(face, 2), 0.8 * (1 - f));
+        this.paint.ring(e.x, e.z, H + e.radius * 0.5 * k, FOAM, 0.5 * (1 - f), BK.Foam, b.id);
+        if (age < 0.2) p.push(BK.Flare, e.x, base + H, e.z, 420 * (1 - age / 0.2) + 80, hot(WHITE, 1.8), 1 - age / 0.2);
+        p.push(BK.Glow, e.x, base + H, e.z, CUBE.edge * 3, hot(face, 1.2), 0.5 * (1 - f));
+        for (let i = 0; i < n(40); i++) {
+          const a = R(i, 0) * TAU,
+            v = 200 + 360 * R(i, 1);
+          const tint = e.jackpot ? modeColor(i % 6) : face;
+          p.push(BK.Spark, e.x + Math.cos(a) * drift(age, v, 2.2), base + drift(age, 160 + 260 * R(i, 2), 1.4, 120), e.z + Math.sin(a) * drift(age, v, 2.2), 1.8, hot(tint, 2.6), 1 - f, 0, 0, Math.cos(a) * 4, 2, Math.sin(a) * 4, 1.4);
+        }
         return;
       }
       case 'shield': {

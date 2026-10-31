@@ -42,7 +42,6 @@ const STEEL = 0x59616b,
   INSULATOR = 0xd9d4c8;
 const tmpColor = new Color();
 const tmpColor2 = new Color();
-const white = new Color(1, 1, 1);
 
 /** A colour walking round the six modes: `u` in [0, 6), one mode per unit. */
 function modeWheel(u: number, out: Color): Color {
@@ -177,13 +176,10 @@ export class TungstenModel {
     const broken = lead?.state === 'broken';
     const spent = !!t?.spent;
     const charge = t ? t.charge / CUBE.chargeCap : 0;
-    // Magnet Surge: a flash as it fires, then a brighter hum while it runs.
-    const surging = !!t && t.surgeUntil > now;
-    const flash = t?.surgeUntil ? Math.max(0, 1 - (now - (t.surgeUntil - CUBE.surge.time)) / 0.6) : 0;
     this.sweep.apply(this.cubes[0].u, mode, now, this.reduce);
     const base = this.sweep.color(now, tmpColor);
     // The dais hums brighter while it pulls, and stutters while the cube is shattered or spent.
-    let power = 1.5 + charge * 1.2 + (reeling ? 1.4 : 0) + (away ? 0.25 : 0) + (over ? 0.8 : 0) + (surging ? 0.6 : 0) + flash * 3;
+    let power = 1.5 + charge * 1.2 + (reeling ? 1.4 : 0) + (away ? 0.25 : 0) + (over ? 0.8 : 0);
     power *= 1 + 0.08 * Math.sin(anim * (over ? 9 : 2.4));
     if (broken || spent) power *= (spent ? 0.3 : 0.35) + (this.reduce ? 0.2 : 0.4 * Math.max(0, Math.sin(anim * 31) * Math.sin(anim * 7.3)));
     if (ship && !ship.alive) power = 0;
@@ -192,7 +188,7 @@ export class TungstenModel {
     this.rings.forEach((m, i) => {
       const pulse = this.reduce ? 0.5 : 0.5 + 0.5 * Math.sin(anim * 2.2 - i * 1.1);
       const c = over ? modeWheel((anim * 0.9 + i * 2) % 6, tmpColor2) : tmpColor2.copy(base);
-      m.color.copy(c).lerp(white, flash * 0.6).multiplyScalar(power * (0.55 + 0.9 * pulse * pulse));
+      m.color.copy(c).multiplyScalar(power * (0.55 + 0.9 * pulse * pulse));
     });
     // The column stands only while a cube floats over the dais; in Overdrive the dais stands empty, feeding the halo.
     const held = !over && (!lead || lead.state === 'docked');
@@ -230,7 +226,7 @@ export class TungstenModel {
       v.mesh.rotation.set(rock(0), this.reduce ? 0 : now * CUBE.spin, rock(1));
       if (slot) v.sweep.apply(v.u, v.mode, now, this.reduce);
       v.u.uTime.value = anim;
-      v.u.uPower.value = (1.2 + charge * 1.6 + (over ? 0.5 : 0) + flash * 2.5) * (spent && slot === 0 ? 0.35 : 1);
+      v.u.uPower.value = (1.2 + charge * 1.6 + (over ? 0.5 : 0)) * (spent && slot === 0 ? 0.35 : 1);
       v.u.uAssemble.value = solid;
       v.u.uFlicker.value = c && c.hp < c.maxHp * 0.3 ? 1 - c.hp / (c.maxHp * 0.3) : 0;
       v.u.uHeat.value = 0;

@@ -54,13 +54,6 @@ describe('Tungsten HUD presentation', () => {
     expect(lines(tungstenPresentation(t, time, 0, 0))).toEqual(['Shield 5s']);
   });
 
-  it("shows the Magnet Surge's overcharge", () => {
-    const { t, time } = tungsten();
-    t.surgeUntil = time + 3.2;
-    const [line] = tungstenPresentation(t, time, 0, 0).status;
-    expect(line).toEqual({ text: 'Surge · 4s', buff: true, icon: 'magnet' });
-  });
-
   it("puts the mode's throw hit and passive in the Switch tooltip", () => {
     const { t, time } = tungsten();
     t.mode = 3;
@@ -114,12 +107,9 @@ describe('Tungsten HUD panel', () => {
     expect(panel(t, time).energy.text).toBe('Spent · charging 2s');
   });
 
-  it('marks free throws during Surge and Overdrive', () => {
+  it('marks free throws during Overdrive', () => {
     const { t, time } = tungsten();
     t.energy = 0.5;
-    t.surgeUntil = time + 3.2;
-    expect(panel(t, time).energy).toEqual({ frac: 0.5, text: 'Surge 4s · free throws', low: false });
-    t.surgeUntil = 0;
     t.overdriveUntil = time + 10;
     expect(panel(t, time).energy.text).toBe('Overdrive · free throws');
   });
@@ -179,8 +169,6 @@ describe('Tungsten cube reticle', () => {
     Object.assign(t.cubes[0], { x: 0, z: 0 });
     // Kinetic flies at 1.5 times the base speed.
     expect(cubeReticle(t, time, 0, -1800)).toEqual({ text: `Throw 1.8 km, ${(1800 / (CUBE.shot.speed * 1.5)).toFixed(1)} s`, out: false });
-    t.surgeUntil = time + 2;
-    expect(cubeReticle(t, time, 0, -1800).text).toBe(`Throw 1.8 km, ${(1800 / (CUBE.shot.speed * 1.5 * CUBE.surge.speed)).toFixed(1)} s`);
   });
 
   it("flags a reticle past the cube's throw", () => {
@@ -193,7 +181,7 @@ describe('Tungsten cube reticle', () => {
     const { t, time } = tungsten();
     const c = t.cubes[0];
     t.spent = true;
-    expect(cubeReticle(t, time, 0, -900)).toEqual({ text: 'Spent: Dock or Surge to throw', out: true });
+    expect(cubeReticle(t, time, 0, -900)).toEqual({ text: 'Spent: Dock to throw', out: true });
     t.spent = false;
     Object.assign(c, { state: 'flying' });
     expect(cubeReticle(t, time, 0, -900)).toEqual({ text: 'Cube in flight', out: true });
