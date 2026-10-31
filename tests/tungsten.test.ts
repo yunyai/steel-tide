@@ -1085,23 +1085,24 @@ describe('Overdrive', () => {
     expect(me.mods.speedMul).toBeCloseTo(1.15);
     expect(me.mods.damageTakenMul).toBeCloseTo(0.88);
   });
-  it('throws every cube abreast for free, and sends the extras home when it ends', () => {
+  it('throws the docked cubes for free as a pentagon round the central one, and sends the extras home when it ends', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 4000;
     me.meter = 1;
     t.energy = 0.5;
     me.activateSkill(B);
     expect(t.energy).toBe(1);
-    // Let the first cube finish its lift into the halo.
     run(g, 0.5);
+    const halo = me.heading + g.time * CUBE.ringSpin;
     hurl(g, me, 0, -2500);
     expect(t.cubes.every((c) => c.state === 'flying')).toBe(true);
     until(g, () => t.cubes.every((c) => c.state === 'hover'));
-    // A line across the throw, one spread apart, centred on the reticle.
-    const xs = t.cubes.map((c) => c.x).sort((a, b) => a - b);
-    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeCloseTo(CUBE.shot.spread, 0);
-    expect((xs[0] + xs[5]) / 2).toBeCloseTo(0, 0);
-    for (const c of t.cubes) expect(c.z).toBeCloseTo(-2500, 0);
+    // The central cube on the reticle; the five a formation's radius round it, turned as the halo was.
+    expect(gap(t.cubes[0], { x: 0, z: -2500 })).toBeLessThan(1);
+    for (const c of t.cubes.slice(1)) {
+      expect(gap(c, { x: 0, z: -2500 })).toBeCloseTo(CUBE.shot.formation, 0);
+      expect(Math.cos(bearingTo(0, -2500, c.x, c.z) - ((c.slot - 1) / 5) * Math.PI * 2 - halo)).toBeCloseTo(1, 4);
+    }
     expect(t.energy).toBe(1);
     run(g, CUBE.overdrive.time + 5);
     expect(t.cubes).toHaveLength(1);
@@ -1265,20 +1266,29 @@ describe('Overdrive', () => {
     me.hp = me.maxHp * 0.3;
     expect(aiWantsSkill(me, g, E, foe)).toBe(true);
   });
-  it('throws the six abreast without any path crossing another', () => {
+  it('moves the pentagon at one pace without any path crossing another, from the dock and from the water', () => {
     const { g, me, foe, t } = duel();
     foe.pos.x = 4000;
     me.meter = 1;
     me.activateSkill(B);
-    // Several halo angles, and throws at several bearings.
-    for (const [wait, x, z] of [[1, 0, -2500], [3.3, 1800, -1600], [2.1, -2200, 900]]) {
+    // From the halo at several angles and bearings, then on from where the formation hovers.
+    for (const [wait, x, z, docked] of [[1, 0, -2500, 1], [2.3, 1800, -1600, 1], [1.4, -2200, 900, 1], [2.6, -600, -2600, 0], [3, 900, -3200, 0]]) {
       run(g, wait);
-      for (const c of t.cubes) if (c.state === 'hover') Object.assign(c, { state: 'docked' });
+      if (docked) for (const c of t.cubes) if (c.state === 'hover') Object.assign(c, { state: 'docked' });
       run(g, 0.05);
       const from = t.cubes.map((c) => ({ x: c.x, z: c.z }));
       t.reload = 0;
       hurl(g, me, x, z);
+      expect(t.cubes.every((c) => c.state === 'flying')).toBe(true);
       const to = t.cubes.map((c) => ({ x: c.path!.tx, z: c.path!.tz }));
+      // The formation keeps the central cube's pace, so no cube runs into another on the way.
+      for (const c of t.cubes) expect(c.path!.speed).toBeCloseTo(CUBE.shot.speed * TUNGSTEN_MODES[t.mode].speed, 6);
+      // From the water it keeps its turn: every cube takes the same step.
+      if (!docked)
+        for (let i = 1; i < 6; i++) {
+          expect(to[i].x - from[i].x).toBeCloseTo(to[0].x - from[0].x, 0);
+          expect(to[i].z - from[i].z).toBeCloseTo(to[0].z - from[0].z, 0);
+        }
       const cross = (a: { x: number; z: number }, b: { x: number; z: number }, c: { x: number; z: number }) => (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
       for (let i = 0; i < 6; i++)
         for (let j = i + 1; j < 6; j++) {
@@ -1521,6 +1531,23 @@ describe('Tungsten Meteor', () => {
     run(g, 3.05);
     expect(impacts).toBe(6);
     expect(t.cubes.every((c) => c.scale > 1)).toBe(true);
+  });
+  it('drops the Overdrive meteors in a pentagon round the central one', () => {
+    const { g, me, t } = duel(-2000);
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 0.5);
+    const halo = me.heading + g.time * CUBE.ringSpin;
+    aim(me, 0, -2000);
+    me.skills[T].meter = 1;
+    expect(me.activateSkill(T)).toBe(true);
+    const u = t.ult!;
+    const spot = (c: Cube) => ({ x: u.spots[u.cubes.indexOf(c.id) * 2], z: u.spots[u.cubes.indexOf(c.id) * 2 + 1] });
+    expect(gap(spot(t.cubes[0]), { x: 0, z: -2000 })).toBeCloseTo(0, 6);
+    for (const c of t.cubes.slice(1)) {
+      expect(gap(spot(c), { x: 0, z: -2000 })).toBeCloseTo(CUBE.meteor.ring, 6);
+      expect(Math.cos(bearingTo(0, -2000, spot(c).x, spot(c).z) - ((c.slot - 1) / 5) * Math.PI * 2 - halo)).toBeCloseTo(1, 4);
+    }
   });
   it('drops every mode at the same pace', () => {
     const { g, me } = duel(-2000);

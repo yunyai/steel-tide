@@ -85,9 +85,10 @@ export const CUBE = {
   /**
    * The fire button hurls the cube at the reticle (`speed` times the mode's factor), up to `range` from where it
    * is, once per `reload` while held. It ploughs through every hull in its way for `damage` and spends `cost` of
-   * the magnet's energy; in Overdrive the cubes fly abreast, `spread` apart.
+   * the magnet's energy. In Overdrive the central cube flies to the reticle and the five to a pentagon `formation`
+   * m round it, all at the central cube's pace.
    */
-  shot: { range: 4000, speed: 1800, damage: 80000, reload: 1.5, cost: 0.25, spread: 200 },
+  shot: { range: 4000, speed: 1800, damage: 80000, reload: 1.5, cost: 0.25, formation: 300 },
   /** The magnet's energy recharges slowly anywhere and fast docked. A cube thrown empty sinks `sink` m into the sea (or rests on land) until it docks or is full again. */
   energy: { regen: 0.03, dockRegen: 0.3, sink: 10 },
   /**

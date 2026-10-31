@@ -67,7 +67,7 @@ export function tungstenCodexEntries(): CodexTab[] {
     rainbow: true,
     rows: [
       { label: 'Cubes', text: `For ${CUBE.overdrive.time} s five more cubes leave the magnet, one in each other mode. All six float as equals in a halo round the ship, and the dais stands empty.` },
-      { label: 'Throw', text: `Throws are free and hurl all six abreast, ${CUBE.shot.spread} m apart, each with its own mode's hit.` },
+      { label: 'Throw', text: `Throws are free: the central cube flies to the reticle and the five to a pentagon ${CUBE.shot.formation} m round it, all at the central cube's pace, each with its own mode's hit.` },
       { label: 'Passive', text: "Every mode's passive is live at once." },
       { label: 'Signature', text: "Every cube fires its own mode's Signature from where it is." },
       { label: 'Die', text: `All six roll, landing in a ${CUBE.die.ring} m ring round the reticle; each keeps its own mode and rolls its own face.` },

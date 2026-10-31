@@ -509,26 +509,51 @@ function cubeReady(s: Ship, name: string): boolean {
 }
 
 /**
- * The fire button hurls the cube (every free cube in Overdrive, abreast) at the reticle, up to `CUBE.shot.range`
- * from where it is. It tumbles there, ploughing through every hull in its way, and hovers. Each throw spends
- * energy unless throws are free; the throw that empties it leaves the cube spent where it lands. It rolls up and
- * over islands, and a reticle on land stops it there. False when every cube is already over its spot.
+ * How the Overdrive pentagon is turned: the turn that best fits where its cubes stand round their centre now, so
+ * a docked halo flies out as it wheels and a hovering formation moves on without the cubes trading places.
+ */
+function formationTurn(s: Ship, cubes: Cube[]): number {
+  let cx = 0,
+    cz = 0;
+  for (const c of cubes) {
+    cx += c.x / cubes.length;
+    cz += c.z / cubes.length;
+  }
+  let sin = 0,
+    cos = 0;
+  for (const c of cubes) {
+    if (c.slot === 0) continue;
+    // The cube's bearing from the centre, less its slot's place in the pentagon, weighted by how far out it is.
+    const a = bearingTo(cx, cz, c.x, c.z) - haloAngle(c.slot, 0);
+    const r = gap(cx, cz, c.x, c.z);
+    sin += r * Math.sin(a);
+    cos += r * Math.cos(a);
+  }
+  return sin || cos ? Math.atan2(sin, cos) : s.heading + s.game.time * CUBE.ringSpin;
+}
+/** A slot's place in a pentagon `r` round (x, z), turned by `turn`: the centre for slot 0. */
+function vertex(x: number, z: number, slot: number, turn: number, r: number): [number, number] {
+  if (slot === 0) return [x, z];
+  const a = turn + haloAngle(slot, 0);
+  return [x + Math.sin(a) * r, z - Math.cos(a) * r];
+}
+
+/**
+ * The fire button hurls the cube at the reticle (in Overdrive the central cube there and the rest in a pentagon
+ * round it), up to `CUBE.shot.range` from where it is. It tumbles there, ploughing through every hull in its way,
+ * and hovers. Each throw spends energy unless throws are free; the throw that empties it leaves the cube spent
+ * where it lands. It rolls up and over islands, and a reticle on land stops it there. False when every cube is
+ * already over its spot.
  */
 function throwCubes(s: Ship): boolean {
   const t = s.tungsten!;
   const cubes = driven(s).filter((c) => c.state === 'docked' || c.state === 'hover');
-  const b = bearingTo(s.pos.x, s.pos.z, s.control.aimX, s.control.aimZ);
-  // Across the line of the throw.
-  const rx = Math.cos(b),
-    rz = Math.sin(b);
+  const turn = formationTurn(s, cubes);
+  // The formation keeps the central cube's pace, so no cube runs into another on the way.
+  const speed = CUBE.shot.speed * TUNGSTEN_MODES[t.mode].speed;
   let thrown = 0;
-  // Each takes the place in the line on its own side, so no path crosses another.
-  const side = (c: Cube) => (c.x - s.pos.x) * rx + (c.z - s.pos.z) * rz;
-  cubes.sort((a, b) => side(a) - side(b));
-  cubes.forEach((c, i) => {
-    const off = (i - (cubes.length - 1) / 2) * CUBE.shot.spread;
-    const ax = s.control.aimX + rx * off,
-      az = s.control.aimZ + rz * off;
+  cubes.forEach((c) => {
+    const [ax, az] = vertex(s.control.aimX, s.control.aimZ, c.slot, turn, CUBE.shot.formation);
     const d = gap(c.x, c.z, ax, az);
     if (d < 100) return;
     const reach = Math.min(d, CUBE.shot.range) / d;
@@ -539,7 +564,7 @@ function throwCubes(s: Ship): boolean {
     if (gap(c.x, c.z, x, z) < 100) return;
     c.state = 'flying';
     c.flown = 0;
-    c.path = newPath('shot', -1, x, hoverY(s, x, z), z, CUBE.shot.speed * TUNGSTEN_MODES[c.mode].speed);
+    c.path = newPath('shot', -1, x, hoverY(s, x, z), z, speed);
     emit(s, 'throw', c, c.x, c.y, c.z);
     thrown++;
   });
@@ -948,11 +973,9 @@ function beginUlt(s: Ship, kind: 'collapse' | 'meteor', skill: number, range: nu
   const x = s.pos.x + (s.control.aimX - s.pos.x) * k,
     z = s.pos.z + (s.control.aimZ - s.pos.z) * k;
   const n = cubes.length;
-  const spots = cubes.flatMap((_, i) => {
-    if (kind === 'collapse' || n === 1) return [x, z];
-    const a = (i / n) * Math.PI * 2;
-    return [x + Math.cos(a) * CUBE.meteor.ring, z + Math.sin(a) * CUBE.meteor.ring];
-  });
+  // In Overdrive the central cube falls on the reticle and the rest in a pentagon round it.
+  const turn = formationTurn(s, cubes);
+  const spots = cubes.flatMap((c) => (kind === 'collapse' || n === 1 ? [x, z] : vertex(x, z, c.slot, turn, CUBE.meteor.ring)));
   t.ult = { kind, skill, x, z, elapsed: 0, cubes: cubes.map((c) => c.id), from: cubes.flatMap((c) => [c.x, c.y, c.z]), spots, tick: 0, stage: 0, merged: n > 1, falls: [], struck: [], bounce: [] };
   t.guardUntil = Math.min(t.guardUntil, s.game.time);
   for (const c of cubes) {
