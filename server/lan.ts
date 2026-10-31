@@ -1,4 +1,4 @@
-import { SIM_PROTOCOL } from '../src/net/protocol';
+import { HASH_EVERY, SIM_PROTOCOL } from '../src/net/protocol';
 import { validLoadout, copyLoadout, type ArchitectLoadout } from '../src/data/architectLoadout';
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
@@ -113,7 +113,7 @@ interface Battle {
   /** Last time any captain was connected. */
   lastManned: number;
   /** Turn hashes by turn: what each player reported, and the agreed one once decided. */
-  hashes: Map<number, { by: Map<number, number>; agreed: number | null }>;
+  hashes: Map<number, { by: Map<number, number>; agreed: number | null; tied: boolean }>;
   /** This Free play battle is ending: the host ended it, or it ran out of time. */
   ending: boolean;
 }
@@ -533,34 +533,43 @@ export class LobbyServer {
   private hash(s: Session, k: unknown, h: unknown): void {
     const b = s.lobby?.battle;
     const p = this.playerOf(s);
-    if (!b || !p || !Number.isInteger(k) || !Number.isInteger(h)) return;
+    if (!b || !p) return;
+    // Only checkpoints this server has actually sent, with a 32-bit hash, count.
+    if (!Number.isInteger(k) || (k as number) < 0 || (k as number) >= b.turns.length || ((k as number) + 1) % HASH_EVERY !== 0) return;
+    if (!Number.isInteger(h) || (h as number) < 0 || (h as number) > 0xffffffff) return;
     const idx = b.players.indexOf(p);
     let rec = b.hashes.get(k as number);
     if (!rec) {
-      rec = { by: new Map(), agreed: null };
+      rec = { by: new Map(), agreed: null, tied: false };
       b.hashes.set(k as number, rec);
       // Keep the last few checkpoints only.
       for (const old of b.hashes.keys()) if (old < (k as number) - 20 * 60) b.hashes.delete(old);
     }
     rec.by.set(idx, h as number);
+    if (rec.tied) return;
     if (rec.agreed === null) {
       const voters = b.players.filter((x) => x.present && x.session.peer && !x.ai).map((x) => b.players.indexOf(x));
       if (!voters.every((v) => rec.by.has(v))) return;
-      // Majority wins; a tie goes to the lowest player index (the earliest to join).
       const counts = new Map<number, number>();
-      for (const v of [...rec.by.keys()].sort((a, c) => a - c)) counts.set(rec.by.get(v)!, (counts.get(rec.by.get(v)!) ?? 0) + 1);
+      for (const hv of rec.by.values()) counts.set(hv, (counts.get(hv) ?? 0) + 1);
       let best = -1;
       for (const [hv, n] of counts) if (best < 0 || n > counts.get(best)!) best = hv;
+      // A strict majority decides; without one nobody can tell who drifted, so everyone rebuilds.
+      if (counts.get(best)! * 2 <= rec.by.size) {
+        rec.tied = true;
+        for (const v of rec.by.keys()) this.desync(b.players[v], true);
+        return;
+      }
       rec.agreed = best;
       for (const [v, hv] of rec.by) if (hv !== best) this.desync(b.players[v]);
     } else if (h !== rec.agreed) this.desync(p);
   }
 
-  private desync(p: PlayerInput): void {
+  private desync(p: PlayerInput, tie = false): void {
     const now = Date.now();
     if (now - p.lastDesync < DESYNC_COOLDOWN) return;
     p.lastDesync = now;
-    this.send(p.session, { t: 'desync' });
+    this.send(p.session, tie ? { t: 'desync', tie } : { t: 'desync' });
   }
 
   private over(s: Session): void {

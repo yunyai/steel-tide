@@ -46,8 +46,9 @@ function script(g: Game, seconds: number, seed = 3): Turn[] {
   return turns;
 }
 
-function play(config: BattleConfig, turns: Turn[], every = 60): number[] {
+function play(config: BattleConfig, turns: Turn[], every = 60, setup?: (g: Game) => void): number[] {
   const g = new Game(config);
+  setup?.(g);
   const a = new TurnApplier(g);
   const hashes: number[] = [];
   for (const t of turns) {
@@ -71,6 +72,30 @@ describe('lockstep determinism', () => {
       expect(new Set(a).size).toBeGreaterThan(100);
     }, 120000);
   }
+
+  it('a peer whose view throws on every event still steps the same battle', () => {
+    const config = lanConfig('domination', 23);
+    const turns = script(new Game(config), 120);
+    let errors = 0;
+    const broken = (g: Game) => {
+      g.events.onViewError = () => errors++;
+      const emit = g.events.emit.bind(g.events);
+      const seen = new Set<string>();
+      g.events.emit = ((type: never, payload: never) => {
+        if (!seen.has(type)) {
+          seen.add(type);
+          g.events.view(type, () => {
+            throw new Error('a view listener broke');
+          });
+        }
+        emit(type, payload);
+      }) as typeof g.events.emit;
+    };
+    const a = play(config, turns, 60, broken);
+    const b = play(structuredClone(config), JSON.parse(JSON.stringify(turns)) as Turn[]);
+    expect(errors).toBeGreaterThan(100);
+    expect(b).toEqual(a);
+  }, 120000);
 
   it('two peers of a mixed-era battle stay identical', () => {
     const config: BattleConfig = { ...lanConfig('domination', 17), era: 'mixed', teamSize: 6 };

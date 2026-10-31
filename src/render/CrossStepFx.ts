@@ -38,19 +38,19 @@ export class CrossStepFx {
     this.dark.mesh.name = 'cross-step-fractures';
     this.dark.mesh.renderOrder = 5;
     scene.add(this.dark.mesh, this.light.mesh);
-    this.off.push(game.events.on('crossStep', e => {
+    this.off.push(game.events.view('crossStep', e => {
       if (e.phase !== 'finish') return;
       if (this.finishes.length >= 12) this.finishes.shift();
       this.finishes.push({ ...e, age:0,paths:Array.from({length:6},(_,i)=>{const n=48+i*2,p=stepperSlashLayout(n);return{ship:e.ship,ax:e.x+p.ax,az:e.z+p.az,bx:e.x+p.bx,bz:e.z+p.bz,cx:e.x+p.cx,cz:e.z+p.cz,age:0,seed:1000+n};}) });this.paths.delete(e.ship.id);
       if (!e.ship.stepper?.copy) audio.cue('crossStep','end','impact',e.x,20,e.z,this.local.includes(e.ship));
-    }),game.events.on('blink',e=>{
+    }),game.events.view('blink',e=>{
       const f=e.ship.stepper?.cross;if(!f)return;
       const p:Sweep={ship:e.ship,ax:e.fromX,az:e.fromZ,bx:e.ship.pos.x,bz:e.ship.pos.z,cx:f.x,cz:f.z,age:0,seed:f.jumps};
       // Project the departure onto the actual attack boundary if this is the initial entry jump.
       const d=Math.hypot(p.ax-f.x,p.az-f.z);if(d>1000){p.ax=f.x+(p.ax-f.x)*1000/d;p.az=f.z+(p.az-f.z)*1000/d;}
       this.sweeps.push(p);if(this.sweeps.length>96)this.sweeps.shift();
       const history=this.paths.get(e.ship.id)??[];history.push(p);if(history.length>10)history.shift();this.paths.set(e.ship.id,history);
-    }),game.events.on('respawn',e=>this.clearShip(e.ship)),game.events.on('shipChanged',e=>this.clearShip(e.old)));
+    }),game.events.view('respawn',e=>this.clearShip(e.ship)),game.events.view('shipChanged',e=>this.clearShip(e.old)));
   }
   private clearShip(s:Ship):void{this.sweeps=this.sweeps.filter(p=>p.ship!==s);this.finishes=this.finishes.filter(p=>p.ship!==s);this.paths.delete(s.id);}
   update(dt: number, local: Ship[] = []): void {

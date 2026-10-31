@@ -29,12 +29,12 @@ export class ArchitectDashFx {
  onShake:((ship:Ship,amount:number)=>void)|null=null;
  constructor(scene:Scene,private game:Game){
   this.particles=new BurstParticles(scene,{additive:1024,alpha:512,flat:96},'architect-dash-fx');
-  this.off.push(game.events.on('architectDash',e=>{
+  this.off.push(game.events.view('architectDash',e=>{
    if(game.over)return;this.bursts.push({e,time:game.time,heading:e.ship.heading,id:this.serial++});if(this.bursts.length>32)this.bursts.shift();
    const local=this.locals.includes(e.ship),land=e.phase==='land';
    audio.play(land?'explosion':'charge',e.x,20,e.z,land?2:100,(local?.5:.28)*architectBatterySkillGain(game),{category:'ability',priority:local?3:1,asset:`${import.meta.env.BASE_URL}audio/${land?'blast-heavy':'jet-release'}.m4a`,rate:land?.9:1.1});
    if(local&&!this.reduced)this.onShake?.(e.ship,land?.45+.05*e.vectors:.2);
-  }),game.events.on('gameOver',()=>{this.bursts=[];}),game.events.on('respawn',e=>this.drop(e.ship)),game.events.on('shipChanged',e=>this.drop(e.old)));
+  }),game.events.view('gameOver',()=>{this.bursts=[];}),game.events.view('respawn',e=>this.drop(e.ship)),game.events.view('shipChanged',e=>this.drop(e.old)));
  }
  private drop(s:Ship){this.bursts=this.bursts.filter(b=>b.e.ship!==s);}
  update(_dt:number,locals:Ship[]=[]){this.locals=locals;this.bursts=this.bursts.filter(b=>this.game.time-b.time<LIFE[b.e.phase]);}

@@ -137,7 +137,7 @@ export class ArchitectSiege {
   truss.box(1,16,32,0,0,0,DARK);truss.box(1,4,40,0,13,0,IVORY);truss.box(1,3,5,0,18,-10,EDGE);truss.box(1,3,5,0,18,10,EDGE);
   shoe.box(30,20,36,0,0,0,IVORY,{taper:.15});shoe.box(35,4,43,0,20,0,EDGE);shoe.box(12,4,44,0,24,0,0xffb86a);
   for(const [i,geo] of [truss.merge(),shoe.merge()].entries())this.carriers.push(this.make(geo,this.armor,`architect-battery-carrier-${i}`,CAP*2));
-  this.off.push(game.events.on('architectBatteryLaunch',launch=>{this.launches.set(`${launch.owner.id}:${launch.slot}`,launch);}),game.events.on('architectCommand',e=>{
+  this.off.push(game.events.view('architectBatteryLaunch',launch=>{this.launches.set(`${launch.owner.id}:${launch.slot}`,launch);}),game.events.view('architectCommand',e=>{
    // Mechanical withdrawal has its own brief fold; it never enters the death-effect path.
    if(!['killbox','end','destroy'].includes(e.kind)){const rig=this.rigs.get(e.ship.id);if(rig)rig.retiredAt=this.game.time;}
   }));

@@ -20,11 +20,11 @@ export class ArchitectBatteryAudio {
   private off:(()=>void)[];
   constructor(private readonly game:Game,private readonly sound:Pick<AudioEngine,'play'>=audio,private readonly shake:(s:BatteryShake)=>void=()=>{},private readonly reduced=()=>typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches){
     this.off=[
-      game.events.on('skill',({ship,index})=>{if(ship.architect&&ship.skills[index]?.spec.id==='architectKillbox')this.charge(ship);}),
-      game.events.on('architectBatteryLaunch',r=>this.cue(r,false)),
-      game.events.on('architectBatteryImpact',e=>this.cue(e.launch,true)),
-      game.events.on('shipSunk',({ship})=>{const tag=ship.architectPlatform;if(!tag)return;const slot=tag.owner.architect?.slots[tag.index];if(!slot)return;this.element(ARCHETYPES[slot.type].element,ship.pos,`death:${ship.id}`,this.locals.includes(tag.owner)?2:1,.4);}),
-      game.events.on('gameOver',()=>this.clear()),
+      game.events.view('skill',({ship,index})=>{if(ship.architect&&ship.skills[index]?.spec.id==='architectKillbox')this.charge(ship);}),
+      game.events.view('architectBatteryLaunch',r=>this.cue(r,false)),
+      game.events.view('architectBatteryImpact',e=>this.cue(e.launch,true)),
+      game.events.view('shipSunk',({ship})=>{const tag=ship.architectPlatform;if(!tag)return;const slot=tag.owner.architect?.slots[tag.index];if(!slot)return;this.element(ARCHETYPES[slot.type].element,ship.pos,`death:${ship.id}`,this.locals.includes(tag.owner)?2:1,.4);}),
+      game.events.view('gameOver',()=>this.clear()),
     ];
   }
   update(locals:Ship[]):void{this.locals=locals;for(const [key,until] of this.heard)if(until<this.game.time)this.heard.delete(key);}

@@ -47,3 +47,20 @@ describe('simulation determinism guard', () => {
     expect(hits).toEqual([]);
   });
 });
+
+// Rendering, sound and HUD listen on the view tier, which runs after the sim and contains its own
+// errors; the simulation listens on the sim tier. Mixing them up lets the view steer a LAN peer.
+const VIEW_DIRS = ['render', 'fx', 'ui', 'app', 'player', 'input', 'ground/view'];
+const all = Object.entries(sources).map(([p, src]) => ({ path: p.replace('../src/', ''), src: code(src) }));
+
+describe('event tiers', () => {
+  it('has the view listen with view(), never on()', () => {
+    const view = all.filter((f) => VIEW_DIRS.some((d) => f.path.startsWith(`${d}/`)) || f.path === 'main.ts');
+    expect(view.length).toBeGreaterThan(30);
+    expect(view.filter((f) => /\.on\(''/.test(f.src)).map((f) => f.path)).toEqual([]);
+  });
+
+  it('has the simulation listen with on(), never view()', () => {
+    expect(files.filter((f) => /\.view\(/.test(f.src)).map((f) => f.path)).toEqual([]);
+  });
+});

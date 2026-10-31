@@ -28,7 +28,7 @@ export interface ShipPickerOptions {
 export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync(): void; dispose():void } {
   let me = o.ship();
   let editor:ArchitectEditor|null=null,editorOwner:Ship|null=null;
-  const off=me.game.events.on('architectRefit',event=>{
+  const off=me.game.events.view('architectRefit',event=>{
     if(event.ship!==editorOwner||!editor)return;
     editor.resolve(event.index,event.pick,event.accepted,event.reason);
     editor.sync(event.ship.architectLoadout,architectRefitEligibility(event.ship));

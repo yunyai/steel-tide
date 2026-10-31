@@ -129,7 +129,7 @@ export class NavalBattle implements ActiveBattle {
       for (const pc of this.pcs) if (pc.ship === ship) pc.shake(amount);
     };
     this.off.push(
-      game.events.on('gameOver', (g) => {
+      game.events.view('gameOver', (g) => {
         audio.stopBattle();
         this.pickerDispose?.();this.pickerDispose=null;
         this.shell.input.capture = false;
@@ -142,12 +142,12 @@ export class NavalBattle implements ActiveBattle {
         audio.ui(win || config.type === 'freeplay' ? 'victory' : 'defeat');
         link?.over();
       }),
-      game.events.on('blink', e => {
+      game.events.view('blink', e => {
         if(!e.dodge) return;
         const pc=this.pcs.find(p=>p.ship===e.ship);
         if(pc){pc.notice='SIDESTEP';pc.noticeTime=0.35;}
       }),
-      game.events.on('skill', (a) => {
+      game.events.view('skill', (a) => {
         const pc = this.pcs.find((p) => p.ship === a.ship);
         if (!pc) return;
         // The view punches out as a skill fires; an ultimate also slows time.
@@ -158,19 +158,19 @@ export class NavalBattle implements ActiveBattle {
           if(a.ship.spec.id!=='stepper')renderer.flash(0.22, spec.accent);
         }
       }),
-      game.events.on('crossStep',e=>{if(e.phase==='finish')for(const pc of this.pcs)if(pc.ship===e.ship)pc.stepFinisher();}),
-      game.events.on('stepImpact',e=>{if(e.kind==='flicker'&&e.ship.stepper?.flicker?.count===19)for(const pc of this.pcs)if(pc.ship===e.ship)pc.stepFinisher();}),
-      game.events.on('wave', (w) => {
+      game.events.view('crossStep',e=>{if(e.phase==='finish')for(const pc of this.pcs)if(pc.ship===e.ship)pc.stepFinisher();}),
+      game.events.view('stepImpact',e=>{if(e.kind==='flicker'&&e.ship.stepper?.flicker?.count===19)for(const pc of this.pcs)if(pc.ship===e.ship)pc.stepFinisher();}),
+      game.events.view('wave', (w) => {
         if (w.boss) this.slow = SLOW_HOLD + SLOW_EASE + 0.4;
       }),
-      game.events.on('shipSunk', (s) => {
+      game.events.view('shipSunk', (s) => {
         if (s.ship.architectPlatform || s.ship.architectDrone) return;
         const k = s.killer;
         const me = this.mine;
         if (me && k && s.ship.team !== me.team && (k === me || k.summonOwner === me)) this.slow = SLOW_HOLD + SLOW_EASE;
       }),
       // Titan Shift: the captain's HUD is laid out again for the form's nine skills (or back to three).
-      game.events.on('shift', ({ ship, on }) => {
+      game.events.view('shift', ({ ship, on }) => {
         const i = this.pcs.findIndex((p) => p.ship === ship);
         if (i < 0) return;
         this.huds[i].dispose();
@@ -182,12 +182,12 @@ export class NavalBattle implements ActiveBattle {
         }
       }),
       // Free play: the captain's orders and view follow them into their next ship.
-      game.events.on('shipChanged', ({ old, ship }) => {
+      game.events.view('shipChanged', ({ old, ship }) => {
         const i = this.pcs.findIndex((p) => p.ship === old);
         if (i >= 0) this.changeCaptain(i, ship);
       }),
       // Light guns still nudge your own camera; heavy ones already shake it through the effects.
-      game.events.on('gunFired', (e) => {
+      game.events.view('gunFired', (e) => {
         if (e.secondary || e.caliber >= 280) return;
         for (const pc of this.pcs) if (pc.ship === e.ship) pc.shake(0.06 + e.caliber / 2000);
       }),

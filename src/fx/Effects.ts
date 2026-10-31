@@ -50,34 +50,34 @@ export class Effects {
   ) {
     const ev = game.events;
     this.off.push(
-      ev.on('gunFired', (e) => this.muzzle(e.x, e.y, e.z, e.bearing, e.caliber, e.secondary, e.look, fleetWeapon(e.ship.spec,e.look))),
-      ev.on('splash', (e) => this.splash(e.x, e.z, e.caliber)),
-      ev.on('terrainHit', (e) => this.dirt(e.x, e.y, e.z, e.caliber)),
-      ev.on('shellHit', (e) => this.hit(e.x, e.y, e.z, e.caliber, e.outcome, e.attacker, e.target)),
-      ev.on('torpHit', (e) => this.torpHit(e.x, e.z)),
-      ev.on('explosion', (e) => this.explosion(e.x, e.y, e.z, e.size)),
-      ev.on('detonation', (e) => this.detonation(e.ship)),
-      ev.on('intercept', (e) => this.flak(e.x, Math.max(e.y, 4), e.z, true)),
-      ev.on('planeDown', (e) => this.planeDown(e.x, e.y, e.z)),
-      ev.on('depthCharge', (e) => this.depthCharge(e.x, e.z)),
-      ev.on('torpLaunched', (e) => {
+      ev.view('gunFired', (e) => this.muzzle(e.x, e.y, e.z, e.bearing, e.caliber, e.secondary, e.look, fleetWeapon(e.ship.spec,e.look))),
+      ev.view('splash', (e) => this.splash(e.x, e.z, e.caliber)),
+      ev.view('terrainHit', (e) => this.dirt(e.x, e.y, e.z, e.caliber)),
+      ev.view('shellHit', (e) => this.hit(e.x, e.y, e.z, e.caliber, e.outcome, e.attacker, e.target)),
+      ev.view('torpHit', (e) => this.torpHit(e.x, e.z)),
+      ev.view('explosion', (e) => this.explosion(e.x, e.y, e.z, e.size)),
+      ev.view('detonation', (e) => this.detonation(e.ship)),
+      ev.view('intercept', (e) => this.flak(e.x, Math.max(e.y, 4), e.z, true)),
+      ev.view('planeDown', (e) => this.planeDown(e.x, e.y, e.z)),
+      ev.view('depthCharge', (e) => this.depthCharge(e.x, e.z)),
+      ev.view('torpLaunched', (e) => {
         audio.play('torpedo', e.x, 2, e.z, 100, 0.8);
         for (let i = 0; i < 6; i++) this.alpha.spawn({ x: e.x + rnd(-4, 4), y: 2, z: e.z + rnd(-4, 4), vy: rnd(1, 4), life: 2, size: 4, size1: 10, color: 0xf0f4f6, alpha: 0.5, kind: PK.Spray });
       }),
-      ev.on('missileLaunched', (e) => {
+      ev.view('missileLaunched', (e) => {
         audio.play('missile', e.x, e.y, e.z, 100, 0.9);
         for (let i = 0; i < 14; i++) this.alpha.spawn({ x: e.x, y: e.y, z: e.z, vx: rnd(-8, 8), vy: rnd(0, 10), vz: rnd(-8, 8), life: rnd(3, 6), size: 6, size1: 22, color: 0xd8d4cc, alpha: 0.6, drag: 0.8 });
         this.add.spawn({ x: e.x, y: e.y, z: e.z, life: 0.3, size: 20, size1: 30, color: 0xffd090, color1: 0xff6020, kind: PK.Glow });
       }),
-      ev.on('skill', (e) => {
+      ev.view('skill', (e) => {
         const ult = !!e.ship.skills[e.index].spec.ult;
         const skill = e.ship.skills[e.index].spec;
         const beamOwnsSound=this.game.beams.beams.some(b=>b.alive&&b.owner===e.ship&&b.skill.id===skill.id);
         if(skill.id!=='architectKillbox'&&!beamOwnsSound&&!audio.shipCue(e.ship.spec,skill,e.ship.pos.x,e.ship.pos.y+10,e.ship.pos.z,this.locals.includes(e.ship))) audio.cue(skill.id, 'activate', skill.icon === 'beam' || skill.icon === 'laser' ? 'beam' : skill.icon === 'blade' ? 'slash' : ult ? 'impact' : 'charge', e.ship.pos.x, e.ship.pos.y + 10, e.ship.pos.z, this.locals.includes(e.ship));
         this.skillBurst(e.ship, e.ship.skills[e.index].spec, ult);
       }),
-      ev.on('shift', e => { if (!e.quiet) audio.cue('titanShift', e.on ? 'activate' : 'end', 'transform', e.ship.pos.x, e.ship.pos.y, e.ship.pos.z, this.locals.includes(e.ship)); }),
-      ev.on('consumable', (e) => {
+      ev.view('shift', e => { if (!e.quiet) audio.cue('titanShift', e.on ? 'activate' : 'end', 'transform', e.ship.pos.x, e.ship.pos.y, e.ship.pos.z, this.locals.includes(e.ship)); }),
+      ev.view('consumable', (e) => {
         if (e.type === 'search' && this.locals.includes(e.ship)) audio.ui('pickup');
         if (e.type === 'search') {
           const tint = SEARCH_TINT[eraOf(e.ship.spec)];

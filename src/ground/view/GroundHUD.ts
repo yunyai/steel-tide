@@ -278,7 +278,7 @@ export class GroundHUD {
     const mine = (v: Vehicle | null) => !!v && (v === pc.v || v.summonOwner === pc.v);
     this.off.push(
       onBindings(() => this.relabel()),
-      ev.on('shellHit', (h) => {
+      ev.view('shellHit', (h) => {
         if (h.target === pc.v) this.hit(h.damage, h.attacker, h.x, h.z);
         if (!mine(h.attacker) || h.target.team === this.team) return;
         const kind: PopKind = h.outcome === 'pen' ? 'penetration' : h.outcome === 'ricochet' ? 'ricochet' : h.outcome === 'block' ? 'shatter' : 'he';
@@ -289,13 +289,13 @@ export class GroundHUD {
         else if (h.outcome === 'ricochet') this.ribbon('Ricochet');
         else if (h.outcome === 'block') this.ribbon('Blocked');
       }),
-      ev.on('skillHit', (h) => {
+      ev.view('skillHit', (h) => {
         if (h.v === pc.v) this.hit(h.damage, h.attacker, h.attacker.x, h.attacker.z);
         if (!mine(h.attacker) || h.v.team === this.team || h.damage <= 0) return;
         this.pop(h.v, `skill:${h.skill.id}`, 'skill', h.damage, h.skill.short, accentCss(h.skill.accent));
         flash(e.hitmark, 'on');
       }),
-      ev.on('crit', (c) => {
+      ev.view('crit', (c) => {
         if (c.v === pc.v) {
           if (c.kind === 'ammo') flash(e.lampAmmo, 'on');
           this.say(c.kind === 'tracks' ? 'Tracks broken' : c.kind === 'fire' ? 'Engine fire' : 'Ammo rack hit', '#ff8a4a');
@@ -305,10 +305,10 @@ export class GroundHUD {
         if (c.kind === 'fire') this.pop(c.v, 'fire', 'fire', 0);
         this.ribbon(c.kind === 'tracks' ? 'Tracks' : c.kind === 'fire' ? 'Fire' : 'Ammo rack');
       }),
-      ev.on('ribbon', (rb) => {
+      ev.view('ribbon', (rb) => {
         if (mine(rb.v) && rb.kind !== 'Ammo rack') this.ribbon(rb.kind);
       }),
-      ev.on('destroyed', ({ v, killer }) => {
+      ev.view('destroyed', ({ v, killer }) => {
         const line = el('div', '', e.killfeed);
         const k = killer?.summonOwner ?? killer;
         if (k) {
@@ -332,12 +332,12 @@ export class GroundHUD {
           } else this.banner(`${vehicleName(v)} destroyed`, '', '#ff8a96');
         }
       }),
-      ev.on('capture', (c) => {
+      ev.view('capture', (c) => {
         const cap = game.caps[c.cap];
         this.banner(c.team === this.team ? `${cap.name} captured` : `${cap.name} lost`, c.team === this.team ? 'Hold it to keep scoring' : 'Retake it to stop the enemy scoring');
         audio.ui('capture');
       }),
-      ev.on('skill', (a) => {
+      ev.view('skill', (a) => {
         const sp = a.v.skills[a.index].spec;
         const c = accentCss(sp.accent);
         if (a.v === pc.v) {
@@ -352,7 +352,7 @@ export class GroundHUD {
           this.banner(`Enemy ${vehicleName(a.v)}: ${sp.name}`, sp.description, c);
         }
       }),
-      ev.on('consumable', (c) => {
+      ev.view('consumable', (c) => {
         if (c.v !== pc.v) return;
         const i = pc.v.consumables.findIndex((x) => x.spec.type === c.type);
         const ce = this.consEls[i];

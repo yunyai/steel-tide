@@ -59,27 +59,27 @@ export class GroundFx {
   ) {
     const ev = game.events;
     this.off.push(
-      ev.on('gunFired', (e) => this.muzzle(e.v, e.x, e.y, e.z, e.yaw, e.pitch, e.caliber, e.artillery)),
-      ev.on('rocketLaunched', (e) => this.backblast(e.v, e.x, e.y, e.z)),
-      ev.on('shellHit', (e) => this.hit(e.x, e.y, e.z, e.caliber, e.outcome, e.target, e.attacker, e.ammo === 'HE')),
-      ev.on('impact', (e) => this.impact(e.x, e.y, e.z, e.caliber, e.surface, e.he)),
-      ev.on('explosion', (e) => this.explosion(e.x, e.y, e.z, e.size)),
-      ev.on('intercept', (e) => this.intercept(e.x, e.y, e.z)),
-      ev.on('crit', (e) => this.crit(e.v, e.kind)),
-      ev.on('propDamaged', (e) => this.propHit(e.prop.x, e.prop.y + e.prop.h * 0.7, e.prop.z, Math.max(e.prop.hw, e.prop.hd))),
-      ev.on('propDown', (e) => this.propDown(e.prop.kind, e.prop.x, e.prop.y, e.prop.z, e.prop.hw, e.prop.hd, e.prop.h, e.flattened)),
-      ev.on('heal', (e) => this.sparkle(e.v, 0x7aff9a, Math.min(20, 4 + e.amount / 40))),
-      ev.on('consumable', (e) => {
+      ev.view('gunFired', (e) => this.muzzle(e.v, e.x, e.y, e.z, e.yaw, e.pitch, e.caliber, e.artillery)),
+      ev.view('rocketLaunched', (e) => this.backblast(e.v, e.x, e.y, e.z)),
+      ev.view('shellHit', (e) => this.hit(e.x, e.y, e.z, e.caliber, e.outcome, e.target, e.attacker, e.ammo === 'HE')),
+      ev.view('impact', (e) => this.impact(e.x, e.y, e.z, e.caliber, e.surface, e.he)),
+      ev.view('explosion', (e) => this.explosion(e.x, e.y, e.z, e.size)),
+      ev.view('intercept', (e) => this.intercept(e.x, e.y, e.z)),
+      ev.view('crit', (e) => this.crit(e.v, e.kind)),
+      ev.view('propDamaged', (e) => this.propHit(e.prop.x, e.prop.y + e.prop.h * 0.7, e.prop.z, Math.max(e.prop.hw, e.prop.hd))),
+      ev.view('propDown', (e) => this.propDown(e.prop.kind, e.prop.x, e.prop.y, e.prop.z, e.prop.hw, e.prop.hd, e.prop.h, e.flattened)),
+      ev.view('heal', (e) => this.sparkle(e.v, 0x7aff9a, Math.min(20, 4 + e.amount / 40))),
+      ev.view('consumable', (e) => {
         if (e.type === 'repair' || e.type === 'fieldRepair') this.sparkle(e.v, 0xffe08a, 24);
         else this.flat.spawn({ x: e.v.x, y: e.v.y + 0.3, z: e.v.z, life: 0.8, size: 4, size1: 22, color: 0xd8e8ff, alpha: 0.7, kind: PK.Ring, fadeOut: 0.5 });
       }),
-      ev.on('blink', (e) => {
+      ev.view('blink', (e) => {
         this.flash(e.fromX, e.v.y + 1.5, e.fromZ, 0xb8d8ff, 8);
         this.flash(e.v.x, e.v.y + 1.5, e.v.z, 0xb8d8ff, 10);
         audio.play('zap', e.v.x, e.v.y, e.v.z, 100, 0.8);
       }),
-      ev.on('shieldHit', (e) => this.flash(e.v.x, e.v.y + 2, e.v.z, 0x9ad8ff, 3)),
-      ev.on('respawn', (e) => this.flat.spawn({ x: e.v.x, y: e.v.y + 0.3, z: e.v.z, life: 1.2, size: 3, size1: 30, color: 0xffffff, alpha: 0.6, kind: PK.Ring, fadeOut: 0.5 })),
+      ev.view('shieldHit', (e) => this.flash(e.v.x, e.v.y + 2, e.v.z, 0x9ad8ff, 3)),
+      ev.view('respawn', (e) => this.flat.spawn({ x: e.v.x, y: e.v.y + 0.3, z: e.v.z, life: 1.2, size: 3, size1: 30, color: 0xffffff, alpha: 0.6, kind: PK.Ring, fadeOut: 0.5 })),
     );
   }
 

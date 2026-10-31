@@ -98,11 +98,11 @@ export class NavalScene implements BattleScene {
     this.skillFx.onFlash = (k, c) => renderer.flash(k, c);
     this.tungstenFx.onFlash = (x, z, k, c) => this.skillFx.flash(x, z, k, c);
     this.off.push(
-      game.events.on('gunFired', (e) => {
+      game.events.view('gunFired', (e) => {
         if (!e.secondary) this.views.get(e.ship)?.recoil(e.bearing - e.ship.heading, e.caliber);
       }),
       // The ship object sails again at once; a copy of the old hull goes on sinking where it was.
-      game.events.on('respawn', (e) => {
+      game.events.view('respawn', (e) => {
         const v = this.views.get(e.ship);
         if (!v) return;
         const w = v.wreck();
@@ -110,14 +110,14 @@ export class NavalScene implements BattleScene {
         this.wrecks.push({ ...w, t: 0, roll: Math.random() < 0.5 ? -1 : 1 });
       }),
       // Battle damage: penetrating hits and torpedoes burn holes into the hull they struck.
-      game.events.on('shellHit', (e) => {
+      game.events.view('shellHit', (e) => {
         if (e.secondary || e.outcome === 'ricochet' || e.outcome === 'shatter') return;
         this.views.get(e.target)?.scar(e.x, e.y, e.z, 1.5 + (e.caliber / 1000) * (e.outcome === 'overpen' ? 6 : 14));
       }),
-      game.events.on('torpHit', (e) => {
+      game.events.view('torpHit', (e) => {
         this.views.get(e.target)?.scar(e.x, 0.5, e.z, 9, true);
       }),
-      game.events.on('detonation', (e) => this.views.get(e.ship)?.detonate()),
+      game.events.view('detonation', (e) => this.views.get(e.ship)?.detonate()),
     );
     this.syncShips();
   }

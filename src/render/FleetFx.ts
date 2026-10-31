@@ -26,14 +26,14 @@ export class FleetFx{
    geo.setAttribute('tint',new InstancedBufferAttribute(new Float32Array(CAP*4),4).setUsage(DynamicDrawUsage));
    const mesh=new InstancedMesh(geo,new ShaderMaterial({vertexShader:vertex,fragmentShader:fragment,transparent:true,depthWrite:false,blending:AdditiveBlending}),CAP);mesh.count=0;mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(DynamicDrawUsage);scene.add(mesh);this.pools.push(mesh);
   }
-  this.off.push(game.events.on('skill',e=>{
+  this.off.push(game.events.view('skill',e=>{
    const spec=e.ship.skills[e.index]?.spec;if(!spec||!FLEET_DETAILS[e.ship.spec.id])return;
    this.enqueue({ship:e.ship,spec,age:0,life:spec.ult?1.25:.7});
-  }),game.events.on('skillHit',e=>{
+  }),game.events.view('skillHit',e=>{
    if(!FLEET_DETAILS[e.attacker.spec.id])return;
    const key=`${e.attacker.id}:${e.ship.id}`,last=this.impactAt.get(key)??-10;if(this.time-last<.16)return;this.impactAt.set(key,this.time);
    this.enqueue({ship:e.ship,spec:e.skill,age:0,life:.48,x:e.ship.pos.x,y:e.ship.pos.y+e.ship.spec.freeboard,z:e.ship.pos.z});
-  }),game.events.on('respawn',e=>this.clearShip(e.ship)),game.events.on('shipChanged',e=>this.clearShip(e.ship)),game.events.on('gameOver',()=>{this.pulses=[];this.impactAt.clear();}));
+  }),game.events.view('respawn',e=>this.clearShip(e.ship)),game.events.view('shipChanged',e=>this.clearShip(e.ship)),game.events.view('gameOver',()=>{this.pulses=[];this.impactAt.clear();}));
  }
  private clearShip(s:Ship){this.pulses=this.pulses.filter(p=>p.ship!==s);}
  private enqueue(p:Pulse){this.pulses.push(p);if(this.pulses.length>96)this.pulses.splice(0,this.pulses.length-96);}

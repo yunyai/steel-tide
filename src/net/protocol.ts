@@ -1,5 +1,5 @@
 import type { ArchitectLoadout, ArchitectSelection } from '../data/architectLoadout';
-export const SIM_PROTOCOL=16;
+export const SIM_PROTOCOL=17;
 // LAN lobby and lockstep wire format, shared by the browser and the lobby server.
 // Keep this file free of DOM and game imports: the server reads it too.
 
@@ -141,7 +141,7 @@ export type ServerMsg =
   | { t: 'start'; config: BattleConfig; you: number }
   | { t: 'turn'; turn: Turn }
   | { t: 'log'; config: BattleConfig; you: number; turns: Turn[] }
-  | { t: 'desync' }
+  | { t: 'desync'; tie?: boolean }
   | { t: 'ended' }
   | { t: 'error'; text: string };
 

@@ -458,15 +458,15 @@ export class HUD {
     const mine = (s: Ship) => s === pc.ship || s.summonOwner === pc.ship;
     this.off.push(
       onBindings(() => this.relabel()),
-      ev.on('shellHit', (h) => {
+      ev.view('shellHit', (h) => {
         if (!mine(h.attacker) || h.target.team === this.team || (h.secondary && h.damage <= 0)) return;
         const label = OUTCOME_LABEL[h.outcome];
         if (label) this.ribbon(label);
       }),
-      ev.on('ribbon', (rb) => {
+      ev.view('ribbon', (rb) => {
         if (mine(rb.ship)) this.ribbon(rb.kind);
       }),
-      ev.on('shipSunk', (s) => {
+      ev.view('shipSunk', (s) => {
         if (s.ship.architectPlatform || s.ship.architectDrone) return;
         const k = s.killer;
         const line = el('div', '', e.killfeed);
@@ -482,17 +482,17 @@ export class HUD {
         this.feed.push({ el: line, time: game.time });
         if (s.ship === pc.ship) audio.ui('defeat');
       }),
-      ev.on('detonation', (d) => {
+      ev.view('detonation', (d) => {
         const k = d.killer?.summonOwner ?? d.killer;
         if (k === pc.ship) this.callout('Detonation', `${captainName(d.ship)} breaks in two`, '#ffb547');
         else if (d.ship === pc.ship) this.callout('Magazine detonation', 'Your ship has broken in two', '#ff5a4a');
       }),
-      ev.on('capture', (c) => {
+      ev.view('capture', (c) => {
         const cap = game.caps[c.cap];
         this.banner(c.team === this.team ? `Zone ${cap.name} captured` : `Zone ${cap.name} lost`, c.team === this.team ? 'Hold it to keep scoring' : 'Retake it to stop the enemy scoring');
         audio.ui('capture');
       }),
-      ev.on('skill', (a) => {
+      ev.view('skill', (a) => {
         const sp = a.ship.skills[a.index].spec;
         const c = accentCss(sp.accent);
         if (a.ship === pc.ship) {
@@ -506,12 +506,12 @@ export class HUD {
           this.banner(`Enemy ${captainName(a.ship)}: ${sp.name}`, sp.description, c);
         }
       }),
-      ev.on('pickupTaken', (p) => {
+      ev.view('pickupTaken', (p) => {
         if (p.ship !== pc.ship) return;
         this.banner(PICKUP_LABEL[p.pickup.kind], '', accentCss(PICKUP_COLOR[p.pickup.kind]));
         audio.ui('pickup');
       }),
-      ev.on('wave', (w) => {
+      ev.view('wave', (w) => {
         if (w.boss) {
           const s = e.siren.querySelector('small')!;
           s.textContent = w.boss.spec.name.toUpperCase();
@@ -522,13 +522,13 @@ export class HUD {
           audio.ui('horn');
         }
       }),
-      ev.on('convoy', (c) => {
+      ev.view('convoy', (c) => {
         const ours = c.ship.team === this.team;
         if (c.kind === 'arrived') this.callout('Transport in port', ours ? `${c.ship.name} made it through` : `${c.ship.name} slipped past you`, ours ? palette().good : palette().enemy);
         else this.callout('Transport sunk', ours ? `${c.ship.name} is lost` : `${c.ship.name} goes down`, ours ? palette().enemy : '#ffb547');
         audio.ui(ours === (c.kind === 'arrived') ? 'capture' : 'horn');
       }),
-      ev.on('waveClear', (w) => {
+      ev.view('waveClear', (w) => {
         this.callout(w.cleared ? 'Victory' : 'Wave clear', w.cleared ? 'All titans sunk. Endless waves continue.' : 'Choose a refit', palette().good);
         audio.ui('capture');
       }),

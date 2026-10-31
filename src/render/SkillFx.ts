@@ -148,7 +148,7 @@ export class SkillFx {
 
     const ev = game.events;
     this.off.push(
-      ev.on('lightning', (e) => {
+      ev.view('lightning', (e) => {
         const color = new Color(e.color).multiplyScalar(3.2);
         this.bolts.push({ points: e.points, color, life: e.straight ? 0.25 : 0.4, max: e.straight ? 0.25 : 0.4, straight: e.straight });
         const last = e.points[e.points.length - 1];
@@ -158,21 +158,21 @@ export class SkillFx {
           for (let i = 0; i < 10; i++) this.add.spawn({ x: p.x, y: p.y, z: p.z, vx: rnd(-40, 40), vy: rnd(5, 40), vz: rnd(-40, 40), gravity: 9.81, life: rnd(0.3, 0.7), size: 2, color: 0xffffff, color1: e.color, kind: PK.Glow });
         }
       }),
-      ev.on('strike', (e) => this.strikeLaunched(e.strike)),
-      ev.on('strikeHit', (e) => this.strikeHit(e.strike)),
-      ev.on('blink', (e) => this.blink(e.ship, e.fromX, e.fromZ, e.fromHeading, e.dodge)),
-      ev.on('skill', (e) => {
+      ev.view('strike', (e) => this.strikeLaunched(e.strike)),
+      ev.view('strikeHit', (e) => this.strikeHit(e.strike)),
+      ev.view('blink', (e) => this.blink(e.ship, e.fromX, e.fromZ, e.fromHeading, e.dodge)),
+      ev.view('skill', (e) => {
         if (e.ship.spec.id==='stepper') return;
         if (eraOf(e.ship.spec) !== 'fantasy') return;
         const st = e.ship.skills[e.index];
         if (!st) return;
         this.casts.push({ ship: e.ship, color: new Color(st.spec.accent).multiplyScalar(2.4), age: 0, spin: Math.random() * 6 });
       }),
-      ev.on('respawn', (e) => this.spawnFlash(e.ship)),
-      ev.on('shift', (e) => {
+      ev.view('respawn', (e) => this.spawnFlash(e.ship)),
+      ev.view('shift', (e) => {
         if (!e.quiet) this.shiftFlash(e.ship, e.on);
       }),
-      ev.on('shieldHit', (e) => {
+      ev.view('shieldHit', (e) => {
         const b = this.bubbles.get(e.ship);
         if (b) b.hit = 1;
         if (this.time - this.shieldSound > 0.12) {
@@ -180,7 +180,7 @@ export class SkillFx {
           audio.play('shield', e.ship.pos.x, 10, e.ship.pos.z, 100, 0.5);
         }
       }),
-      ev.on('pickupTaken', (e) => {
+      ev.view('pickupTaken', (e) => {
         const p = e.pickup;
         const c = PICKUP_COLOR[p.kind];
         this.flat.spawn({ x: p.x, y: 1, z: p.z, life: 0.8, size: 20, size1: 260, color: c, alpha: 1, kind: PK.Ring, fadeOut: 0.5 });

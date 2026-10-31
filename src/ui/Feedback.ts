@@ -176,23 +176,23 @@ export class Feedback {
     const mine = (s: Ship | null) => !!s && (s === pc.ship || s.summonOwner === pc.ship);
     const ev = game.events;
     this.off.push(
-      ev.on('shellHit', (h) => {
+      ev.view('shellHit', (h) => {
         if (h.target === pc.ship) this.hit(h.damage, h.attacker, h.x, h.z);
         if (!mine(h.attacker) || h.target.team === team || (h.secondary && h.damage <= 0)) return;
         this.add(h.target, h.element?`element:${h.element}`:h.secondary?'sec':'main',h.outcome,h.damage,'',h.element?`#${ELEMENT_STYLE[h.element].color.toString(16).padStart(6,'0')}`:'');
         if (!h.secondary && h.damage > 0) this.tick(h.outcome === 'citadel');
       }),
-      ev.on('torpHit', (h) => {
+      ev.view('torpHit', (h) => {
         if (h.target === pc.ship) this.hit(h.damage, null, h.x, h.z);
         if (!mine(h.attacker) || h.target.team === team) return;
         this.add(h.target, 'torp', 'torpedo', h.damage);
         this.tick(false);
       }),
-      ev.on('ribbon', (r) => {
+      ev.view('ribbon', (r) => {
         if (!mine(r.ship) || !r.target || r.target.team === team) return;
         if (r.kind === 'Fire' || r.kind === 'Flooding') this.add(r.target, r.kind, r.kind === 'Fire' ? 'fire' : 'flood', 0);
       }),
-      ev.on('skillHit', (h) => {
+      ev.view('skillHit', (h) => {
         if (h.ship === pc.ship) this.hit(h.damage, h.attacker, h.attacker.pos.x, h.attacker.pos.z);
         if (!mine(h.attacker) || h.ship.team === team || h.damage <= 0) return;
         const reaction=h.skill.reaction,element=h.skill.element;
@@ -200,7 +200,7 @@ export class Feedback {
         this.add(h.ship,reaction?`reaction:${[...reaction].sort().join('+')}`:`skill:${h.skill.id}`,'skill',h.damage,reaction?`${ELEMENT_STYLE[reaction[0]].short} + ${ELEMENT_STYLE[reaction[1]].short} · ${h.skill.short}`:h.skill.short,element?hex(element):accentCss(h.skill.accent),reaction?hex(reaction[0]):'');
         this.tick(false);
       }),
-      ev.on('shipSunk', (s) => {
+      ev.view('shipSunk', (s) => {
         if (s.ship.architectPlatform || s.ship.architectDrone) return;
         if (!mine(s.killer) || s.ship.team === team) return;
         flash(this.killmark, 'on');

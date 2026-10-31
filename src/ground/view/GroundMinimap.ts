@@ -40,7 +40,7 @@ export class GroundMinimap {
   ) {
     this.canvas.className = 'minimap';
     this.ctx = this.canvas.getContext('2d')!;
-    this.off = game.events.on('propDown', () => (this.stale = true));
+    this.off = game.events.view('propDown', () => (this.stale = true));
   }
 
   dispose(): void {

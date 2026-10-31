@@ -93,26 +93,64 @@ export interface GameEventMap {
 
 type Handler<T> = (payload: T) => void;
 
-/** Typed publish/subscribe; `M` maps each event name to its payload (naval by default). */
-export class EventBus<M = GameEventMap> {
-  private handlers: { [K in keyof M]?: Handler<M[K]>[] } = {};
+type Table<M> = { [K in keyof M]?: Handler<M[K]>[] };
 
+/**
+ * Typed publish/subscribe; `M` maps each event name to its payload (naval by default).
+ * Two tiers: `on` is for the simulation and `view` for rendering, sound and HUD. Every sim
+ * listener runs before any view listener, and a view listener that throws is caught, so the
+ * view can never cut a step short on one LAN peer and leave it out of step with the others.
+ * Lists are replaced, never edited in place, so joining or leaving mid-emit is safe.
+ */
+export class EventBus<M = GameEventMap> {
+  private sim: Table<M> = {};
+  private views: Table<M> = {};
+  private failed = new Set<keyof M>();
+  /** Reports a view listener's error; by default logs the first one per event type. */
+  onViewError: (error: unknown, type: keyof M) => void = (error, type) => {
+    if (this.failed.has(type)) return;
+    this.failed.add(type);
+    console.error(`A '${String(type)}' view listener failed; the battle carries on.`, error);
+  };
+
+  /** Subscribes a simulation listener. */
   on<K extends keyof M>(type: K, fn: Handler<M[K]>): () => void {
-    const list = (this.handlers[type] ??= []) as Handler<M[K]>[];
-    list.push(fn);
-    return () => {
-      const i = list.indexOf(fn);
-      if (i >= 0) list.splice(i, 1);
-    };
+    return this.add(this.sim, type, fn);
+  }
+
+  /** Subscribes a view listener: it runs after the sim listeners and its errors are contained. */
+  view<K extends keyof M>(type: K, fn: Handler<M[K]>): () => void {
+    return this.add(this.views, type, fn);
   }
 
   emit<K extends keyof M>(type: K, payload: M[K]): void {
-    const list = this.handlers[type] as Handler<M[K]>[] | undefined;
-    if (!list) return;
-    for (const fn of list) fn(payload);
+    const sim = this.sim[type] as Handler<M[K]>[] | undefined;
+    if (sim) for (const fn of sim) fn(payload);
+    const views = this.views[type] as Handler<M[K]>[] | undefined;
+    if (!views) return;
+    for (const fn of views) {
+      try {
+        fn(payload);
+      } catch (e) {
+        this.onViewError(e, type);
+      }
+    }
   }
 
   clear(): void {
-    this.handlers = {};
+    this.sim = {};
+    this.views = {};
+  }
+
+  private add<K extends keyof M>(table: Table<M>, type: K, fn: Handler<M[K]>): () => void {
+    table[type] = [...((table[type] as Handler<M[K]>[] | undefined) ?? []), fn] as Table<M>[K];
+    let live = true;
+    return () => {
+      if (!live) return;
+      live = false;
+      const list = (table[type] as Handler<M[K]>[] | undefined) ?? [];
+      const i = list.indexOf(fn);
+      if (i >= 0) table[type] = [...list.slice(0, i), ...list.slice(i + 1)] as Table<M>[K];
+    };
   }
 }

@@ -172,10 +172,10 @@ export class TungstenCubeFx {
     this.debris.castShadow = this.shadows;
     scene.add(this.debris);
     this.off.push(
-      game.events.on('tungsten', (e) => this.event(e)),
-      game.events.on('gameOver', () => this.clear()),
-      game.events.on('respawn', (e) => this.drop(e.ship)),
-      game.events.on('shipChanged', (e) => this.drop(e.old)),
+      game.events.view('tungsten', (e) => this.event(e)),
+      game.events.view('gameOver', () => this.clear()),
+      game.events.view('respawn', (e) => this.drop(e.ship)),
+      game.events.view('shipChanged', (e) => this.drop(e.old)),
     );
   }
 

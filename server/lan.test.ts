@@ -282,6 +282,7 @@ describe('LAN lobby server', () => {
     await serve();
     const cs = await room('Ana', 'Ben', 'Cy');
     await battle(cs);
+    await cs[0].next('turn', (m) => m.turn.k >= 59);
     cs[0].send({ t: 'hash', k: 59, h: 111 });
     cs[1].send({ t: 'hash', k: 59, h: 222 });
     cs[2].send({ t: 'hash', k: 59, h: 111 });
@@ -291,6 +292,41 @@ describe('LAN lobby server', () => {
     expect(cs[2].inbox.some((m) => m.t === 'desync')).toBe(false);
     cs[1].send({ t: 'resync' });
     expect((await cs[1].next('log')).you).toBe(1);
+  });
+
+  it('with no strict majority every captain resyncs, not just the later ones', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    await battle(cs);
+    await cs[0].next('turn', (m) => m.turn.k >= 59);
+    cs[0].send({ t: 'hash', k: 59, h: 111 });
+    cs[1].send({ t: 'hash', k: 59, h: 222 });
+    expect(await cs[0].next('desync')).toMatchObject({ tie: true });
+    expect(await cs[1].next('desync')).toMatchObject({ tie: true });
+  });
+
+  it('a two-two split resyncs all four captains', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben', 'Cy', 'Di');
+    await battle(cs);
+    await cs[0].next('turn', (m) => m.turn.k >= 59);
+    cs.forEach((c, i) => c.send({ t: 'hash', k: 59, h: i < 2 ? 111 : 222 }));
+    for (const c of cs) await c.next('desync');
+  });
+
+  it('ignores hashes for turns that are not checkpoints or have not been sent', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    await battle(cs);
+    await cs[0].next('turn', (m) => m.turn.k >= 59);
+    for (const k of [-1, 58, 1e12, 0.5, 60 * 1000 - 1]) {
+      cs[0].send({ t: 'hash', k, h: 1 });
+      cs[1].send({ t: 'hash', k, h: 2 });
+    }
+    cs[0].send({ t: 'hash', k: 59, h: -5 });
+    cs[1].send({ t: 'hash', k: 59, h: 2 ** 33 });
+    await wait(60);
+    expect(cs.some((c) => c.inbox.some((m) => m.t === 'desync'))).toBe(false);
   });
 
   it('ends once every captain reports the battle over, and the lobby waits again', async () => {
@@ -441,6 +477,9 @@ it('rejects incompatible clients before joining a lobby',()=>{
  const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',name:'Old client'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
 });
 
+it('refuses protocol 16 peers from before the general update',()=>{
+ const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',protocol:16,name:'Old Tide'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
+});
 it('refuses protocol 2 peers before joining the delayed-flight simulation',()=>{
  const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',protocol:2,name:'Old Battery'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
 });

@@ -109,7 +109,7 @@ export class GroundBattle implements ActiveBattle {
     this.scene.effects.onShake = shake;
     this.scene.skillFx.onShake = shake;
     this.off.push(
-      game.events.on('gameOver', (g) => {
+      game.events.view('gameOver', (g) => {
         audio.stopBattle();
         this.shell.input.capture = false;
         this.ended = true;
@@ -118,7 +118,7 @@ export class GroundBattle implements ActiveBattle {
         audio.ui(win || config.type === 'freeplay' ? 'victory' : 'defeat');
         link?.over();
       }),
-      game.events.on('skill', (a) => {
+      game.events.view('skill', (a) => {
         const pc = this.pcs.find((p) => p.v === a.v);
         if (!pc) return;
         const spec = a.v.skills[a.index].spec;
@@ -128,14 +128,14 @@ export class GroundBattle implements ActiveBattle {
           renderer.flash(0.22, spec.accent);
         }
       }),
-      game.events.on('destroyed', (e) => {
+      game.events.view('destroyed', (e) => {
         const k = e.killer;
         const me = this.mine;
         if (me && k && e.v.team !== me.team && (k === me || k.summonOwner === me)) this.slow = SLOW_HOLD + SLOW_EASE;
       }),
       // Free play: controllers and HUDs follow the driver into the new hull on their own.
-      game.events.on('vehicleChanged', () => this.setLocals()),
-      game.events.on('gunFired', (e) => {
+      game.events.view('vehicleChanged', () => this.setLocals()),
+      game.events.view('gunFired', (e) => {
         for (const pc of this.pcs) if (pc.v === e.v) pc.shake(0.08 + e.caliber / 1500);
       }),
     );

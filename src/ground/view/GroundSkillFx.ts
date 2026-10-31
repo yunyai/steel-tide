@@ -112,16 +112,16 @@ export class GroundSkillFx {
     scene.add(this.ribbons.mesh, this.planes);
     const ev = game.events;
     this.off.push(
-      ev.on('skill', (e) => this.burst(e.v, e.index)),
-      ev.on('strike', (e) => this.called(e.strike)),
-      ev.on('strikeHit', (e) => this.landed(e.strike)),
-      ev.on('lightning', (e) => {
+      ev.view('skill', (e) => this.burst(e.v, e.index)),
+      ev.view('strike', (e) => this.called(e.strike)),
+      ev.view('strikeHit', (e) => this.landed(e.strike)),
+      ev.view('lightning', (e) => {
         const color = new Color(e.color).multiplyScalar(3);
         this.bolts.push({ points: e.points, color, life: e.straight ? 0.25 : 0.4, max: e.straight ? 0.25 : 0.4, straight: e.straight });
         const last = e.points[e.points.length - 1];
         audio.play(e.points.length > 2 ? 'thunder' : 'zap', last.x, last.y, last.z, 100, 0.7);
       }),
-      ev.on('shieldHit', (e) => {
+      ev.view('shieldHit', (e) => {
         const b = this.bubbles.get(e.v);
         if (b) b.hit = 1;
         if (this.time - this.shieldSound > 0.12) {
@@ -129,8 +129,8 @@ export class GroundSkillFx {
           audio.play('shield', e.v.x, e.v.y + 2, e.v.z, 100, 0.5);
         }
       }),
-      ev.on('respawn', (e) => this.arrive(e.v)),
-      ev.on('revive', (e) => this.arrive(e.v)),
+      ev.view('respawn', (e) => this.arrive(e.v)),
+      ev.view('revive', (e) => this.arrive(e.v)),
     );
   }
 

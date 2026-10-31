@@ -110,17 +110,34 @@ window.addEventListener('keydown', unlockAudio);
 
 const menuNavigation = new MenuNavigation();
 let last = performance.now();
+let frameErrors = 0;
+/** One bad frame must not stop the loop: log it, say so once, and keep running. */
+function reportFrameError(e: unknown): void {
+  if (frameErrors++ > 0) return;
+  console.error('A frame failed; the game keeps running.', e);
+  const note = document.createElement('div');
+  note.className = 'net-banner';
+  note.setAttribute('role', 'status');
+  note.textContent = 'Something went wrong drawing a frame. The game kept running; details are in the console.';
+  ui.append(note);
+  setTimeout(() => note.remove(), 6000);
+}
 function frame(now: number): void {
+  requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  input.pollPads();
-  menuNavigation.update(input, now);
-  if (!lan.frame()) {
-    if (battle) battle.tick(dt);
-    else showcase.render(renderer.gl, dt);
+  try {
+    input.pollPads();
+    menuNavigation.update(input, now);
+    if (!lan.frame()) {
+      if (battle) battle.tick(dt);
+      else showcase.render(renderer.gl, dt);
+    }
+  } catch (e) {
+    reportFrameError(e);
+  } finally {
+    input.endFrame();
   }
-  input.endFrame();
-  requestAnimationFrame(frame);
 }
 
 window.addEventListener('resize', () => renderer.resize());

@@ -104,7 +104,7 @@ export class TankController {
     this.camPos.set(v.renderX, v.renderY + 8, v.renderZ);
     this.resetArty();
     // Free play: a new vehicle at respawn is a new hull; the controls follow the captain into it.
-    this.off = game.events.on('vehicleChanged', ({ old, v: nv }) => {
+    this.off = game.events.view('vehicleChanged', ({ old, v: nv }) => {
       if (old !== this.v) return;
       this.v = nv;
       this.focus = nv;

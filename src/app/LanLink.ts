@@ -165,11 +165,25 @@ export class LanLink {
       if (m.t === 'hash' && nb.replaying) return;
       this.net?.send(m);
     });
+    // A tick that threw left this peer's battle unreliable: rebuild it from the log like a desync.
+    nb.lockstep.onFault = (e) => {
+      console.error('A LAN battle tick failed; resyncing.', e);
+      if (this.lan === nb) this.requestResync(nb);
+    };
     for (const t of turns ?? []) nb.lockstep.onTurn(t);
     this.lan = nb;
     if (!turns?.length) this.net?.send({ t: 'loaded' });
     if (nb.lockstep.backlog > TURN_TICKS * 4) nb.replaying = true;
     else this.present(nb);
+    this.updateBanner();
+  }
+
+  /** Ask the server for the whole log and rebuild this battle from it, a few times at most. */
+  private requestResync(lan: LanBattle): void {
+    if (lan.awaitingLog || lan.resyncs >= MAX_RESYNCS) return;
+    lan.resyncs++;
+    lan.awaitingLog = true;
+    this.net?.send({ t: 'resync' });
     this.updateBanner();
   }
 
@@ -202,11 +216,7 @@ export class LanLink {
         return this.start(m.config, m.you, m.turns, same ? lan.resyncs : 0);
       }
       case 'desync':
-        if (!lan || lan.awaitingLog || lan.resyncs >= MAX_RESYNCS) return;
-        lan.resyncs++;
-        lan.awaitingLog = true;
-        n.send({ t: 'resync' });
-        this.updateBanner();
+        if (lan) this.requestResync(lan);
         return;
       case 'ended':
         // Normally everyone saw the battle end and the report is up; otherwise the server called it.

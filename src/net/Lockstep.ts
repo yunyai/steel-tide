@@ -38,6 +38,10 @@ export class Lockstep {
   played = 0;
   /** Playback is fast-forwarding through a backlog. */
   catchingUp = false;
+  /** Ticks that threw. The stream still advances, so the peer stays aligned and can resync. */
+  faults = 0;
+  /** Called when a tick throws; the battle on this peer is no longer trustworthy. */
+  onFault?: (error: unknown) => void;
   private lastSent: Continuous | null = null;
   private lastSentAt = -Infinity;
 
@@ -93,7 +97,12 @@ export class Lockstep {
 
   private stepTick(): void {
     const turn = this.queue[this.head];
-    this.sim.applyTick(turn, this.tick);
+    try {
+      this.sim.applyTick(turn, this.tick);
+    } catch (e) {
+      this.faults++;
+      this.onFault?.(e);
+    }
     if (++this.tick < TURN_TICKS) return;
     this.tick = 0;
     this.head++;

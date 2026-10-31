@@ -35,7 +35,7 @@ export class ArchitectElementFx {
    const mesh=new InstancedMesh(geo,new ShaderMaterial({vertexShader:vertex,fragmentShader:fragment,transparent:true,depthWrite:false,blending:AdditiveBlending,toneMapped:false}),CAP);mesh.name=`architect-elements-${i}`;mesh.count=0;mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(DynamicDrawUsage);scene.add(mesh);this.pools.push(mesh);
   }
   const reset=(s:Ship)=>{this.pulses=this.pulses.filter(p=>p.e.ship!==s);this.heard.delete(s.id);this.reactions.drop(s);};
-  this.off.push(game.events.on('architectElement',e=>{
+  this.off.push(game.events.view('architectElement',e=>{
    if(game.over)return;const impact=e.phase==='hit';
    if(impact&&e.pair){this.reaction(e);return;}
    // Merge coincident elemental impacts of one attack while keeping each emitter's charge visible.
@@ -44,7 +44,7 @@ export class ArchitectElementFx {
    if(game.time-(this.heard.get(e.ship.id)??-100)<.1)return;this.heard.set(e.ship.id,game.time);
    const clips=(e.attack==='skill'&&e.type?specialistClips[e.type]:undefined)??elementClips[e.element];
    const local=this.locals.includes(e.ship);audio.play(impact?'explosion':'charge',impact?e.tx:e.x,impact?e.ty:e.y,impact?e.tz:e.z,impact?2:100,(local?.42:.22)*architectBatterySkillGain(game),{category:'ability',priority:local?3:1,asset:`${import.meta.env.BASE_URL}audio/${clips[impact?1:0]}.m4a`,rate:e.attack==='skill'?.88:1});
-  }),game.events.on('respawn',e=>reset(e.ship)),game.events.on('shipChanged',e=>reset(e.old)),game.events.on('shift',e=>reset(e.ship)),game.events.on('shipSunk',e=>reset(e.ship)),game.events.on('gameOver',()=>{this.pulses=[];this.heard.clear();this.reactions.clear();}));
+  }),game.events.view('respawn',e=>reset(e.ship)),game.events.view('shipChanged',e=>reset(e.old)),game.events.view('shift',e=>reset(e.ship)),game.events.view('shipSunk',e=>reset(e.ship)),game.events.view('gameOver',()=>{this.pulses=[];this.heard.clear();this.reactions.clear();}));
  }
  /** A reaction is its own burst with a layered sting; it never merges into the hit that set it off. */
  private reaction(e:ElementEvent){

@@ -52,11 +52,11 @@ export class ArchitectBatteryFx {
   this.particles=new BurstParticles(scene,BATTERY_PARTICLE_CAPS,'architect-battery-fx');
   this.hazard.mesh.name='architect-battery-public-hazard';scene.add(this.hazard.mesh);
   this.streaks.mesh.name='architect-battery-fx-streaks';scene.add(this.streaks.mesh);
-  this.off.push(game.events.on('architectBatteryLaunch',launch=>{
+  this.off.push(game.events.view('architectBatteryLaunch',launch=>{
    if(!this.valid(launch))return;this.flights.push(launch);this.counts.committedLaunches++;
    const key=`${launch.owner.id}:${launch.generation}:${launch.castId}`,danger=this.dangers.get(key);
    this.dangers.set(key,{owner:launch.owner,generation:launch.generation,castId:launch.castId,center:launch.center,radius:launch.radius,until:Math.max(danger?.until??0,launch.arrivalTime)});
-  }),game.events.on('architectBatteryImpact',impact=>{
+  }),game.events.view('architectBatteryImpact',impact=>{
    if(!this.valid(impact.launch))return;this.impacts.push(impact);this.counts.committedImpacts++;
    for(const recipient of impact.recipients){
     const duplicate=this.contacts.find(c=>c.recipient.target===recipient.target&&Math.abs(impact.resolvedAt-c.time)<=.05);
@@ -64,7 +64,7 @@ export class ArchitectBatteryFx {
     if(this.contacts.length>=128){this.counts.contactDrops++;continue;}
     this.contacts.push({launch:impact.launch,recipient,time:impact.resolvedAt});
    }
-  }),game.events.on('gameOver',()=>this.clear()));
+  }),game.events.view('gameOver',()=>this.clear()));
  }
  get stats(){return {machinery:this.machinery.stats,particles:this.particles.stats,batches:this.particles.drawn+(this.hazard.count?1:0)+(this.streaks.count?1:0),streaks:this.streaks.count,heads:this.heads.length,drawn:{...this.drawn},activeFlights:this.flights.length,activeImpacts:this.impacts.length,activeContacts:this.contacts.length,activeHazards:this.dangers.size,...this.counts};}
  /** Decorative instances this prepare; the public hazard ring is counted separately. */

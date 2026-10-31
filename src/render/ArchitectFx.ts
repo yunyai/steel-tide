@@ -45,12 +45,12 @@ export class ArchitectFx {
     this.panels=new InstancedMesh(geometry,material,640);
     this.panels.name='architect-citadel-panels';this.panels.count=0;this.panels.frustumCulled=false;
     scene.add(this.ribbons.mesh,this.panels);
-    this.off.push(game.events.on('architectShot',e=>{
+    this.off.push(game.events.view('architectShot',e=>{
       if(e.kind==='killbox')return;
       if(this.shots.length>=160)this.shots.shift();this.shots.push({...e,age:0});
       // Ten simultaneous guns are one audible volley, rather than ten competing cues.
       if(e.kind==='assembly')audio.cue('architectAssembly','impact','beam',e.x,e.y,e.z,this.locals.includes(e.ship));
-    }),game.events.on('architectCommand',e=>{
+    }),game.events.view('architectCommand',e=>{
       const local=this.locals.includes(e.ship),kind=e.kind;
       if(kind==='destroy'||kind==='end'||kind==='killbox'||kind==='reconfigure')return;
       audio.cue(kind==='assembly'?'architectAssembly':kind==='citadel'?'architectCitadel':'architectDeploy','activate',kind==='citadel'?'transform':'charge',e.ship.pos.x,20,e.ship.pos.z,local);

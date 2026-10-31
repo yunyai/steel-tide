@@ -57,8 +57,8 @@ export class StepperFx {
     scene.add(this.dark.mesh,this.light.mesh,this.ghosts);
     const ev=game.events;
     this.off.push(
-      ev.on('blink',e=>this.blink(e)),
-      ev.on('stepImpact',e=>{
+      ev.view('blink',e=>this.blink(e)),
+      ev.view('stepImpact',e=>{
         if(e.kind==='flicker'){
           this.pulse({ship:e.ship,x:e.x,y:12,z:e.z,h:e.ship.heading,kind:'flicker',age:this.reduce?0:-FLICKER_TURN,life:e.ship.stepper?.flicker?.count===19?.7:.42,final:e.ship.stepper?.flicker?.count===19});
           audio.play('hit',e.x,10,e.z,300,.6);
@@ -70,10 +70,10 @@ export class StepperFx {
           this.trim();audio.cue('afterimageStep','activate','transform',e.x,20,e.z,this.locals.includes(e.ship));
         }
       }),
-      ev.on('skillHit',e=>{if(e.skill.id==='ramStep')this.pulse({ship:e.attacker,x:e.ship.pos.x,y:12,z:e.ship.pos.z,h:e.attacker.heading,kind:'ram',age:0,life:.5});}),
-      ev.on('gunFired',e=>{if(e.ship.spec.id==='stepper'&&!e.secondary)this.pulse({ship:e.ship,x:e.x,y:e.y,z:e.z,h:e.bearing,kind:'muzzle',age:0,life:.18});}),
-      ev.on('respawn',e=>this.clearShip(e.ship)),ev.on('shipChanged',e=>this.clearShip(e.old)),
-      ev.on('gameOver',()=>this.clear()),
+      ev.view('skillHit',e=>{if(e.skill.id==='ramStep')this.pulse({ship:e.attacker,x:e.ship.pos.x,y:12,z:e.ship.pos.z,h:e.attacker.heading,kind:'ram',age:0,life:.5});}),
+      ev.view('gunFired',e=>{if(e.ship.spec.id==='stepper'&&!e.secondary)this.pulse({ship:e.ship,x:e.x,y:e.y,z:e.z,h:e.bearing,kind:'muzzle',age:0,life:.18});}),
+      ev.view('respawn',e=>this.clearShip(e.ship)),ev.view('shipChanged',e=>this.clearShip(e.old)),
+      ev.view('gameOver',()=>this.clear()),
     );
   }
   private blink(e:GameEventMap['blink']):void{
