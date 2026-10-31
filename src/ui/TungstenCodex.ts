@@ -38,7 +38,7 @@ const shieldText = (reach: number) =>
 
 /** The guide's opening line. */
 export const CODEX_NOTE =
-  'Switch cycles the cube through six modes. Each changes what a throw does to a hull, the passive the ship carries, the Signature, the Die face, the Collapse and the Meteor. The Loaded Die keeps the cube on the mode it rolls. Overdrive runs all six at once.';
+  'Switch cycles the cube through six modes. Each changes what a throw does to a hull, the passive the ship carries, the Signature, the Die face, the Collapse and the Meteor. The Loaded Die keeps the cube on the mode it rolls. Overdrive runs all six at once: a central cube on the dais and five round it.';
 
 /** The mode guide as data: six mode tabs, then Overdrive. */
 export function tungstenCodexEntries(): CodexTab[] {
@@ -66,14 +66,15 @@ export function tungstenCodexEntries(): CodexTab[] {
     color: '#f4f8ff',
     rainbow: true,
     rows: [
-      { label: 'Cubes', text: `For ${CUBE.overdrive.time} s five more cubes leave the magnet, one in each other mode. All six float as equals in a halo round the ship, and the dais stands empty.` },
+      { label: 'Cubes', text: `For ${CUBE.overdrive.time} s five more cubes leave the magnet, one in each other mode, and float in a pentagon round the central cube on the dais. With the central cube docked, Switch swaps it with the next docked cube in the pentagon and takes its mode. Whichever cube is central when Overdrive ends stays.` },
       { label: 'Throw', text: `Throws are free: the central cube flies to the reticle and the five to a pentagon ${CUBE.shot.formation} m round it, all at the central cube's pace, each with its own mode's hit.` },
       { label: 'Passive', text: "Every mode's passive is live at once." },
       { label: 'Signature', text: "Every cube fires its own mode's Signature from where it is." },
-      { label: 'Die', text: `All six roll, landing in a ${CUBE.die.ring} m ring round the reticle; each keeps its own mode and rolls its own face.` },
+      { label: 'Die', text: `The six merge into one rainbow die ${CUBE.die.merged}x the size. It always rolls a jackpot: one die's ${k(CUBE.die.damage)} over ${CUBE.die.radius} m, then every face at once. The central cube stays where it lands, and the five burst back out into a pentagon ${CUBE.die.ring} m round it, clear of land where the sea allows.` },
+      { label: 'Lunge', text: 'The magnet reels the ship to the central cube if it is out on the water, otherwise to the cube nearest the reticle.' },
       { label: 'Shield', text: `All six orbit the ship for ${O.time} s, each capturing fire and battering hulls for ${k(O.damage)} plus ${Math.round(O.store * 100)}% of the store. The ship takes ${Math.round((1 - O.taken) * 100)}% less damage and the store holds ${(CUBE.chargeCap * O.cap) / 1e6}M.` },
       { label: 'Collapse', text: `The six merge into one rainbow singularity, ${CUBE.collapse.merged}x as strong and ${CUBE.collapse.mergedRadius}x as wide, with every mode's twist.` },
-      { label: 'Meteor', text: `Six meteors fall in a ${CUBE.meteor.ring} m ring round the reticle, each in its own mode for ${CUBE.meteor.share * 100}% of the damage.` },
+      { label: 'Meteor', text: `Six meteors fall: the central cube on the reticle and the five in a pentagon ${CUBE.meteor.ring} m round it, each in its own mode for ${CUBE.meteor.share * 100}% of the damage.` },
     ],
   };
   return [...modes, overdrive];

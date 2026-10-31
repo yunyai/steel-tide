@@ -75,16 +75,51 @@ describe('Tungsten mode guide', () => {
 
   it('explains what Overdrive changes', () => {
     const rows = tabs[6].rows;
-    expect(rows.map((r) => r.label)).toEqual(['Cubes', 'Throw', 'Passive', 'Signature', 'Die', 'Shield', 'Collapse', 'Meteor']);
+    const row = (label: string) => rows.find((r) => r.label === label)!.text;
+    expect(rows.map((r) => r.label)).toEqual(['Cubes', 'Throw', 'Passive', 'Signature', 'Die', 'Lunge', 'Shield', 'Collapse', 'Meteor']);
     expect(rows.every((r) => r.text.length > 20)).toBe(true);
-    expect(rows[0].text).toContain('halo');
-    expect(rows[4].text).toContain(`${CUBE.die.ring} m ring`);
-    expect(rows[5].text).toContain(`${CUBE.orbit.time} s`);
-    expect(rows[6].text).toContain("every mode's twist");
+    // A central cube on the dais, five in a pentagon round it, swapped by Switch.
+    expect(row('Cubes')).toContain('central cube');
+    expect(row('Cubes')).toContain('dais');
+    expect(row('Cubes')).toContain('pentagon');
+    expect(row('Cubes')).toContain('Switch');
+    expect(row('Cubes')).not.toContain('empty');
+    expect(row('Throw')).toContain(`${CUBE.shot.formation} m`);
+    // The Die merges into one rainbow die and bursts back out into a pentagon.
+    expect(row('Die')).toContain('rainbow');
+    expect(row('Die')).toContain(`${CUBE.die.merged}x`);
+    expect(row('Die')).toContain(`${CUBE.die.ring} m`);
+    expect(row('Die')).toContain('pentagon');
+    expect(row('Die')).not.toContain(`${CUBE.die.ring} m ring`);
+    expect(row('Lunge')).toContain('central cube');
+    expect(row('Meteor')).toContain('central cube');
+    expect(row('Meteor')).toContain(`${CUBE.meteor.ring} m`);
+    expect(row('Meteor')).toContain('pentagon');
+    expect(row('Shield')).toContain(`${CUBE.orbit.time} s`);
+    expect(row('Collapse')).toContain("every mode's twist");
+    for (const r of rows) {
+      expect(r.text).not.toMatch(/abreast|dash|halo of equals/i);
+    }
+    expect(CODEX_NOTE).toContain('central cube');
   });
 });
 
 describe('Tungsten texts', () => {
+  const text = (id: string) => SHIP_BY_ID.tungsten.skills.find((k) => k.id === id)!.description;
+  it('describes the central-cube Overdrive in the skill texts', () => {
+    expect(text('tungstenOverdrive')).not.toContain('abreast');
+    expect(text('tungstenOverdrive')).toContain('central cube');
+    expect(text('tungstenOverdrive')).toContain('pentagon');
+    expect(text('tungstenSwitch')).toContain('Overdrive');
+    expect(text('tungstenSwitch')).toContain('central cube');
+    expect(text('tungstenDie')).not.toContain('ring round the reticle');
+    expect(text('tungstenDie')).toContain('rainbow');
+    expect(text('tungstenDie')).toContain('pentagon');
+    expect(text('tungstenLunge')).toContain('central cube');
+    expect(text('tungstenSignature')).toContain('In Overdrive');
+    for (const id of ['tungstenLunge', 'tungstenSwitch', 'tungstenSignature', 'tungstenDie', 'tungstenOverdrive']) expect(text(id)).not.toMatch(/dash/i);
+  });
+
   it("speaks of a magnet's worth of throws, not a fixed four", () => {
     const spec = SHIP_BY_ID.tungsten;
     expect(spec.specialty).not.toContain('four throws');

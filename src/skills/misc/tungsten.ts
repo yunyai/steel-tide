@@ -38,13 +38,13 @@ const spec = (id: string, name: string, short: string, cooldown: number, duratio
 const cube = (s: Ship) => s.tungsten!.cubes[0];
 const range = (s: Ship, t: Ship | null) => (t ? Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) : Infinity);
 const isFree = (c: Cube) => !c.gone && c.state !== 'broken' && c.state !== 'meteor' && c.state !== 'collapse' && c.state !== 'merged';
-/** The cubes the AI weighs: the cube itself, or all six as equals in Overdrive. */
+/** The cubes the AI weighs: the cube itself, or all six in Overdrive. */
 const pool = (s: Ship) => (overdriveOn(s) ? s.tungsten!.cubes : [cube(s)]);
 const free = (s: Ship) => pool(s).some(isFree);
 
 export const TUNGSTEN_SKILLS: SkillDef[] = [
   def(
-    spec('tungstenLunge', 'Magnet Lunge', 'LUNGE', 12, 0, 'magnet', 'The magnet reels the ship to its cube out on the water, up to 4 km away. Hulls in the way take 60k; the ship takes 40% less damage on the way and the cube docks on arrival.'),
+    spec('tungstenLunge', 'Magnet Lunge', 'LUNGE', 12, 0, 'magnet', 'The magnet reels the ship to its cube out on the water, up to 4 km away. Hulls in the way take 60k; the ship takes 40% less damage on the way and the cube docks on arrival. In Overdrive it reels to the central cube first.'),
     {
       activate: (s, _g, st) => lungeToCube(s, st.index),
       aiShouldUse(s, _g, t) {
@@ -55,7 +55,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       },
     },
   ),
-  def(spec('tungstenSwitch', 'Switch', 'MODE', 0.5, 0, 'swap', 'Cycle the cube to its next mode: Kinetic, Crush, Shard, Repel, Tether, Mend.'), {
+  def(spec('tungstenSwitch', 'Switch', 'MODE', 0.5, 0, 'swap', 'Cycle the cube to its next mode: Kinetic, Crush, Shard, Repel, Tether, Mend. In Overdrive, with the central cube docked, swap it with the next docked cube in the pentagon.'), {
     activate: (s) => switchMode(s),
     aiShouldUse(s, g, t) {
       // In Overdrive the swap needs the central cube docked.
@@ -71,7 +71,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       14,
       0,
       'rune',
-      "The current mode's move, from the cube. Kinetic: Ricochet+, six bounces, each faster. Crush: Pile Driver, the cube leaps onto a hull, roots and stuns it. Shard: Shrapnel Cone, 24 shards toward the reticle. Repel: Polarity Mirror, for 5 s enemy shells near the cube fly back at their firers. Tether: Collide, two hulls are reeled into each other. Mend: Sanctuary, a dome where allies heal and take less damage.",
+      "The current mode's move, from the cube. Kinetic: Ricochet+, six bounces, each faster. Crush: Pile Driver, the cube leaps onto a hull, roots and stuns it. Shard: Shrapnel Cone, 24 shards toward the reticle. Repel: Polarity Mirror, for 5 s enemy shells near the cube fly back at their firers. Tether: Collide, two hulls are reeled into each other. Mend: Sanctuary, a dome where allies heal and take less damage. In Overdrive every cube fires its own move.",
     ),
     {
       activate: (s, _g, st) => signature(s, st.index),
@@ -94,7 +94,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
     },
   ),
   def(
-    spec('tungstenDie', 'Loaded Die', 'DIE', CUBE.die.cooldown, 0, 'dice', "Roll the cube to the reticle, up to 4 km, over anything in the way; free, and a spent cube stays spent. It lands for 120k to every foe within 600 m, then the face it rolls fires at double strength: Kinetic hits harder the farther it rolled, Crush stuns, Shard knocks out turrets, Repel flings hulls and tears up fire, Tether chains and Mend heals the ship. Roll the cube's own mode for a jackpot: every face at once. The cube stays in the mode it rolled. In Overdrive all six roll into a ring round the reticle and keep their own modes."),
+    spec('tungstenDie', 'Loaded Die', 'DIE', CUBE.die.cooldown, 0, 'dice', "Roll the cube to the reticle, up to 4 km, over anything in the way; free, and a spent cube stays spent. It lands for 120k to every foe within 600 m, then the face it rolls fires at double strength: Kinetic hits harder the farther it rolled, Crush stuns, Shard knocks out turrets, Repel flings hulls and tears up fire, Tether chains and Mend heals the ship. Roll the cube's own mode for a jackpot: every face at once. The cube stays in the mode it rolled. In Overdrive the six merge into one rainbow die that always rolls a jackpot; the central cube stays where it lands and the five burst out into a pentagon round it."),
     {
       activate: (s, _g, st) => rollDie(s, st.index),
       aiShouldUse(s, _g, t) {
@@ -133,7 +133,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
       return !!t && range(s, t) < CUBE.meteor.range;
     },
   }),
-  def(spec('tungstenOverdrive', 'Overdrive', 'OVERDRIVE', 130, CUBE.overdrive.time, 'fleet', 'For 20 s five more cubes leave the magnet, one in each other mode. Throws are free and hurl all six abreast, every cube skill drives all six and every passive is live.', true, true), {
+  def(spec('tungstenOverdrive', 'Overdrive', 'OVERDRIVE', 130, CUBE.overdrive.time, 'fleet', 'For 20 s five more cubes leave the magnet, one in each other mode, and float in a pentagon round the central cube on the dais. Throws are free and hurl the central cube at the reticle with the five in a pentagon round it, every cube skill drives all six and every passive is live.', true, true), {
     activate: (s) => overdrive(s),
     aiShouldUse(s, _g, t) {
       return !!t && range(s, t) < 5000;
