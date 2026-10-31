@@ -11,7 +11,7 @@ import { BK, drift, hash01, type BurstParticles } from './BurstParticles';
 import type { Ribbons } from './Projectiles';
 import { quality } from './Quality';
 import { FOAM, SPRAY, TAU, TungstenPaint, WHITE, clamp01, ease, hot } from './TungstenPaint';
-import { ModeSweep, cubeGeometry, cubeSkin, modeColor, pileLift, type CubeSkinUniforms } from './TungstenLook';
+import { ModeSweep, cubeGeometry, cubeSkin, dieFaceNormal, dieHop, modeColor, pileLift, type CubeSkinUniforms } from './TungstenLook';
 import { HORN_TIPS, type TungstenModel } from './TungstenModel';
 import { INFALL, TungstenSingularities } from './TungstenSingularity';
 import { TungstenUltFx, ULT_LIFE } from './TungstenUltFx';
@@ -50,6 +50,17 @@ interface FreeCube {
   /** The face a Loaded Die rolled and when it landed (-1 for none), shown for `DIE_SHOW` s. */
   face: number;
   faceAt: number;
+  /**
+   * Die pose: `base` is the cube's lie under its yaw and roll, `wobble` a sideways rock while it rolls; on landing
+   * `base` eases from `from` to `to`, the rolled face up, starting at render time `settleAt` (-1 when still).
+   */
+  base: Quaternion;
+  from: Quaternion;
+  to: Quaternion;
+  settleAt: number;
+  wobble: number;
+  /** How much the six face colours show, 0 to 1. */
+  die: number;
   mode: number;
 }
 
@@ -80,6 +91,9 @@ const LIFE: Partial<Record<TungstenEvent['kind'], number>> = {
 };
 /** Seconds a landed die shows the face it rolled before its own colour sweeps back. */
 const DIE_SHOW = 1.6;
+/** Seconds a landed die takes to tip onto its face, and how long its six colours hold before fading. */
+const DIE_SETTLE = 0.35;
+const DIE_HOLD = 0.9;
 const H = CUBE.edge / 2;
 const TETHER = modeOf('tether');
 const tint2 = new Color();
@@ -111,8 +125,10 @@ export class TungstenCubeFx {
   private m4 = new Matrix4();
   private q = new Quaternion();
   private q2 = new Quaternion();
+  private q3 = new Quaternion();
   private v = new Vector3();
   private v2 = new Vector3();
+  private v3 = new Vector3();
   private scale = new Vector3();
   private up = new Vector3(0, 1, 0);
   /** The horn tips of the ship being drawn, in world space. */
@@ -168,6 +184,7 @@ export class TungstenCubeFx {
       if (v) {
         v.face = e.face ?? e.mode;
         v.faceAt = this.game.time;
+        this.settleDie(v, v.face);
       }
     }
     this.sound(e);
@@ -289,6 +306,33 @@ export class TungstenCubeFx {
   }
 
   /** The drawn skin of a cube away from the dais, while it has a view. */
+  /** The cube's lie under its yaw: its roll about the rolling axis, its rock, then its base pose. */
+  private lie(v: FreeCube, out: Quaternion): Quaternion {
+    this.v2.set(v.axisX, 0, v.axisZ);
+    out.setFromAxisAngle(this.v2, v.tumble);
+    if (v.wobble) out.multiply(this.q3.setFromAxisAngle(this.v3.set(v.axisZ, 0, -v.axisX), v.wobble));
+    return out.multiply(v.base);
+  }
+
+  /**
+   * A landed die tips onto the face it rolled: its roll is folded into the base pose, which then eases to the
+   * nearest lie with that face up and its sides square to the cube's heading.
+   */
+  private settleDie(v: FreeCube, face: number): void {
+    const lie = this.lie(v, this.q2);
+    v.from.copy(lie);
+    v.base.copy(lie);
+    v.tumble = 0;
+    v.wobble = 0;
+    const vertical = Math.abs(dieFaceNormal(face, this.v3).y) > 0.5;
+    v.to.setFromUnitVectors(this.v3.applyQuaternion(lie), this.up).multiply(lie);
+    // Square the sides: turn about the vertical to the nearest quarter, measured on an edge-on axis of the face.
+    const side = this.v3.set(vertical ? 1 : 0, vertical ? 0 : 1, 0).applyQuaternion(v.to);
+    const psi = Math.atan2(-side.z, side.x);
+    v.to.premultiply(this.q3.setFromAxisAngle(this.up, Math.round(psi / (Math.PI / 2)) * (Math.PI / 2) - psi));
+    v.settleAt = this.game.renderTime;
+  }
+
   skin(s: Ship, cube: number): CubeSkinUniforms | null {
     return this.views.get(this.key(s, cube))?.u ?? null;
   }
@@ -348,7 +392,7 @@ export class TungstenCubeFx {
         mesh.frustumCulled = false;
         this.scene.add(mesh);
         this.renderPos(c, this.v);
-        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, face: -1, faceAt: -1, mode: c.mode };
+        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, face: -1, faceAt: -1, mode: c.mode, base: new Quaternion(), from: new Quaternion(), to: new Quaternion(), settleAt: -1, wobble: 0, die: 0 };
         this.views.set(k, v);
       }
       v.live = true;
@@ -369,8 +413,13 @@ export class TungstenCubeFx {
         v.axisX = ax * cy - az * sy;
         v.axisZ = ax * sy + az * cy;
       }
-      // Rolling while it flies; settling onto a face once it stops.
-      if (!this.paint.reduce && c.state === 'flying') v.tumble += moved / 260;
+      // Rolling while it flies, a die faster and rocking; settling onto a face once it stops.
+      const rolling = c.state === 'flying' && c.path?.kind === 'die';
+      v.die = rolling ? Math.min(1, v.die + dt / 0.15) : v.face >= 0 && this.game.time - v.faceAt < DIE_SHOW ? clamp01(1 - (this.game.time - v.faceAt - DIE_HOLD) / (DIE_SHOW - DIE_HOLD)) : 0;
+      if (!this.paint.reduce && rolling) {
+        v.tumble += moved / 110;
+        v.wobble = 0.45 * Math.sin(c.flown / 240);
+      } else if (!this.paint.reduce && c.state === 'flying') v.tumble += moved / 260;
       else {
         const rest = Math.round(v.tumble / (Math.PI / 2)) * (Math.PI / 2);
         v.tumble += (rest - v.tumble) * (1 - Math.exp(-dt * 6));
@@ -455,15 +504,19 @@ export class TungstenCubeFx {
       const lift = pileLift(c) + (ult?.lift ?? 0);
       const size = CUBE.edge * c.scale * (ult?.size ?? 1);
       v.mesh.visible = size > 0.5;
-      v.mesh.position.set(p.x, p.y + bob + lift, p.z);
+      v.mesh.position.set(p.x, p.y + bob + lift + (this.paint.reduce ? 0 : dieHop(c)), p.z);
       v.mesh.scale.setScalar(Math.max(0.01, size));
+      if (v.settleAt >= 0) {
+        const k = this.paint.reduce ? 1 : clamp01((this.game.renderTime - v.settleAt) / DIE_SETTLE);
+        v.base.slerpQuaternions(v.from, v.to, ease(k));
+        if (k >= 1) v.settleAt = -1;
+      }
       this.q.setFromAxisAngle(this.up, v.yaw + (parked && !this.paint.reduce ? Math.sin(anim * 0.4 + c.id) * 0.05 : 0));
-      this.v2.set(v.axisX, 0, v.axisZ);
-      this.q2.setFromAxisAngle(this.v2, v.tumble);
-      v.mesh.quaternion.copy(this.q).multiply(this.q2);
+      v.mesh.quaternion.copy(this.q).multiply(this.lie(v, this.q2));
       // A landed die wipes to the face it rolled, then back to its own mode.
       const rolled = v.face >= 0 && this.game.time - v.faceAt < DIE_SHOW;
       v.sweep.apply(v.u, rolled ? v.face : c.mode, now, this.paint.reduce);
+      v.u.uDie.value = v.die;
       const flash = Math.max(clamp01(1 - (this.game.time - v.struck) / 0.25), rolled ? clamp01(1 - (this.game.time - v.faceAt) / 0.5) : 0);
       const sputter = this.paint.reduce ? 0.2 : hash01(c.id, Math.floor(now * 12)) < 0.18 ? 0.3 : 0.12;
       const power = 1.3 + (t.charge / CUBE.chargeCap) * 1.6 + (c.state === 'flying' ? 0.5 : 0) + (c.state === 'guard' ? 0.4 : 0) + flash * 1.5;

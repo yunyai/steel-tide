@@ -450,6 +450,22 @@ describe('Loaded Die', () => {
     expect(me.hp).toBeGreaterThan(me.maxHp / 2 + foe.stats.received * 0.4);
     expect(foe.stats.received).toBeGreaterThan(CUBE.die.damage * 1.5);
   });
+  it('leaves the cube in the mode it rolled', () => {
+    const { g, me, t, rolls } = roll(2, 'kinetic');
+    cast(g, me, rolls);
+    expect(t.cubes[0].mode).toBe(2);
+    expect(t.mode).toBe(2);
+  });
+  it('keeps every Overdrive cube in its own mode whatever they roll', () => {
+    const { g, me, t, rolls } = roll(0, 'repel', { x: 4000, z: 0 });
+    me.meter = 1;
+    me.activateSkill(B);
+    run(g, 1);
+    const modes = t.cubes.map((c) => c.mode);
+    cast(g, me, rolls, 6);
+    expect(t.cubes.map((c) => c.mode)).toEqual(modes);
+    expect(t.mode).toBe(3);
+  });
   it('rolls a spent cube without waking it', () => {
     const { g, me, t, rolls } = roll(0, 'repel');
     park(t.cubes[0], 0, -1000);

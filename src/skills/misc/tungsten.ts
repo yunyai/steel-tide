@@ -91,7 +91,7 @@ export const TUNGSTEN_SKILLS: SkillDef[] = [
     },
   ),
   def(
-    spec('tungstenDie', 'Loaded Die', 'DIE', CUBE.die.cooldown, 0, 'dice', "Roll the cube to the reticle, up to 4 km, over anything in the way; free, and a spent cube stays spent. It lands for 120k to every foe within 600 m, then the face it rolls fires at double strength: Kinetic hits harder the farther it rolled, Crush stuns, Shard knocks out turrets, Repel flings hulls and tears up fire, Tether chains and Mend heals the ship. Roll the cube's own mode for a jackpot: every face at once. In Overdrive all six roll into a ring round the reticle."),
+    spec('tungstenDie', 'Loaded Die', 'DIE', CUBE.die.cooldown, 0, 'dice', "Roll the cube to the reticle, up to 4 km, over anything in the way; free, and a spent cube stays spent. It lands for 120k to every foe within 600 m, then the face it rolls fires at double strength: Kinetic hits harder the farther it rolled, Crush stuns, Shard knocks out turrets, Repel flings hulls and tears up fire, Tether chains and Mend heals the ship. Roll the cube's own mode for a jackpot: every face at once. The cube stays in the mode it rolled. In Overdrive all six roll into a ring round the reticle and keep their own modes."),
     {
       activate: (s, _g, st) => rollDie(s, st.index),
       aiShouldUse(s, _g, t) {

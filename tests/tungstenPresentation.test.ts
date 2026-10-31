@@ -3,7 +3,7 @@ import { Box3, InstancedBufferAttribute, Mesh, Scene, Vector3, type Object3D, ty
 import { ShipView } from '../src/render/ShipModel';
 import { DAIS, HORN_TIPS, TungstenModel } from '../src/render/TungstenModel';
 import { TungstenCubeFx } from '../src/render/TungstenCubeFx';
-import { modeColor } from '../src/render/TungstenLook';
+import { dieFaceNormal, modeColor } from '../src/render/TungstenLook';
 import { CUBE, dockLift } from '../src/skills/misc/TungstenModes';
 import { SHIP_BY_ID } from '../src/data/ships';
 import { stateHash } from '../src/net/hash';
@@ -441,7 +441,7 @@ describe('Tungsten throw effects', () => {
     expect(spent.flat).toBe(lit.flat);
   });
 
-  it('shows the face the Loaded Die rolled, then its own colour, and erupts where it lands', () => {
+  it('shows the face the Loaded Die rolled, keeps its colour, and erupts where it lands', () => {
     const landing = (die: boolean) => {
       const g = emptyGame('open', 7, 'freeplay');
       const s = place(g, 'tungsten', 0, 0, 0);
@@ -477,8 +477,67 @@ describe('Tungsten throw effects', () => {
       thrown = landing(false);
     expect(rolled.glow).toBe(modeColor(3).getHex());
     expect(thrown.glow).toBe(modeColor(0).getHex());
-    expect(rolled.after).toBe(modeColor(0).getHex());
+    expect(rolled.after).toBe(modeColor(3).getHex());
     expect(rolled.additive).toBeGreaterThan(thrown.additive);
+  });
+
+  it('rolls the die as a die: six coloured faces, hopping and tumbling, settling with the rolled face up', () => {
+    const roll = (die: boolean) => {
+      const g = emptyGame('open', 7, 'freeplay');
+      const s = place(g, 'tungsten', 0, 0, 0);
+      (g as unknown as { rng: () => number }).rng = () => 3.5 / 6;
+      const scene = new Scene();
+      const fx = new TungstenCubeFx(scene, g);
+      const t = s.tungsten!;
+      const c = t.cubes[0];
+      s.control.aimX = 0;
+      s.control.aimZ = -3000;
+      let down = false;
+      g.events.on('tungsten', (e) => {
+        if (e.kind === 'land') down = true;
+      });
+      if (die) cast(s, DIE);
+      else {
+        s.control.fire = true;
+        play(g, fx, 1 / 60, [s]);
+        s.control.fire = false;
+      }
+      let faces = 0,
+        hop = 0;
+      for (let i = 0; i < 300 && !down; i++) {
+        play(g, fx, 1 / 60, [s]);
+        fx.prepare(0, 720);
+        const mesh = freeCubes(scene)[0];
+        if (c.state !== 'flying' || !mesh) continue;
+        faces = Math.max(faces, fx.skin(s, c.id)!.uDie.value);
+        hop = Math.max(hop, mesh.position.y - c.y);
+      }
+      expect(down).toBe(true);
+      play(g, fx, 0.8, [s]);
+      fx.prepare(0, 720);
+      const up = dieFaceNormal(3).applyQuaternion(freeCubes(scene)[0].quaternion);
+      const settled = fx.skin(s, c.id)!.uDie.value;
+      play(g, fx, 2, [s]);
+      fx.prepare(0, 720);
+      const later = fx.skin(s, c.id)!.uDie.value;
+      fx.dispose();
+      return { faces, hop, up, settled, later };
+    };
+    const die = roll(true),
+      thrown = roll(false);
+    expect(die.faces).toBe(1);
+    expect(thrown.faces).toBe(0);
+    expect(die.hop).toBeGreaterThan(30);
+    expect(thrown.hop).toBeLessThan(5);
+    // Repel was rolled: its face ends on top, the six colours still showing, then the cube wipes to Repel.
+    expect(die.up.y).toBeGreaterThan(0.99);
+    expect(die.settled).toBeGreaterThan(0.5);
+    expect(die.later).toBe(0);
+  });
+
+  it('lays the die faces out like a die: six directions, opposite faces summing to five', () => {
+    for (let f = 0; f < 6; f++) expect(dieFaceNormal(f).dot(dieFaceNormal(5 - f))).toBe(-1);
+    expect(new Set([0, 1, 2, 3, 4, 5].map((f) => dieFaceNormal(f).toArray().join())).size).toBe(6);
   });
 });
 

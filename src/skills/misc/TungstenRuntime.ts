@@ -680,6 +680,8 @@ function dieLands(s: Ship, c: Cube, skill: number): void {
   if (rolled(REPEL)) repulse(s, c.x, c.z, D.radius);
   if (rolled(MEND)) s.heal(dealt * HIT.mend.lifesteal * k);
   g.events.emit('tungsten', { ship: s, kind: 'die', cube: c.id, x: c.x, y: c.y, z: c.z, radius: D.radius, mode: c.mode, face, jackpot });
+  // The cube stays on the face it rolled; in Overdrive the six keep one mode each.
+  if (!overdriveOn(s) && c === s.tungsten!.cubes[0]) s.tungsten!.mode = c.mode = face;
 }
 
 export function dockCubes(s: Ship, skill: number): boolean {

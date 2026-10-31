@@ -1,4 +1,4 @@
-import { Color, DataTexture, LinearFilter, LinearMipmapLinearFilter, MeshStandardMaterial, RGBAFormat, RepeatWrapping, UnsignedByteType, type BufferGeometry } from 'three';
+import { Color, DataTexture, Vector3, LinearFilter, LinearMipmapLinearFilter, MeshStandardMaterial, RGBAFormat, RepeatWrapping, UnsignedByteType, type BufferGeometry } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { SIGNATURE, TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
 import type { Cube } from '../skills/misc/TungstenRuntime';
@@ -151,6 +151,23 @@ export interface CubeSkinUniforms {
   uAssemble: { value: number };
   /** Shattering cube: the etching stutters. */
   uFlicker: { value: number };
+  /** A rolling Loaded Die: 1 lights each face in its own mode's colour (`uFaces`, laid out as `dieFaceNormal`). */
+  uDie: { value: number };
+  uFaces: { value: readonly Color[] };
+}
+
+/** Where each die face points in the cube's own frame: face i is mode i, and opposite faces sum to five, as a die's to seven. */
+const DIE_FACES = [
+  [0, 1, 0],
+  [1, 0, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+  [-1, 0, 0],
+  [0, -1, 0],
+] as const;
+export function dieFaceNormal(face: number, out = new Vector3()): Vector3 {
+  const n = DIE_FACES[face];
+  return out.set(n[0], n[1], n[2]);
 }
 
 /** Dark tungsten with the neon etching; each cube gets its own so its colour and state are its own. */
@@ -164,6 +181,8 @@ export function cubeSkin(): { material: MeshStandardMaterial; u: CubeSkinUniform
     uHeat: { value: 0 },
     uAssemble: { value: 1 },
     uFlicker: { value: 0 },
+    uDie: { value: 0 },
+    uFaces: { value: MODE_COLORS },
   };
   const material = new MeshStandardMaterial({ color: 0x40454d, metalness: 0.92, roughness: 0.36 });
   material.onBeforeCompile = (shader) => {
@@ -174,7 +193,8 @@ export function cubeSkin(): { material: MeshStandardMaterial; u: CubeSkinUniform
     shader.fragmentShader =
       `uniform sampler2D uEtch;
 uniform vec3 uGlow, uPrev;
-uniform float uSweep, uTime, uPower, uHeat, uAssemble, uFlicker;
+uniform vec3 uFaces[6];
+uniform float uSweep, uTime, uPower, uHeat, uAssemble, uFlicker, uDie;
 varying vec3 vCubeObj;
 varying vec2 vEtchUv;
 float cubeHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
@@ -203,6 +223,14 @@ float cubeHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719)))
     float front = uSweep * 1.2 - 0.1;
     vec3 glow = mix(uPrev, uGlow, step(wipe, front));
     float band = uSweep < 0.999 ? exp(-pow((wipe - front) * 16.0, 2.0)) : 0.0;
+    // A rolling die: every face in its own mode's colour, laid out as dieFaceNormal.
+    if (uDie > 0.0) {
+      vec3 a = abs(vCubeObj);
+      vec3 face = a.y >= a.x && a.y >= a.z ? (vCubeObj.y > 0.0 ? uFaces[0] : uFaces[5])
+        : a.x >= a.z ? (vCubeObj.x > 0.0 ? uFaces[1] : uFaces[4])
+        : (vCubeObj.z > 0.0 ? uFaces[2] : uFaces[3]);
+      glow = mix(glow, face, uDie);
+    }
     // Pulses run outward from the sigil to the rim.
     float pulse = pow(0.5 + 0.5 * sin((etch.g * 3.0 - uTime * 0.9) * 6.2831), 8.0);
     // Far away the fine traces mip away; a floor keeps a distant cube reading in its colour.
@@ -249,6 +277,15 @@ export class ModeSweep {
     const k = Math.max(0, Math.min(1, (time - this.since) / ModeSweep.TIME));
     return out.copy(sweepFrom.copy(this.prev).lerp(modeColor(Math.max(0, this.mode)), k));
   }
+}
+
+/** Presentation-only hops for a rolling Loaded Die, dying away as it nears the reticle. */
+export function dieHop(c: Cube): number {
+  const p = c.path;
+  if (c.state !== 'flying' || p?.kind !== 'die') return 0;
+  const left = Math.hypot(p.tx - c.x, p.tz - c.z);
+  const k = c.flown / Math.max(1, c.flown + left);
+  return 80 * (1 - k) * Math.abs(Math.sin((Math.PI * c.flown) / 520));
 }
 
 /** Presentation-only arc for a Pile Driver's leap: the sim flies it straight; it is drawn rising and crashing down. */
