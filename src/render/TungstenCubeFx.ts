@@ -551,9 +551,10 @@ export class TungstenCubeFx {
       // The cubes it held burst out of it, growing to size as they clear its faces.
       if (c.path?.kind === 'spread') size *= 0.55 + 0.45 * ease(clamp01(c.flown / H));
       v.mesh.visible = size > 0.5;
-      // A cube flying out to the Overdrive ring bows aside, so a cube swapping onto the dais never passes through it.
+      // A cube swapping out to the Overdrive ring bows aside, so the cube swapping onto the dais never passes through
+      // it. Only a swap flies home at swap speed; the bow holds to the end of the flight even if Overdrive runs out.
       const P = c.path;
-      if (P?.kind === 'home' && c.slot > 0 && overdriveOn(s) && !this.paint.reduce) {
+      if (P?.kind === 'home' && P.speed === CUBE.swapSpeed && c.slot > 0 && !this.paint.reduce) {
         const dx = P.tx - c.x,
           dz = P.tz - c.z,
           d = Math.hypot(dx, dz);

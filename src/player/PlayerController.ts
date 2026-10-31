@@ -239,7 +239,7 @@ export class PlayerController {
       this.out.targetId = o.id;
       return;
     }
-    this.notice = !o.alive ? 'Target sunk' : k.cube.gone || k.cube.state === 'broken' ? 'Cube shattered' : k.cube.state === 'docked' ? 'Cube docked: owner not in sight' : 'Cube lost';
+    this.notice = !o.alive ? 'Target sunk' : k.cube.gone ? 'Cube dissolved' : k.cube.state === 'broken' ? 'Cube shattered' : k.cube.state === 'docked' ? 'Cube docked: owner not in sight' : 'Cube lost';
     this.noticeTime = 2.5;
   }
 

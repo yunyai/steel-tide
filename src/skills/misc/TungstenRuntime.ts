@@ -215,6 +215,8 @@ export function newTungstenState(): TungstenState {
 export function clearTungsten(s: Ship): void {
   const t = s.tungsten;
   if (!t) return;
+  // Dropped cubes are flagged gone, so a lock or an AI aim on one lets go.
+  for (const o of t.cubes.slice(1)) o.gone = true;
   t.cubes = [t.cubes[0]];
   const c = t.cubes[0];
   Object.assign(c, { state: 'docked', path: null, hp: c.maxHp, scale: 1, reform: 0, flown: 0, contacts: [], mode: t.mode });
@@ -1004,6 +1006,7 @@ function reflect(s: Ship, a: TungstenAct, c: Cube): void {
       flat: SIGNATURE.mirror.return,
       guaranteedFire: false,
       railgun: false,
+      secondary: p.secondary,
     });
   }
   for (const m of g.missiles.missiles) if (m.alive && m.team !== s.team && gap(m.x, m.z, a.x, a.z) <= a.radius) g.missiles.kill(m);
@@ -1110,6 +1113,7 @@ export const meteor = (s: Ship, skill: number) => beginUlt(s, 'meteor', skill, C
 export function overdrive(s: Ship): boolean {
   if (overdriveOn(s)) return s.failSkill('Overdrive: already running');
   const t = s.tungsten!;
+  for (const c of t.cubes) if (c.extra) c.gone = true;
   t.cubes = t.cubes.filter((c) => !c.extra);
   t.overdriveUntil = s.game.time + CUBE.overdrive.time;
   t.energy = 1;
@@ -1150,6 +1154,8 @@ export function updateTungsten(s: Ship, dt: number): void {
   fire(s, t, dt);
   for (const c of t.cubes) stepCube(s, t, c, dt);
   rideDie(s, t);
+  // The Shield lasts only while a cube still guards: a Signature that flies the guard off ends it.
+  if (t.guardUntil > g.time && !t.cubes.some((c) => c.state === 'guard' || c.state === 'orbit')) t.guardUntil = g.time;
   if (!t.overdriveUntil)
     for (const c of t.cubes) {
       if (!c.extra) continue;

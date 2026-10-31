@@ -517,6 +517,59 @@ describe('Tungsten throw effects', () => {
     fx.dispose();
   });
 
+  it('draws cubes flying home from an Overdrive Shield where they are, without the swap bow', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    const t = s.tungsten!;
+    cast(s, OVERDRIVE);
+    play(g, fx, 0.5, [s]);
+    cast(s, SHIELD);
+    play(g, fx, 0.5, [s]);
+    t.guardUntil = g.time;
+    let worst = 0,
+      seen = 0;
+    for (let i = 0; i < 90; i++) {
+      play(g, fx, 1 / 60, [s]);
+      fx.prepare(0, 720);
+      for (const c of t.cubes) {
+        if (c.slot === 0 || c.path?.kind !== 'home') continue;
+        const o = scene.getObjectByName(`tungsten-free-cube-${s.id}:${c.id}`);
+        if (!o?.visible) continue;
+        const a = g.alpha;
+        worst = Math.max(worst, Math.hypot(o.position.x - (c.px + (c.x - c.px) * a), o.position.z - (c.pz + (c.z - c.pz) * a)));
+        seen++;
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
+    expect(worst).toBeLessThan(1);
+    fx.dispose();
+  });
+
+  it('keeps a swapping cube on its bow when Overdrive ends mid-swap, rather than snapping', () => {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const scene = new Scene();
+    const fx = new TungstenCubeFx(scene, g);
+    const t = s.tungsten!;
+    cast(s, OVERDRIVE);
+    play(g, fx, 0.5, [s]);
+    const out = t.cubes[0];
+    cast(s, SWITCH);
+    play(g, fx, 0.2, [s]);
+    expect(out.state).toBe('flying');
+    fx.prepare(0, 720);
+    const o = scene.getObjectByName(`tungsten-free-cube-${s.id}:${out.id}`)!;
+    const before = o.position.clone();
+    t.overdriveUntil = g.time;
+    play(g, fx, 1 / 60, [s]);
+    fx.prepare(0, 720);
+    // One frame at swap speed, not a sideways jump of the bow.
+    expect(o.position.distanceTo(before)).toBeLessThan(CUBE.swapSpeed / 60 + 20);
+    fx.dispose();
+  });
+
   it('dims a spent cube to a sputter where it sank', () => {
     const g = emptyGame('open', 7, 'freeplay');
     const s = place(g, 'tungsten', 0, 0, 0);

@@ -447,6 +447,19 @@ export class AIController {
       c.fire = !!t && st.cooldown <= 0;
       return;
     }
+    const d = t ? dist2D(ship.pos.x, ship.pos.z, t.pos.x, t.pos.z) : 0;
+    // Torpedoes run under a hovering cube, so ready tubes fire before the guns turn on one.
+    const torpSlot = ship.slots.findIndex((s) => s.kind === 'torp');
+    if (t && torpSlot >= 0 && ship.spec.torpedoes) {
+      const ready = ship.launchers.some((l) => l.reload <= 0);
+      const inRange = d < ship.spec.torpedoes.range * (ship.spec.cls === 'SS' ? 0.85 : 0.75);
+      if (ready && inRange && !t.deep) {
+        this.wantTorps = true;
+        c.slot = torpSlot;
+        c.fire = true;
+        return;
+      }
+    }
     // A cube in the way, or nearly broken: the guns clear it first (pickCube keeps it in range).
     if (this.cube) {
       const he = ship.slots.findIndex((s) => s.kind === 'gun' && s.ammo === 'HE');
@@ -457,18 +470,6 @@ export class AIController {
     if (!t) {
       c.fire = false;
       return;
-    }
-    const d = dist2D(ship.pos.x, ship.pos.z, t.pos.x, t.pos.z);
-    const torpSlot = ship.slots.findIndex((s) => s.kind === 'torp');
-    if (torpSlot >= 0 && ship.spec.torpedoes) {
-      const ready = ship.launchers.some((l) => l.reload <= 0);
-      const inRange = d < ship.spec.torpedoes.range * (ship.spec.cls === 'SS' ? 0.85 : 0.75);
-      if (ready && inRange && !t.deep) {
-        this.wantTorps = true;
-        c.slot = torpSlot;
-        c.fire = true;
-        return;
-      }
     }
     const ammo = this.chooseAmmo(t, d);
     const gunSlot = ship.slots.findIndex((s) => s.kind === 'gun' && s.ammo === ammo);

@@ -619,6 +619,27 @@ describe('Loaded Die', () => {
       expect(t.guardUntil).toBeLessThanOrEqual(g.time);
     }
   });
+  it('ends the Shield when a Signature sends the guarding cube off, and keeps it while the cube still guards', () => {
+    const { g, me, t } = duel(-1500);
+    expect(me.activateSkill(V), me.skillFailure).toBe(true);
+    run(g, 0.5);
+    expect(t.cubes[0].state).toBe('guard');
+    // Ricochet+ flies the cube away: no Shield left to count down.
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    run(g, 0.1);
+    expect(t.cubes[0].state).not.toBe('guard');
+    expect(t.guardUntil).toBeLessThanOrEqual(g.time);
+    // Polarity Mirror leaves the cube guarding where it is.
+    const other = duel(-1500);
+    setMode(other.me, 'repel');
+    expect(other.me.activateSkill(V), other.me.skillFailure).toBe(true);
+    run(other.g, 0.5);
+    other.me.skills[Z].cooldown = 0;
+    expect(other.me.activateSkill(Z), other.me.skillFailure).toBe(true);
+    run(other.g, 0.1);
+    expect(other.t.cubes[0].state).toBe('guard');
+    expect(other.t.guardUntil).toBeGreaterThan(other.g.time + 5);
+  });
   it('fails while the cube is re-forming', () => {
     const { me, t } = duel();
     damageCube(me, t.cubes[0], CUBE.hp * 2, null);
@@ -953,9 +974,21 @@ describe('signatures', () => {
     expect(Math.hypot(back.vx, back.vy, back.vz)).toBeCloseTo(shell.spec.velocity * SIGNATURE.mirror.return, 0);
     expect(back.skill).toBe(me.skills[Z].spec);
     expect(back.spec).toBe(shell.spec);
+    // As far as the shell would have flown, with no range table built on the tick for it.
+    expect(back.maxDist).toBe(shell.maxDist);
     expect(bearingTo(back.x, back.z, back.x + back.vx, back.z + back.vz)).toBeCloseTo(bearingTo(back.x, back.z, foe.pos.x, foe.pos.z), 2);
     until(g, () => foe.stats.received > 0, 5);
     expect(foe.stats.received).toBeGreaterThan(0);
+  });
+  it('Polarity Mirror returns a secondary round as a secondary round', () => {
+    const { g, me, foe } = duel(-3000);
+    setMode(me, 'repel');
+    const shell = g.shells.fire(foe, { ammo: 'HE', spec: foe.spec.main!.he!, table: foe.tableFor('HE')!, fromX: foe.pos.x, fromY: 20, fromZ: foe.pos.z, toX: me.pos.x, toZ: me.pos.z, dmgMul: 1, guaranteedFire: false, railgun: false, secondary: true });
+    until(g, () => gap(shell, me.pos) < 1500, 10);
+    expect(me.activateSkill(Z), me.skillFailure).toBe(true);
+    until(g, () => !shell.alive, 5);
+    const back = g.shells.shells.find((p) => p.owner === me)!;
+    expect(back.secondary).toBe(true);
   });
   it('Polarity Mirror sends back only fresh fire, so two opposing bubbles cannot juggle a shell', () => {
     const { g, me, foe } = duel(-3000);

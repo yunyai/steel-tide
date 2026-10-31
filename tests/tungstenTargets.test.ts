@@ -3,7 +3,7 @@ import { cubeTargets } from '../src/core/Targeting';
 import { PlayerController } from '../src/player/PlayerController';
 import { AIController } from '../src/ai/AIController';
 import { CUBE } from '../src/skills/misc/TungstenModes';
-import type { Cube, CubeState } from '../src/skills/misc/TungstenRuntime';
+import { overdrive, type Cube, type CubeState } from '../src/skills/misc/TungstenRuntime';
 import type { Input } from '../src/input/Input';
 import { bearingTo, wrapAngle } from '../src/core/math';
 import { emptyGame, place } from './helpers';
@@ -110,6 +110,38 @@ describe('locking a cube', () => {
     expect(pc.notice).toBe('Cube shattered');
   });
 
+  it('says an Overdrive cube that dissolves was dissolved, not shattered', () => {
+    const { g, foe, c, pc } = scene();
+    g.smokes.push({ x: foe.pos.x, z: foe.pos.z, r: 600, life: 30, team: 1 });
+    overdrive(foe);
+    const extra = foe.tungsten!.cubes[1];
+    c.state = 'docked';
+    park(extra, 0, -2000);
+    toggle(pc);
+    expect(pc.cubeLock?.cube).toBe(extra);
+    extra.gone = true;
+    pc.control(1 / 60, idle);
+    expect(pc.cubeLock).toBe(null);
+    expect(pc.notice).toBe('Cube dissolved');
+  });
+
+  it('lets go of an old Overdrive cube when Overdrive is cast again', () => {
+    const { g, foe, c, pc } = scene();
+    g.smokes.push({ x: foe.pos.x, z: foe.pos.z, r: 600, life: 30, team: 1 });
+    overdrive(foe);
+    const t = foe.tungsten!;
+    const old = t.cubes[1];
+    c.state = 'docked';
+    park(old, 0, -2000);
+    toggle(pc);
+    expect(pc.cubeLock?.cube).toBe(old);
+    t.overdriveUntil = 0;
+    overdrive(foe);
+    expect(t.cubes).not.toContain(old);
+    pc.control(1 / 60, idle);
+    expect(pc.cubeLock).toBe(null);
+  });
+
   it('turns the gamepad camera to follow the locked cube', () => {
     const { me, c, pc } = scene('pad0');
     toggle(pc, true);
@@ -174,6 +206,20 @@ describe('AI and cubes', () => {
     expect(me.control.fire).toBe(true);
     expect(me.control.aimX).toBeCloseTo(c.x, 0);
     expect(me.control.aimZ).toBeCloseTo(c.z, 0);
+  });
+
+  it('fires its ready torpedoes under a hovering cube rather than shelling the cube', () => {
+    const g = emptyGame();
+    const me = place(g, 'shimakaze', 0, 0, 0);
+    const reach = me.spec.torpedoes!.range * 0.6;
+    const foe = place(g, 'tungsten', 1, 0, -reach);
+    const c = foe.tungsten!.cubes[0];
+    park(c, 0, -reach * 0.5);
+    const ai = new AIController(me, g);
+    think(ai);
+    expect(me.launchers.some((l) => l.reload <= 0)).toBe(true);
+    expect(me.slots[me.control.slot!].kind).toBe('torp');
+    expect(me.control.fire).toBe(true);
   });
 
   it('ignores a guarding cube', () => {
