@@ -5,7 +5,7 @@ export const CUBE = {
   /** Centre height when hovering over water, its base 6 m clear. */
   hoverY: 70,
   /** Gap between the dais and a docked cube's base (m). */
-  float: 40,
+  float: 30,
   hp: 2500000,
   /** Seconds a shattered cube takes to re-form on the magnet. */
   reform: 12,

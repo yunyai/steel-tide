@@ -123,7 +123,7 @@ describe('cube size', () => {
     const { g, me, t } = duel();
     run(g, 0.05);
     expect(CUBE.edge).toBe(128);
-    expect(CUBE.float).toBe(40);
+    expect(CUBE.float).toBe(30);
     expect(t.cubes[0].y).toBeCloseTo(dockLift(me.spec));
     expect(dockLift(me.spec) - CUBE.edge / 2).toBeCloseTo(me.spec.freeboard + CUBE.float);
   });
