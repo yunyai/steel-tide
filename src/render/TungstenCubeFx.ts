@@ -1023,7 +1023,8 @@ export class TungstenCubeFx {
       }
       case 'mirror': {
         // A shell turned on the bubble: a flash where it struck, and a streak flung back toward its firer.
-        if (age < 0.1) p.push(BK.Flare, e.x, e.y, e.z, 90, hot(color, 2), 1 - age / 0.1);
+        if (age < 0.18) p.push(BK.Flare, e.x, e.y, e.z, 170, hot(color, 2.2), 1 - age / 0.18);
+        this.paint.loop(e.x, e.y, e.z, 20 + 70 * ease(age / 0.25), hot(WHITE, 2), 0.8 * (1 - clamp01(age / 0.3)));
         const dx = b.tx - e.x,
           dz = b.tz - e.z,
           d = Math.hypot(dx, dz) || 1;
