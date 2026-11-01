@@ -2,8 +2,8 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
-import type { ClientMsg, LobbyState, ServerMsg, Turn } from '../src/net/protocol';
-import { SIM_PROTOCOL } from '../src/net/protocol';
+import type { ClientMsg, LobbyState, SandboxCmd, ServerMsg, Turn } from '../src/net/protocol';
+import { MAX_DUMMIES, SIM_PROTOCOL } from '../src/net/protocol';
 import { ERAS, eraOf } from '../src/data/factions';
 import { SHIPS, SHIP_BY_ID } from '../src/data/ships';
 import { readFileSync } from 'node:fs';
@@ -559,6 +559,38 @@ describe('AI counts and free play', () => {
     expect(ended.turn.ev).toEqual([{ end: 1 }]);
     await wait(60);
     expect(cs[1].turns().flatMap((t) => t.ev ?? []).filter((e) => 'end' in e)).toHaveLength(1);
+  });
+
+  it("passes the host's sandbox commands, cleaned and at most 4 a turn, and nobody else's", async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    const commands = () => cs[1].turns().flatMap((t) => (t.ev ?? []).flatMap((e) => ('sb' in e ? [e.sb] : [])));
+    // Not a sandbox: refused.
+    cs[0].send({ t: 'settings', s: { type: 'freeplay' } });
+    await cs[1].next('lobby', (m) => m.lobby!.settings.type === 'freeplay');
+    await battle(cs);
+    cs[0].send({ t: 'sandbox', cmd: { k: 'respawn' } });
+    await wait(60);
+    expect(commands()).toEqual([]);
+    cs[0].send({ t: 'end' });
+    await cs[1].next('turn', (m) => !!m.turn.ev?.some((e) => 'end' in e));
+    for (const c of cs) c.send({ t: 'over' });
+    await cs[0].next('ended', undefined, 3000);
+
+    cs[0].send({ t: 'settings', s: { type: 'sandbox', ai: [3, 3] } });
+    await cs[1].next('lobby', (m) => m.lobby!.settings.type === 'sandbox');
+    const [start] = await battle(cs);
+    expect(start.config).toMatchObject({ type: 'sandbox', ai: [0, 0] });
+    cs[1].send({ t: 'sandbox', cmd: { k: 'clear' } });
+    cs[0].send({ t: 'sandbox', cmd: { k: 'nuke' } as never });
+    cs[0].send({ t: 'sandbox', cmd: { k: 'spawn', ship: 'fletcher', n: 99, team: 1, x: 0, z: 0, heading: 0, extra: 1 } as never });
+    for (let i = 0; i < 8; i++) cs[0].send({ t: 'sandbox', cmd: { k: 'mode', mode: 'sail' } });
+    await wait(150);
+    const sb = commands();
+    expect(sb[0]).toEqual<SandboxCmd>({ k: 'spawn', ship: 'fletcher', n: MAX_DUMMIES, team: 1, x: 0, z: 0, heading: 0 });
+    expect(sb.some((c) => c.k === 'clear' || (c.k as string) === 'nuke')).toBe(false);
+    expect(sb.length).toBeGreaterThan(1);
+    for (const t of cs[1].turns()) expect((t.ev ?? []).filter((e) => 'sb' in e).length).toBeLessThanOrEqual(4);
   });
 
   it('ends free play for everyone on a turn when it runs out of time, then stops the clock', async () => {

@@ -135,6 +135,8 @@ interface Battle {
 
 const DESYNC_COOLDOWN = 10000;
 const ABANDON_MS = 60000;
+/** Most sandbox commands the host gets into one turn. */
+const SANDBOX_PER_TURN = 4;
 
 function id(bytes = 6): string {
   return randomBytes(bytes).toString('hex');
@@ -231,6 +233,8 @@ export class LobbyServer {
         return this.sendLog(s);
       case 'away':
         return this.away(s, m.on);
+      case 'sandbox':
+        return this.sandbox(s, m.cmd);
     }
   }
 
@@ -656,6 +660,16 @@ export class LobbyServer {
     if (!l || !b || l.host !== s || !this.rules.hostEnds(l.settings) || !b.clock || b.ending) return;
     b.ending = true;
     b.events.push({ end: 1 });
+  }
+
+  /** The host changes a running sandbox: every peer applies the command on the same turn. */
+  private sandbox(s: Session, raw: unknown): void {
+    const l = s.lobby;
+    const b = l?.battle;
+    if (!l || !b || l.host !== s || l.settings.type !== 'sandbox' || !b.clock || b.ending) return;
+    if (b.events.filter((e) => 'sb' in e).length >= SANDBOX_PER_TURN) return;
+    const cmd = this.rules.cleanSandbox(raw);
+    if (cmd) b.events.push({ sb: cmd });
   }
 
   /** The battle is over for everyone: back to the waiting room. */

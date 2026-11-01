@@ -9,6 +9,7 @@ import { canTrack, contactVisible, proximityContact, revealSource } from '../cor
 import { cameraOccluded } from '../render/Visibility';
 import { Vector3 } from 'three';
 import { BATTLE_TIME_LIMIT, DOMINATION_WIN_SCORE, KNOT, SPEED_SCALE } from '../config';
+import { openPlay } from '../core/BattleSetup';
 import type { Game } from '../core/Game';
 import { dist2D } from '../core/math';
 import { PICKUP_COLOR, PICKUP_LABEL } from '../core/Pickups';
@@ -242,10 +243,10 @@ export class HUD {
       // Inside the panel: anything hung below it is cut off by the panel's clipped corners.
       e.timer = el('div', 'timer num', mid);
       if (!game.caps.length) bar.style.display = 'none';
-      if (game.config.type === 'freeplay') {
+      if (openPlay(game.config.type)) {
         e.scoreA.title = 'Enemy ships your fleet has sunk';
         e.scoreE.title = 'Your ships the enemy has sunk';
-        e.timer.title = 'Time in free play';
+        e.timer.title = game.sandbox ? 'Time in the sandbox' : 'Time in free play';
       }
       if (game.convoy) {
         e.convoy = el('div', 'convoy', mid);
@@ -727,7 +728,7 @@ export class HUD {
       e.dead.style.display = '';
       const back = g.respawnIn(me);
       // Free play: the ship you come back in, and where to change it (never opened for you).
-      const free = g.config.type === 'freeplay';
+      const free = openPlay(g.config.type);
       const title = back >= 0 ? `Back in ${Math.ceil(back)}…${free ? ` as ${(me.nextSpec ?? me.spec).name}` : ''}` : 'Ship lost';
       let sp = pc.focus !== me && pc.focus.alive ? `Watching ${captainName(pc.focus)}. Fire to switch ship.` : back >= 0 ? 'A fresh hull is fitting out.' : 'Your crew abandons ship.';
       if (free && back >= 0) sp += ` ${pc.padIndex >= 0 ? 'Start' : 'Esc'}: change ship.`;
@@ -751,7 +752,7 @@ export class HUD {
   private updateScore(team: Team, enemy: Team): void {
     const g = this.game;
     const e = this.e;
-    const free = g.config.type === 'freeplay';
+    const free = openPlay(g.config.type);
     if (g.caps.length) {
       setText(e.scoreA, String(Math.max(0, Math.round(g.score[team]))));
       setText(e.scoreE, String(Math.max(0, Math.round(g.score[enemy]))));

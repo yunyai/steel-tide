@@ -89,7 +89,7 @@ export class Input {
   }
 
   private isGameKey(code: string): boolean {
-    return this.bound.has(code) || code === 'Space' || code === 'Tab' || code === 'F3' || code.startsWith('Arrow') || code === 'Quote' || code === 'Slash';
+    return this.bound.has(code) || code === 'Space' || code === 'Tab' || code === 'F3' || code === 'F6' || code === 'F7' || code === 'F8' || code.startsWith('Arrow') || code === 'Quote' || code === 'Slash';
   }
 
   /** Mouse movement and buttons drive the ship (pointer locked, or lock unavailable). */

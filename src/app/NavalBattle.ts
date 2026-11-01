@@ -2,7 +2,7 @@ import { ArchitectBatteryAudio } from '../fx/ArchitectBatteryAudio';
 import { applyArchitectRefits } from '../ui/ArchitectEditorState';
 import { refitArchitect } from '../skills/misc/ArchitectRuntime';
 import { Vector3 } from 'three';
-import { type BattleConfig, defaultAssist } from '../core/BattleSetup';
+import { type BattleConfig, defaultAssist, openPlay } from '../core/BattleSetup';
 import { configEras } from '../data/eras';
 import type { Game } from '../core/Game';
 import type { ShipSpec } from '../core/types';
@@ -17,6 +17,8 @@ import { emptyControl, type Ship } from '../ships/Ship';
 import { h } from '../ui/dom';
 import { HUD } from '../ui/HUD';
 import { PerfPanel } from '../ui/PerfPanel';
+import { SandboxHud } from '../ui/SandboxHud';
+import { buildSandboxPanel } from '../ui/SandboxPanel';
 import { buildPause, buildReport, buildScoreboard, type PauseExtra } from '../ui/Results';
 import { buildSettings } from '../ui/SettingsSheet';
 import { buildShipPicker } from '../ui/ShipPicker';
@@ -76,6 +78,8 @@ export class NavalBattle implements ActiveBattle {
   private batteryAudio:ArchitectBatteryAudio;
   /** The performance readout, while it is switched on. */
   private perf: PerfPanel | null = null;
+  /** Sandbox: the damage meter and combo log. */
+  private sandboxHud: SandboxHud | null = null;
   private off: (() => void)[] = [];
   /** Seconds of slow motion left. */
   private slow = 0;
@@ -115,6 +119,8 @@ export class NavalBattle implements ActiveBattle {
       return h;
     });
 
+    if (game.sandbox) this.sandboxHud = new SandboxHud(hudLayer, game, () => this.mine);
+
     const fx = this.scene.effects;
     fx.locals = humans;
     this.scene.skillFx.locals = humans;
@@ -148,7 +154,7 @@ export class NavalBattle implements ActiveBattle {
         const me = this.mine;
         if (rush && me) this.newBest = saveBest(me.base.id, rush.wave, rush.total, rush.survival);
         const win = g.winner !== -1 && g.winner === me?.team;
-        audio.ui(win || config.type === 'freeplay' ? 'victory' : 'defeat');
+        audio.ui(win || openPlay(config.type) ? 'victory' : 'defeat');
         link?.over();
       }),
       game.events.view('blink', e => {
@@ -233,6 +239,7 @@ export class NavalBattle implements ActiveBattle {
     for (const f of this.off) f();
     for (const h of this.huds) h.dispose();
     this.perf?.dispose();
+    this.sandboxHud?.dispose();
     hudLayer.replaceChildren();
     overlayLayer.replaceChildren();
     // An empty overlay layer left catching the pointer would swallow clicks on the next battle's view.
@@ -298,7 +305,16 @@ export class NavalBattle implements ActiveBattle {
         },
       },
     ];
-    if (this.config.type === 'freeplay' && this.pcs.length) {
+    if (this.game.sandbox) {
+      extra.push({
+        label: 'Sandbox tools',
+        run: () => {
+          audio.ui('click');
+          this.showSandboxPanel(true);
+        },
+      });
+    }
+    if (openPlay(this.config.type) && this.pcs.length) {
       extra.push({
         label: 'Change ship',
         run: () => {
@@ -337,6 +353,32 @@ export class NavalBattle implements ActiveBattle {
     );
   }
 
+  /** The Sandbox tools sheet; from the battle menu its way back is the menu, from F6 the battle. */
+  private showSandboxPanel(fromMenu: boolean): void {
+    const hud = this.sandboxHud;
+    if (!this.game.sandbox || !hud) return;
+    const link = this.link;
+    const panel = buildSandboxPanel({
+      game: this.game,
+      me: () => this.mine,
+      canEdit: !link || link.host,
+      send: (cmd) => (link ? link.sandbox(cmd) : this.game.sandbox!.apply(cmd)),
+      meter: hud,
+      click: () => audio.ui('click'),
+      back: fromMenu ? () => this.showPauseMenu() : () => this.setPaused(false),
+      backLabel: fromMenu ? 'Back' : 'Resume battle',
+    });
+    this.setOverlay(panel.el);
+    this.pickerSync = panel.sync;
+  }
+
+  /** F6 opens the Sandbox tools over the battle, and closes them again. */
+  private toggleSandboxPanel(): void {
+    if (this.overlay?.querySelector('.sandbox-panel')) return this.setPaused(false);
+    if (!this.paused) this.setPaused(true);
+    this.showSandboxPanel(false);
+  }
+
   private openShipPicker(): void {
     const pc = this.pcs[0];
     if (!pc) return;
@@ -346,8 +388,9 @@ export class NavalBattle implements ActiveBattle {
         if(this.link){this.link.lockstep.sendEdge({ar:{index,pick}});return 'pending';}
         return refitArchitect(this.pcs[0].ship,index,pick);
       }),
-      era: configEras(this.config),
-      titans: this.config.titans !== false,
+      // Sandbox: any ship, whatever the battle's eras and titan rule.
+      era: this.game.sandbox ? 'mixed' : configEras(this.config),
+      titans: !!this.game.sandbox || this.config.titans !== false,
       click: () => audio.ui('click'),
       back: () => this.showPauseMenu(),
       pick: (spec, now) => {
@@ -386,7 +429,7 @@ export class NavalBattle implements ActiveBattle {
     }
     this.paused = false;
     this.setOverlay(null);
-    this.game.finish(-1, 'You ended free play');
+    this.game.finish(-1, this.game.sandbox ? 'You ended the sandbox' : 'You ended free play');
     this.reportIn = 0.4;
   }
 
@@ -469,6 +512,12 @@ export class NavalBattle implements ActiveBattle {
     const link = this.link;
     this.batteryAudio.update(this.pcs.map(pc=>pc.ship));
     if (input.pressed('F3')) setDisplay({ perf: !display().perf });
+    const hud = this.sandboxHud;
+    if (hud && !this.ended) {
+      if (input.pressed('F6')) this.toggleSandboxPanel();
+      if (input.pressed('F7')) hud.visible = !hud.visible;
+      if (input.pressed('F8')) hud.reset();
+    }
     const padPause = this.pcs.some((p) => p.padIndex >= 0 && input.padPressed(p.padIndex, PAD_START));
     if (!this.ended && (input.pressed('Escape') || padPause)) {
       // Esc also releases the pointer lock (which pauses); it must not then immediately resume.
@@ -511,6 +560,7 @@ export class NavalBattle implements ActiveBattle {
     renderer.render(this.viewports);
     const t3 = performance.now();
     for (const h of this.huds) h.update(dt);
+    this.sandboxHud?.update(dt);
     this.pickerSync?.();
     this.measure(dt, t0, t1, t2, t3);
 

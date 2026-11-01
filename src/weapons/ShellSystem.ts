@@ -346,7 +346,9 @@ export class ShellSystem {
     let damage = 0;
     if (res.factor > 0) {
       const raw = s.spec.damage * res.factor * s.dmgMul * (s.ammo === 'AP' ? ship.mods.apTakenMul : 1) * s.owner.critMul(ship) * (s.element?.docked ? dockedHitMul(s.element.docked, ship) : 1);
+      g.hitKind = s.bomb ? 'air' : s.secondary ? 'secondary' : 'gun';
       damage = ship.takeDamage(res.outcome === 'citadel' ? raw : ship.zoneDamage(res.zone, raw), s.owner, s.skill ?? null);
+      g.hitKind = 'gun';
       // A citadel hit that sinks the ship sets off its magazines.
       if (!ship.alive && res.outcome === 'citadel' && !s.secondary) ship.detonate(s.owner);
     }

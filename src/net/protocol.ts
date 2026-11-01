@@ -59,11 +59,32 @@ export interface Edge {
   rd?: 1;
 }
 
+/** Sandbox cheats the host switches on for every captain. */
+export const SANDBOX_CHEATS = ['cooldowns', 'ult', 'consumables', 'god', 'tough'] as const;
+export type SandboxCheat = (typeof SANDBOX_CHEATS)[number];
+/** What sandbox dummies do: sit still and hold fire, sail a square, or fight like AI ships. */
+export const DUMMY_MODES = ['idle', 'sail', 'fight'] as const;
+export type DummyMode = (typeof DUMMY_MODES)[number];
+/** Most dummies a sandbox holds at once. */
+export const MAX_DUMMIES = 16;
+
+/** One change to a sandbox: every peer applies it on the same turn (solo applies it at once). */
+export type SandboxCmd =
+  | { k: 'cheat'; cheat: SandboxCheat; on: boolean }
+  /** `n` dummies of `ship` in a row abreast, centred on x, z, bows toward `heading`. */
+  | { k: 'spawn'; ship: string; n: number; team: Team; x: number; z: number; heading: number }
+  | { k: 'mode'; mode: DummyMode }
+  /** Every dummy back at its post, afloat and whole. */
+  | { k: 'respawn' }
+  /** Every dummy gone. */
+  | { k: 'clear' };
+
 /**
- * Something every peer applies at the start of a turn: a captain handed to the AI or back, or
- * Free play ending (1: the host ended it; 2: it reached the server's time limit).
+ * Something every peer applies at the start of a turn: a captain handed to the AI or back,
+ * Free play or Sandbox ending (1: the host ended it; 2: it reached the server's time limit), or
+ * the host's sandbox command.
  */
-export type TurnEvent = { ai: number } | { human: number } | { end: 1 | 2 };
+export type TurnEvent = { ai: number } | { human: number } | { end: 1 | 2 } | { sb: SandboxCmd };
 
 /** One lockstep turn: changed continuous orders, edges by tick, and events. */
 export interface Turn {
@@ -141,6 +162,8 @@ export type ClientMsg =
   | { t: 'resync' }
   /** The tab was hidden (`on`) or shown again. */
   | { t: 'away'; on: boolean }
+  /** The host changes the sandbox. */
+  | { t: 'sandbox'; cmd: SandboxCmd }
   | { t: 'ping' };
 
 export type ServerMsg =

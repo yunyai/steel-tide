@@ -1691,6 +1691,7 @@ export class Ship {
    */
   takeDamage(amount: number, attacker: Ship | null, skill: SkillSpec | null = null, reflected = false, pierce = false, periodic = false, forwarded = false): number {
     if (!this.alive || amount <= 0) return 0;
+    if (this.game.sandbox?.protects(this)) return 0;
     if (pierce && (this.mods.banished || this.effects.some((e) => e.id === 'spawn' || e.id === 'revived'))) return 0;
     if (this.mods.invulnerable && !pierce) return 0;
     if (incomingStep(this, attacker, reflected, pierce, periodic)) return 0;
@@ -1754,13 +1755,14 @@ export class Ship {
     }
     if (hostile) this.intake += raw;
     let dmg = Math.min(this.hp, raw);
-    if (this.mods.undying) dmg = Math.max(0, Math.min(dmg, this.hp - 1));
+    if (this.mods.undying || this.game.sandbox?.undying(this)) dmg = Math.max(0, Math.min(dmg, this.hp - 1));
     if (dmg > 0 && this.stepper?.repair) {
       this.stepper.repair = null;
       this.stepper.repairInterruptedUntil = this.game.time + 2;
     }
     this.hp -= dmg;
     this.stats.received += dmg;
+    if (dmg > 0) this.game.events.emit('damage', { target: this, attacker, amount: dmg, skill, kind: reflected ? 'reflect' : periodic ? 'dot' : skill ? 'skill' : this.game.hitKind });
     if (hostile) {
       // Taking punishment charges the meter too, at a lower rate: a way back into the fight.
       this.charge(dmg * ULT_DAMAGE_CHARGE * ULT_TAKEN_CHARGE);

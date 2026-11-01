@@ -271,6 +271,7 @@ export class AircraftSystem {
           tp.damage *= sq.damageMul;
           tp.skill = sq.skill;
           tp.onHit = sq.onHit;
+          tp.air = true;
         }
         g.events.emit('torpLaunched', { ship: sq.owner, x: sq.x, z: sq.z, count: sq.planes });
         sq.state = 'return';

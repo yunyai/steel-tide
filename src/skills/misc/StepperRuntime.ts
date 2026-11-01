@@ -297,6 +297,14 @@ export function incomingStep(
     }
   return false;
 }
+/** Sandbox: the sidestep ready again and the repair free to start. */
+export function refreshStepper(s: Ship): void {
+  const st = s.stepper;
+  if (!st) return;
+  st.dodgeReady = Math.min(st.dodgeReady, s.game.time);
+  st.repairInterruptedUntil = Math.min(st.repairInterruptedUntil, s.game.time);
+}
+
 export function clearStepper(s: Ship): void {
   if (!s.stepper) return;
   for (const id of s.stepper.copies) {

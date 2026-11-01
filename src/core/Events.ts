@@ -10,6 +10,9 @@ export type TungstenEventKind =
   | 'collapse' | 'collapseHold' | 'collapseBurst' | 'meteorRise' | 'meteorFall' | 'meteorImpact' | 'fragment'
   | 'overdrive' | 'overdriveEnd' | 'spent' | 'charged' | 'die' | 'mirror';
 
+/** How a hit landed, for the Sandbox DPS meter: set by the weapon system around `takeDamage`. */
+export type HitKind = 'gun' | 'secondary' | 'torp' | 'air' | 'missile' | 'skill' | 'dot' | 'reflect';
+
 export interface GameEventMap {
   gunFired: { ship: Ship; x: number; y: number; z: number; bearing: number; caliber: number; secondary: boolean; look?: GunLook };
   shellHit: {
@@ -50,6 +53,8 @@ export interface GameEventMap {
   skillEnd: { ship: Ship; index: number };
   /** Damage dealt by a skill (popups show it big, with the skill's name). */
   skillHit: { ship: Ship; attacker: Ship; skill: SkillSpec; damage: number };
+  /** Every bit of hull damage a ship takes, once, after armour and reductions. */
+  damage: { target: Ship; attacker: Ship | null; amount: number; skill: SkillSpec | null; kind: HitKind };
   /** A bolt between points; `straight` draws a clean laser line instead of a jagged one. */
   lightning: { points: { x: number; y: number; z: number }[]; color: number; straight?: boolean };
   strike: { strike: Strike };

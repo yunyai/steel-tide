@@ -8,7 +8,10 @@ import type { BattleEra, Era, EraSel, ShipClass, ShipSpec, Team } from './types'
 /** One captain at this screen, or several on a LAN (each peer runs the same battle in lockstep). */
 export type BattleMode = 'solo' | 'lan';
 /** Free play: no score to win and no clock; every ship comes back, and captains may change ship. */
-export type BattleType = 'domination' | 'annihilation' | 'convoy' | 'freeplay' | 'bossrush' | 'survival';
+export type BattleType = 'domination' | 'annihilation' | 'convoy' | 'freeplay' | 'sandbox' | 'bossrush' | 'survival';
+
+/** Free play and Sandbox: no result, sunk ships come back, captains change ship, the host ends it. */
+export const openPlay = (type: BattleType): boolean => type === 'freeplay' || type === 'sandbox';
 /** Convoy: your team guards the cargo ships, or hunts them. */
 export type ConvoySide = 'escort' | 'raid';
 export type DifficultyId = 'easy' | 'normal' | 'hard';

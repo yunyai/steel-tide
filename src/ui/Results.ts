@@ -1,4 +1,5 @@
 import { CLASS_LABEL } from '../data/ships';
+import { openPlay } from '../core/BattleSetup';
 import type { Game } from '../core/Game';
 import type { Team } from '../core/types';
 import type { Ship } from '../ships/Ship';
@@ -19,7 +20,7 @@ function button(label: string, cls: string, onClick: () => void): HTMLButtonElem
   return b;
 }
 
-const respawning = (game: Game) => game.config.type === 'domination' || game.config.type === 'freeplay';
+const respawning = (game: Game) => game.config.type === 'domination' || openPlay(game.config.type);
 
 function teamTable(game: Game, team: Team, ally: boolean, me: Ship | null, limit = Infinity): HTMLElement {
   const wrap = el('div');
@@ -125,8 +126,8 @@ export function buildReport(game: Game, humans: Ship[], newBest: boolean, action
     verdict.textContent = rush.cleared ? `${rush.wave} waves survived` : `Wave ${rush.wave}`;
     verdict.classList.add(rush.cleared ? 'win' : 'rush');
     if (newBest) verdict.append(el('span', 'badge', 'New best'));
-  } else if (game.config.type === 'freeplay') {
-    verdict.textContent = 'Free play over';
+  } else if (openPlay(game.config.type)) {
+    verdict.textContent = game.sandbox ? 'Sandbox over' : 'Free play over';
   } else if (game.winner === -1) {
     verdict.textContent = 'Draw';
   } else {
@@ -135,7 +136,7 @@ export function buildReport(game: Game, humans: Ship[], newBest: boolean, action
     verdict.classList.add(won ? 'win' : 'loss');
   }
   sheet.append(verdict, el('p', 'reason', game.reason));
-  if (game.config.type === 'freeplay') {
+  if (openPlay(game.config.type)) {
     const enemy: Team = viewTeam === 0 ? 1 : 0;
     const n = (k: number) => `${k} ${k === 1 ? 'ship' : 'ships'}`;
     sheet.append(el('p', 'reason', `Your fleet sank ${n(game.score[viewTeam])}; the enemy sank ${n(game.score[enemy])}.`));

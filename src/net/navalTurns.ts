@@ -54,7 +54,12 @@ export class TurnApplier implements LockstepSim {
       if (turn.ev) {
         for (const ev of turn.ev) {
           if ('end' in ev) {
-            if (!g.over) g.finish(-1, ev.end === 2 ? 'Free play reached its one-hour limit' : 'The host ended free play');
+            const name = g.sandbox ? 'the sandbox' : 'free play';
+            if (!g.over) g.finish(-1, ev.end === 2 ? `${name[0].toUpperCase()}${name.slice(1)} reached its one-hour limit` : `The host ended ${name}`);
+            continue;
+          }
+          if ('sb' in ev) {
+            g.sandbox?.apply(ev.sb);
             continue;
           }
           const s = this.ship('ai' in ev ? ev.ai : ev.human);

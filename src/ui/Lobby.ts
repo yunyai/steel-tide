@@ -1,9 +1,10 @@
 import { FleetEditor } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, SHIFT_TEMPOS, type ShiftTempo } from '../config';
-import type { DifficultyId } from '../core/BattleSetup';
+import { openPlay, type DifficultyId } from '../core/BattleSetup';
 import type { Era, ShipSpec, Team } from '../core/types';
 import { erasLabel } from '../data/eras';
+import { ERAS } from '../data/factions';
 import { CLASS_LABEL, SHIP_BY_ID, titansOf } from '../data/ships';
 import type { NetClient } from '../net/NetClient';
 import { type LobbySettings, type LobbyState, MAX_AI, MAX_PER_TEAM, type Member, NAME_MAX, type ServerMsg } from '../net/protocol';
@@ -24,8 +25,10 @@ export interface LobbyHooks {
   chooseShip(shipId: string, titans: boolean, eras: readonly Era[]): void;
 }
 
-const TYPE_LABEL: Record<LobbySettings['type'], string> = { domination: 'Domination', annihilation: 'Annihilation', convoy: 'Convoy', freeplay: 'Free play' };
+const TYPE_LABEL: Record<LobbySettings['type'], string> = { domination: 'Domination', annihilation: 'Annihilation', convoy: 'Convoy', freeplay: 'Free play', sandbox: 'Sandbox' };
 const FREEPLAY_NOTE = 'No score and no clock. Sunk ships come back after 8 s; change ship from the battle menu (Esc). The host ends it.';
+const SANDBOX_NOTE = 'Captains only, any ship of any era. The host spawns dummies and switches cheats on (F6, or Sandbox tools in the battle menu); everyone gets a damage meter (F7). The host ends it.';
+const typeNote = (t: LobbySettings['type']) => (t === 'freeplay' ? FREEPLAY_NOTE : t === 'sandbox' ? SANDBOX_NOTE : undefined);
 const TEAM_LABEL = ['Team A', 'Team B'];
 
 /** Fleet sizes as the battle will build them (see buildRoster): captains, the host's AI ships, and two more AI ships per enemy titan (only in a fleet that has AI). */
@@ -33,7 +36,8 @@ function fleetSizes(l: LobbyState): [number, number] {
   const humans = (t: Team) => l.members.filter((m) => m.team === t);
   const titans = (t: Team) => (l.settings.titans ? humans(t).filter((m) => SHIP_BY_ID[m.shipId]?.cls === 'TT').length : 0);
   const size = (t: Team) => {
-    const bots = l.settings.ai[t];
+    // A sandbox sails its captains alone.
+    const bots = l.settings.type === 'sandbox' ? 0 : l.settings.ai[t];
     return humans(t).length + bots + (bots > 0 ? titans(t === 0 ? 1 : 0) * 2 : 0);
   };
   return [size(0), size(1)];
@@ -232,7 +236,7 @@ export class Lobby {
         const map = MAPS.find((m) => m.id === l.mapId)?.name ?? l.mapId;
         b.append(
           h('span', { class: 'who' }, title, host),
-          h('span', { class: 'what' }, `${TYPE_LABEL[l.type]}, ${map}${Array.isArray(l.eras) ? `, ${erasLabel(l.eras)}` : ''}`),
+          h('span', { class: 'what' }, `${TYPE_LABEL[l.type]}, ${map}${Array.isArray(l.eras) && l.type !== 'sandbox' ? `, ${erasLabel(l.eras)}` : ''}`),
           h('span', { class: 'num count' }, `${l.captains} ${l.captains === 1 ? 'captain' : 'captains'}`),
           h('span', { class: `state ${l.state}` }, l.state === 'battle' ? 'In battle' : 'Waiting'),
         );
@@ -264,14 +268,15 @@ export class Lobby {
     const set = (s: Partial<LobbySettings>) => n.send({ t: 'settings', s });
 
     const settings = h('div', { class: 'lan-settings' });
+    const sandbox = st.type === 'sandbox';
     const mapName = MAPS.find((m) => m.id === st.mapId)?.name ?? st.mapId;
     if (host) {
       const sg = <T extends string | number>(opts: { value: T; label: string }[], get: () => T, put: (v: T) => void) => seg(opts, get, put, () => this.hooks.click(), `lobby-setting-${opts[0].label}`);
       settings.append(
         field(
           'Battle type',
-          sg<LobbySettings['type']>((['domination', 'annihilation', 'convoy', 'freeplay'] as const).map((v) => ({ value: v, label: TYPE_LABEL[v] })), () => st.type, (v) => set({ type: v })),
-          st.type === 'freeplay' ? FREEPLAY_NOTE : undefined,
+          sg<LobbySettings['type']>((['domination', 'annihilation', 'convoy', 'freeplay', 'sandbox'] as const).map((v) => ({ value: v, label: TYPE_LABEL[v] })), () => st.type, (v) => set({ type: v })),
+          typeNote(st.type),
         ),
       );
       if (st.type === 'convoy') settings.append(field('Transports sail with', sg<Team>([0, 1].map((t) => ({ value: t as Team, label: TEAM_LABEL[t] })), () => st.escortTeam, (v) => set({ escortTeam: v }))));
@@ -281,22 +286,26 @@ export class Lobby {
       );
       settings.append(field('Titan Shift', sg<ShiftTempo>((Object.keys(SHIFT_TEMPOS) as ShiftTempo[]).map(value => ({ value, label: SHIFT_TEMPOS[value].label })), () => st.shiftTempo ?? 'staggered', shiftTempo => set({ shiftTempo }))));
       // Anime has no hangar titans (its ships become titans by Titan Shift), so the switch has nothing to gate.
-      if (titansOf(st.eras).length) settings.append(field('Titans', sg([{ value: 1, label: 'Allowed' }, { value: 0, label: 'Not allowed' }], () => (st.titans ? 1 : 0), (v) => set({ titans: v === 1 }))));
-      settings.append(field('Eras', eraSeg(() => st.eras, (eras) => set({ eras }), () => this.hooks.click(), 'lobby-setting-era')));
+      // A sandbox takes any ship, so neither its titans nor its eras are settings.
+      if (!sandbox) {
+        if (titansOf(st.eras).length) settings.append(field('Titans', sg([{ value: 1, label: 'Allowed' }, { value: 0, label: 'Not allowed' }], () => (st.titans ? 1 : 0), (v) => set({ titans: v === 1 }))));
+        settings.append(field('Eras', eraSeg(() => st.eras, (eras) => set({ eras }), () => this.hooks.click(), 'lobby-setting-era')));
+      }
     } else {
       const facts: [string, string][] = [
         ['Battle type', TYPE_LABEL[st.type] + (st.type === 'convoy' ? `, transports with ${TEAM_LABEL[st.escortTeam]}` : '')],
         ['Map', mapName],
         ['AI skill', DIFFICULTIES[st.difficulty].label],
-        ...(titansOf(st.eras).length ? [['Titans', st.titans ? 'Allowed' : 'Not allowed'] as [string, string]] : []),
-        ['Eras', erasLabel(st.eras)],
+        ...(titansOf(st.eras).length && !sandbox ? [['Titans', st.titans ? 'Allowed' : 'Not allowed'] as [string, string]] : []),
+        ...(sandbox ? [] : [['Eras', erasLabel(st.eras)] as [string, string]]),
         ['Titan Shift', SHIFT_TEMPOS[st.shiftTempo ?? 'staggered'].label],
       ];
       settings.append(h('dl', { class: 'lan-facts' }, ...facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));
-      if (st.type === 'freeplay') settings.append(h('p', { class: 'note' }, FREEPLAY_NOTE));
+      const note = typeNote(st.type);
+      if (note) settings.append(h('p', { class: 'note' }, note));
     }
 
-    const poolError = selectionError(st.aiSelection, st.eras, st.titans, st.ai);
+    const poolError = sandbox ? null : selectionError(st.aiSelection, st.eras, st.titans, st.ai);
     if (poolError) settings.append(h('p', { class: 'note error', role: 'alert' }, poolError));
     const sizes = fleetSizes(l);
     const myTeam = me?.team ?? 0;
@@ -310,6 +319,7 @@ export class Lobby {
         head.append(sw);
       }
       col.append(head, ...members.map((m) => this.memberRow(l, m, me)));
+      if (sandbox) return col;
       const ai = sizes[t] - members.length;
       // The titan answer: AI ships the host did not set, added against the other side's titans.
       const extra = ai - st.ai[t];
@@ -335,12 +345,12 @@ export class Lobby {
     if (l.state === 'battle') {
       notes.push(h('p', { class: 'lan-status' }, me && me.player >= 0 ? 'Your battle is still being fought.' : 'A battle is under way. You sail in the next one.'));
     } else if (me) {
-      actions.append(this.act('Choose ship', 'btn', () => this.hooks.chooseShip(me.shipId, st.titans, st.eras)));
+      actions.append(this.act('Choose ship', 'btn', () => (sandbox ? this.hooks.chooseShip(me.shipId, true, ERAS) : this.hooks.chooseShip(me.shipId, st.titans, st.eras))));
       if (host) {
         const waiting = l.members.filter((m) => m.id !== me.id && m.connected && !m.ready);
         const start = this.act('Start battle', 'btn-primary', () => n.send({ t: 'start' }));
         start.dataset.focus = '';
-        const empty = st.type === 'freeplay' ? -1 : sizes.findIndex((n) => n === 0);
+        const empty = openPlay(st.type) ? -1 : sizes.findIndex((n) => n === 0);
         if (waiting.length) {
           start.disabled = true;
           const names = waiting.map((m) => m.name);

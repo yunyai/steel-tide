@@ -338,7 +338,7 @@ export class Menu {
     }));
     const fleetControls = h('div', { class: 'fleet-controls' }, ...editors.map((e) => e.el));
     const renderFleets = () => {
-      fleetControls.hidden = kind !== 'battle';
+      fleetControls.hidden = kind !== 'battle' || d.type === 'sandbox';
       if (kind === 'battle') editors.forEach((e, t) => e.update(fleetProps(t as Team)));
     };
     const notes = () => {
@@ -352,12 +352,19 @@ export class Menu {
               : 'Four transports sail for a port on the far side. Sink three of them before they make it. One life each.'
             : d.type === 'freeplay'
               ? 'No score to win and no clock. Every sunk ship comes back after 8 seconds; change ship from the battle menu (Esc), and end the battle there when you are done.'
-              : 'No zones. The last fleet afloat wins; at the 15 minute mark, remaining hit points decide.';
+              : d.type === 'sandbox'
+                ? 'Your ship alone on a quiet sea, with tools: spawn dummies to shoot at, switch on cheats and read your damage per second. F6 opens the tools (or Sandbox tools in the battle menu). Any ship of any era; you come back 3 seconds after sinking.'
+                : 'No zones. The last fleet afloat wins; at the 15 minute mark, remaining hit points decide.';
       side.hidden = d.type !== 'convoy';
-      for (const f of shipCount) f.hidden = d.type === 'freeplay';
+      for (const f of shipCount) f.hidden = d.type === 'freeplay' || d.type === 'sandbox';
       for (const f of aiCount) f.hidden = d.type !== 'freeplay';
+      // A sandbox has no fleets and takes any ship, so neither the fleets nor the eras apply.
+      if (fleetsGroup) fleetsGroup.hidden = kind === 'battle' && d.type === 'sandbox';
+      if (eraField) eraField.hidden = kind === 'battle' && d.type === 'sandbox';
       mapNote.textContent = MAPS.find((x) => x.id === d.mapId)!.description;
     };
+    let fleetsGroup: HTMLElement | null = null;
+    let eraField: HTMLElement | null = null;
     notes();
     const rushNote = () =>
       this.rushType === 'survival'
@@ -386,7 +393,7 @@ export class Menu {
     if (LIVE_ERAS.length > 1) {
       const eraNote = h('p', { class: 'note' }, erasBlurb(configEras(d)));
       fields.push(
-        this.field(
+        (eraField = this.field(
           'Era',
           eraSeg(
             () => configEras(d),
@@ -404,7 +411,7 @@ export class Menu {
             () => this.hooks.click(),
           ),
           eraNote,
-        ),
+        )),
       );
     }
     fields.push(tempo);
@@ -418,10 +425,15 @@ export class Menu {
               { value: 'annihilation', label: 'Annihilation' },
               { value: 'convoy', label: 'Convoy' },
               { value: 'freeplay', label: 'Free play' },
+              { value: 'sandbox', label: 'Sandbox' },
             ],
             () => d.type,
             (v) => {
               d.type = this.battleType = v;
+              // Leaving a sandbox, the captain's ship has to come from the battle's eras again.
+              const pc = d.players[0];
+              const cur = SHIP_BY_ID[pc.shipId];
+              if (v !== 'sandbox' && !configEras(d).includes(eraOf(cur))) pc.shipId = eraDefault(configEras(d), cur).id;
               notes();
             },
           ),
@@ -491,9 +503,10 @@ export class Menu {
       'div',
       { class: 'sheet panel setup naval-setup' },
       tabs,
-      h('div', { class: 'setup-body' }, group('Battle', fields), group('Fleets', fleets), group('Rules', rules)),
+      h('div', { class: 'setup-body' }, group('Battle', fields), (fleetsGroup = group('Fleets', fleets)), group('Rules', rules)),
       h('div', { class: 'sheet-actions' }, this.act('Back', 'btn-quiet', () => this.showTitle()), next),
     );
+    notes();
     this.mount(el);
     next.focus({ preventScroll: true });
   }
@@ -504,7 +517,7 @@ export class Menu {
     const lan = flow === 'lan' ? this.lan : null;
     // A battle fixes its eras; plain browsing opens every era. An era with nothing to pick (Misc's lone
     // titan when the lobby bars titans) gets no tab.
-    const battleEras: Era[] = lan ? lan.eras : flow ? configEras(d) : LIVE_ERAS;
+    const battleEras: Era[] = lan ? lan.eras : flow && !(flow === 'battle' && d.type === 'sandbox') ? configEras(d) : LIVE_ERAS;
     const eras = battleEras.filter((e) => shipsOf(e).some((s) => !lan || lan.titans || s.cls !== 'TT'));
     if (!eras.includes(eraOf(SHIP_BY_ID[pc.shipId]))) pc.shipId = eraDefault(eras, SHIP_BY_ID[pc.shipId]).id;
     if (lan && !lan.titans && SHIP_BY_ID[pc.shipId].cls === 'TT') pc.shipId = shipsIn(eras).find((s) => s.cls !== 'TT')!.id;
@@ -694,7 +707,12 @@ export class Menu {
       d.seed = Math.floor(Math.random() * 1e9);
       const config = structuredClone(d);
       if (config.type === 'freeplay') config.ai = [this.freeAi[0], this.freeAi[1]];
-      const error = selectionError(config.aiSelection, configEras(config), config.titans !== false, config.ai);
+      // A sandbox starts with its captain alone: no fleets to choose or check.
+      if (config.type === 'sandbox') {
+        config.ai = [0, 0];
+        delete config.aiSelection;
+      }
+      const error = config.type === 'sandbox' ? null : selectionError(config.aiSelection, configEras(config), config.titans !== false, config.ai);
       if (error) { startError.textContent = error; return; }
       this.hooks.start(config);
     };

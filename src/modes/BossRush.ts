@@ -10,6 +10,7 @@ import { SHIP_BY_ID, bossesOf } from '../data/ships';
 import type { Ship } from '../ships/Ship';
 import { copyLoadout } from '../data/architectLoadout';
 import { setArchitectLoadout } from '../skills/misc/ArchitectRuntime';
+import { findOpenWater } from '../world/openWater';
 
 // Boss Rush: the player holds the middle of the map against escalating waves, with a titan
 // every fifth wave. Between waves: a repair, then one of three stacking refit upgrades.
@@ -311,7 +312,7 @@ export class BossRush {
       const spec: ShipSpec = slot.startsWith('titan:') ? this.titan(Number(slot.slice(6))) : randomOf(slot as Group, g.rng, configEras(g.config));
       const a = away + (i - (slots.length - 1) / 2) * 0.12;
       const r = MAP_HALF * 0.82;
-      const pos = this.openWater(Math.cos(a) * r, Math.sin(a) * r);
+      const pos = findOpenWater(this.game.map, Math.cos(a) * r, Math.sin(a) * r);
       const heading = bearingTo(pos.x, pos.z, player.pos.x, player.pos.z);
       const s = g.addShip(spec, 1 as Team, spec.cls === 'TT' ? spec.name.toUpperCase() : spec.name, pos.x, pos.z, heading);
       const titan = spec.cls === 'TT';
@@ -351,19 +352,6 @@ export class BossRush {
     if (this.waveShield > 0 && player.alive) player.addShield(player.maxHp * this.waveShield, 30);
     this.phase = 'fight';
     g.events.emit('wave', { wave: this.wave, boss: this.boss });
-  }
-
-  private openWater(x: number, z: number): { x: number; z: number } {
-    const map = this.game.map;
-    for (let i = 0; i < 24; i++) {
-      // Spiral inward until there is deep water around the hull.
-      const k = 1 - i * 0.03;
-      const a = i * 0.7;
-      const px = x * k + Math.cos(a) * i * 40;
-      const pz = z * k + Math.sin(a) * i * 40;
-      if (map.heightAt(px, pz) < -12 && map.heightAt(px + 200, pz) < -6 && map.heightAt(px - 200, pz) < -6) return { x: px, z: pz };
-    }
-    return { x: x * 0.7, z: z * 0.7 };
   }
 
   /** Three different upgrades for the intermission. */

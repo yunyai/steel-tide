@@ -1,4 +1,5 @@
 import type { Lockstep } from '../net/Lockstep';
+import type { SandboxCmd } from '../net/protocol';
 
 /** A battle on screen, of whatever kind: the shell runs it every frame and disposes of it when it closes. */
 export interface ActiveBattle {
@@ -17,8 +18,10 @@ export interface BattleLink {
   frame(dt: number): void;
   /** The battle has ended on this peer. */
   over(): void;
-  /** The host ends a Free play battle for everyone. */
+  /** The host ends a Free play or Sandbox battle for everyone. */
   end(): void;
+  /** The host changes the sandbox: every peer applies it on the same turn. */
+  sandbox(cmd: SandboxCmd): void;
   /** Leave in the middle of the battle: the AI takes the ship over for the others. */
   leave(): void;
   /** The report is closed: back to the waiting room. */

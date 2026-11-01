@@ -139,6 +139,7 @@ export class LanLink {
         this.net?.send({ t: 'over' });
       },
       end: () => this.net?.send({ t: 'end' }),
+      sandbox: (cmd) => this.net?.send({ t: 'sandbox', cmd }),
       // Leaving mid-battle: the AI takes the ship over for the others.
       leave: () => {
         this.net?.leave();

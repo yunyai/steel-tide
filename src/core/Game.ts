@@ -39,9 +39,10 @@ import { StrikeSystem } from '../weapons/StrikeSystem';
 import { TorpedoSystem } from '../weapons/TorpedoSystem';
 import { BossRush } from '../modes/BossRush';
 import { Convoy } from '../modes/Convoy';
+import { Sandbox, SANDBOX_RESPAWN } from '../modes/Sandbox';
 import { GameMap, MAP_BY_ID, MAPS } from '../world/GameMap';
-import { type BattleConfig, buildRoster, spawnOffset } from './BattleSetup';
-import { EventBus } from './Events';
+import { type BattleConfig, buildRoster, openPlay, spawnOffset } from './BattleSetup';
+import { EventBus, type HitKind } from './Events';
 import { makeRng, segmentsCross, wrapAngle, type Rng } from './math';
 import { Pickups } from './Pickups';
 import type { ShipSpec, SkillSpec, Team } from './types';
@@ -96,6 +97,10 @@ export class Game {
   readonly rush: BossRush | null = null;
   /** Convoy director (null in other battles). */
   readonly convoy: Convoy | null = null;
+  /** Sandbox dummies and cheats (null in other battles). */
+  readonly sandbox: Sandbox | null = null;
+  /** What the weapon landing a hit is, set around `takeDamage` for the `damage` event. */
+  hitKind: HitKind = 'gun';
 
   time = 0;
   /** How far the next sim step has progressed (0..1); drawing interpolates by it. */
@@ -151,6 +156,12 @@ export class Game {
       this.convoy = new Convoy(this);
       this.convoy.start();
     }
+    if (config.type === 'sandbox') this.sandbox = new Sandbox(this);
+  }
+
+  /** Seconds a sunk or redeployed ship waits before it sails again. */
+  private get respawnDelay(): number {
+    return this.sandbox ? SANDBOX_RESPAWN : RESPAWN_DELAY;
   }
 
   private spawnTeams(): void {
@@ -187,11 +198,12 @@ export class Game {
     return r ? Math.max(0, r.at - this.time) : -1;
   }
 
-  /** Free play: the captain's next ship, sailed from their next respawn. */
+  /** Free play and Sandbox: the captain's next ship, sailed from their next respawn. Sandbox ignores eras and titan rules. */
   pickShip(ship: Ship, specId: string): void {
-    if (this.config.type !== 'freeplay' || ship.isSummon || !Object.hasOwn(SHIP_BY_ID, specId)) return;
+    if (!openPlay(this.config.type) || ship.isSummon || !Object.hasOwn(SHIP_BY_ID, specId)) return;
     const spec = SHIP_BY_ID[specId];
-    if (spec.hidden || this.config.titans === false && spec.cls === 'TT' || !configEras(this.config, 'mixed').includes(eraOf(spec))) return;
+    if (spec.hidden) return;
+    if (!this.sandbox && (this.config.titans === false && spec.cls === 'TT' || !configEras(this.config, 'mixed').includes(eraOf(spec)))) return;
     ship.nextSpec = spec === ship.base ? null : spec;
   }
 
@@ -209,11 +221,11 @@ export class Game {
     return ship.queueShift(form, time, tempo.unlock.map((u) => u * time));
   }
 
-  /** Free play: leave the fight now and come back after the respawn delay, not counted as sunk. */
+  /** Free play and Sandbox: leave the fight now and come back after the respawn delay, not counted as sunk. */
   redeploy(ship: Ship): void {
-    if (this.config.type !== 'freeplay' || ship.isSummon || !ship.alive || this.over) return;
+    if (!openPlay(this.config.type) || ship.isSummon || !ship.alive || this.over) return;
     ship.withdraw();
-    this.respawns.push({ ship, at: this.time + RESPAWN_DELAY });
+    this.respawns.push({ ship, at: this.time + this.respawnDelay });
   }
 
   /**
@@ -412,6 +424,7 @@ export class Game {
     this.pickups.update(dt);
     this.rush?.update(dt);
     this.convoy?.update(dt);
+    this.sandbox?.update();
     if (this.respawns.length && !this.over) this.updateRespawns();
 
     for (const s of this.smokes) {
@@ -539,24 +552,26 @@ export class Game {
     }
     this.rush?.onSunk(ship, credit ?? null);
     this.convoy?.onSunk(ship);
+    this.sandbox?.onSunk(ship);
     // Fleets fight on after the result, but the score stands as it was when the battle was decided.
     const type = this.config.type;
-    if ((type === 'domination' || type === 'freeplay') && !ship.isSummon && !this.over) {
+    if ((type === 'domination' || openPlay(type)) && !ship.isSummon && !this.over) {
       const other: Team = ship.team === 0 ? 1 : 0;
-      if (type === 'freeplay') this.score[other]++;
+      if (openPlay(type)) this.score[other]++;
       else {
         this.score[other] += DOMINATION_KILL_POINTS;
         this.score[ship.team] = Math.max(0, this.score[ship.team] - DOMINATION_KILL_POINTS);
       }
-      this.respawns.push({ ship, at: this.time + RESPAWN_DELAY });
+      // Sandbox dummies come back at their posts instead.
+      if (!this.sandbox?.isDummy(ship)) this.respawns.push({ ship, at: this.time + this.respawnDelay });
     }
   }
 
   private checkVictory(): void {
     if (this.rush) return this.rush.checkVictory();
     if (this.convoy) return this.convoy.checkVictory();
-    // Free play runs until the host (or the solo captain) ends it.
-    if (this.config.type === 'freeplay') return;
+    // Free play and Sandbox run until the host (or the solo captain) ends them.
+    if (openPlay(this.config.type)) return;
     const alive: [number, number] = [0, 0];
     for (const s of this.ships) if (s.alive && !s.isSummon) alive[s.team]++;
     // Domination fleets come back, so only score and the clock decide it.

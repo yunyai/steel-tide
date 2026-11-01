@@ -211,6 +211,16 @@ export function newTungstenState(): TungstenState {
   };
 }
 
+/** Sandbox: throwing reload held at `floor`, full energy, and a broken cube reforming at once. */
+export function refreshTungsten(s: Ship, floor: number): void {
+  const t = s.tungsten;
+  if (!t) return;
+  t.reload = Math.min(t.reload, floor);
+  t.energy = 1;
+  t.spent = false;
+  for (const c of t.cubes) if (c.state === 'broken') c.reform = Math.min(c.reform, 0);
+}
+
 /** Back to one docked cube: sinking, respawn, withdrawal and the end of a battle. */
 export function clearTungsten(s: Ship): void {
   const t = s.tungsten;

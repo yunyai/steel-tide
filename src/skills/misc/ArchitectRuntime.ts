@@ -549,6 +549,16 @@ export function endArchitect(s:Ship):void {if(s.architect?.ultimate)endArchitect
 export function turretInDock(s:Ship,t:TurretState):boolean {
   const i=s.turrets.indexOf(t);return !s.architect||s.architect.slots[i]?.state==='docked';
 }
+/** Sandbox: module reloads held at `floor`, wrecked modules rebuilt, and the capacitor, flak, Hull Dash and Mobile Battery ready. */
+export function refreshArchitect(s:Ship,floor:number):void{
+ const a=s.architect,now=s.game.time;
+ if(a){
+  for(const slot of a.slots){slot.reload=Math.min(slot.reload,floor);if(slot.state==='destroyed')slot.rebuild=Math.min(slot.rebuild,0);}
+  a.capacitorReadyAt=Math.min(a.capacitorReadyAt,now);a.flakReadyAt=Math.min(a.flakReadyAt,now);
+ }
+ const v=s.vectorMobility;
+ v.dashCharges=Math.max(v.dashCharges,vectorTuning(s).dashCharges);v.dashRecharge=[];v.mobileReadyAt=Math.min(v.mobileReadyAt,now);
+}
 /** Configuration is copied onto the captain so hull changes and respawns preserve it. */
 export function setArchitectLoadout(s:Ship,loadout:ArchitectLoadout):void{
  s.architectLoadout=copyLoadout(loadout);
@@ -559,7 +569,7 @@ export function setArchitectLoadout(s:Ship,loadout:ArchitectLoadout):void{
 export function refitArchitect(s:Ship,index:number,pick:import('../../data/architectLoadout').ArchitectSelection):boolean{
  const result=(accepted:boolean,reason?:string)=>{s.game.events.emit('architectRefit',{ship:s,index,pick:{...pick},accepted,...(reason?{reason}:{})});return accepted;};
  if(!validSelection(pick)||!Number.isInteger(index)||index<0||index>=10)return result(false,'Refit: invalid platform selection');
- if(s.game.config.type!=='freeplay')return result(false,'Refit: available in Free play only');
+ if(s.game.config.type!=='freeplay'&&s.game.config.type!=='sandbox')return result(false,'Refit: available in Free play and Sandbox only');
  if(!s.alive)return result(false,'Refit: ship is unavailable');
  if(s.architect?.ultimate)return result(false,'Refit: wait for the transformation to finish');
  const a=s.architect?.slots[index];if(!a||a.state!=='docked'){const reason='Refit: recall this platform first';s.failSkill(reason);return result(false,reason);}

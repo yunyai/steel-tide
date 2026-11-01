@@ -1,13 +1,14 @@
 import { validSelection, copyLoadout, type ArchitectLoadout } from '../src/data/architectLoadout';
 import { cleanAISelection, selectionError } from '../src/core/FleetSelection';
-import { buildRoster } from '../src/core/BattleSetup';
-import { makeRng } from '../src/core/math';
+import { buildRoster, openPlay } from '../src/core/BattleSetup';
+import { makeRng, wrapAngle } from '../src/core/math';
+import { MAP_HALF } from '../src/config';
 import type { BattleConfig } from '../src/core/BattleSetup';
 import type { Team } from '../src/core/types';
 import { eraOf } from '../src/data/factions';
 import { normalizeEras } from '../src/data/eras';
 import { SHIP_BY_ID, shipsIn } from '../src/data/ships';
-import { type Continuous, DEFAULT_SETTINGS, type Edge, type LobbySettings, MAX_AI } from '../src/net/protocol';
+import { type Continuous, DEFAULT_SETTINGS, DUMMY_MODES, type DummyMode, type Edge, type LobbySettings, MAX_AI, MAX_DUMMIES, SANDBOX_CHEATS, type SandboxCheat, type SandboxCmd } from '../src/net/protocol';
 import { MAPS } from '../src/world/GameMap';
 
 // What a kind of battle decides on the LAN server: its settings, what captains may sail, which
@@ -39,8 +40,10 @@ export interface BattleRules {
   startError(st: LobbySettings, captains: Captain[]): string | null;
   /** The config every peer builds the battle from. */
   config(st: LobbySettings, captains: Captain[], seed: number): BattleConfig;
-  /** The host ends battles of these settings (Free play); others end by themselves. */
+  /** The host ends battles of these settings (Free play, Sandbox); others end by themselves. */
   hostEnds(st: LobbySettings): boolean;
+  /** The host's sandbox command with only its valid fields, clamped to the map, or null. */
+  cleanSandbox(v: unknown): SandboxCmd | null;
 }
 
 const SHIP_ID = /^[A-Za-z0-9_-]{1,32}$/;
@@ -49,11 +52,15 @@ const isTeam = (v: unknown): v is Team => v === 0 || v === 1;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const smallInt = (v: unknown, max: number): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
-/** A ship captains may pick under these settings: of one of the lobby's eras, and a titan only if allowed. */
+/** Any ship in the game a captain could sail. */
+const knownShip = (id: unknown): id is string => typeof id === 'string' && SHIP_ID.test(id) && Object.hasOwn(SHIP_BY_ID, id) && !SHIP_BY_ID[id].hidden;
+
+/** A ship captains may pick under these settings: of one of the lobby's eras, and a titan only if allowed. Sandbox allows any. */
 function shipAllowed(id: unknown, st: LobbySettings): id is string {
-  if (typeof id !== 'string' || !SHIP_ID.test(id) || !Object.hasOwn(SHIP_BY_ID, id)) return false;
+  if (!knownShip(id)) return false;
+  if (st.type === 'sandbox') return true;
   const spec = SHIP_BY_ID[id];
-  if (spec.hidden || !st.eras.includes(eraOf(spec))) return false;
+  if (!st.eras.includes(eraOf(spec))) return false;
   return st.titans || spec.cls !== 'TT';
 }
 
@@ -62,7 +69,7 @@ export const navalRules: BattleRules = {
   defaults: () => ({ ...DEFAULT_SETTINGS, ai: [...DEFAULT_SETTINGS.ai], eras: [...DEFAULT_SETTINGS.eras] }),
 
   applySettings(st, o) {
-    if (o.type === 'domination' || o.type === 'annihilation' || o.type === 'convoy' || o.type === 'freeplay') st.type = o.type;
+    if (o.type === 'domination' || o.type === 'annihilation' || o.type === 'convoy' || o.type === 'freeplay' || o.type === 'sandbox') st.type = o.type;
     if (typeof o.mapId === 'string' && MAPS.some((m) => m.id === o.mapId)) st.mapId = o.mapId;
     if (Array.isArray(o.ai) && o.ai.length === 2 && o.ai.every((n) => smallInt(n, MAX_AI))) st.ai = [o.ai[0], o.ai[1]];
     if (o.difficulty === 'easy' || o.difficulty === 'normal' || o.difficulty === 'hard') st.difficulty = o.difficulty;
@@ -90,12 +97,12 @@ export const navalRules: BattleRules = {
     return c;
   },
 
-  /** Edge orders as the battle allows them: Free play adds the ship picker's. */
+  /** Edge orders as the battle allows them: Free play and Sandbox add the ship picker's. */
   cleanEdge(v, st) {
     if (!v || typeof v !== 'object') return null;
     const o = v as Record<string, unknown>;
     const e: Edge = {};
-    if (st.type === 'freeplay') {
+    if (openPlay(st.type)) {
       if (shipAllowed(o.sp, st)) e.sp = o.sp;
       if (o.rd === 1) e.rd = 1;
       const ar=o.ar as Edge['ar'];if(ar&&smallInt(ar.index,9)&&validSelection(ar.pick))e.ar={index:ar.index,pick:{...ar.pick}};
@@ -115,23 +122,26 @@ export const navalRules: BattleRules = {
   holdFire: (c) => { const held: Continuous = [...c]; held[3] = 0; return held; },
 
   startError(st, captains) {
+    // A sandbox has no fleets to fill: its captains sail alone until they spawn dummies.
+    if (st.type === 'sandbox') return null;
     const error = selectionError(st.aiSelection, st.eras, st.titans, st.ai);
     if (error) return error;
     // Every other battle is decided by one fleet running out of ships (or never meeting one).
-    if (st.type === 'freeplay') return null;
+    if (openPlay(st.type)) return null;
     const empty = ([0, 1] as Team[]).find((t) => st.ai[t] === 0 && !captains.some((c) => c.team === t));
     return empty === undefined ? null : `Team ${empty === 0 ? 'A' : 'B'} has no ships: add AI ships or a captain.`;
   },
 
   config(st, captains, seed) {
+    const sandbox = st.type === 'sandbox';
     const config: BattleConfig = {
       mode: 'lan',
       type: st.type,
       mapId: st.mapId,
       // Unused once `ai` is set.
       teamSize: 1,
-      ai: [st.ai[0], st.ai[1]],
-      aiSelection: st.aiSelection ? structuredClone(st.aiSelection) : undefined,
+      ai: sandbox ? [0, 0] : [st.ai[0], st.ai[1]],
+      aiSelection: st.aiSelection && !sandbox ? structuredClone(st.aiSelection) : undefined,
       shiftTempo: st.shiftTempo,
       titans: st.titans,
       difficulty: st.difficulty,
@@ -145,5 +155,27 @@ export const navalRules: BattleRules = {
     return config;
   },
 
-  hostEnds: (st) => st.type === 'freeplay',
+  hostEnds: (st) => openPlay(st.type),
+
+  cleanSandbox(v) {
+    if (!v || typeof v !== 'object') return null;
+    const o = v as Record<string, unknown>;
+    switch (o.k) {
+      case 'cheat':
+        return SANDBOX_CHEATS.includes(o.cheat as SandboxCheat) && typeof o.on === 'boolean' ? { k: 'cheat', cheat: o.cheat as SandboxCheat, on: o.on } : null;
+      case 'spawn': {
+        const { ship, n, team, x, z, heading } = o;
+        if (!knownShip(ship) || !Number.isInteger(n) || (n as number) < 1 || !isTeam(team) || !finite(x) || !finite(z) || !finite(heading)) return null;
+        const map = (v: number) => Math.max(-MAP_HALF, Math.min(MAP_HALF, v));
+        return { k: 'spawn', ship, n: Math.min(n as number, MAX_DUMMIES), team, x: map(x), z: map(z), heading: wrapAngle(heading) };
+      }
+      case 'mode':
+        return DUMMY_MODES.includes(o.mode as DummyMode) ? { k: 'mode', mode: o.mode as DummyMode } : null;
+      case 'respawn':
+        return { k: 'respawn' };
+      case 'clear':
+        return { k: 'clear' };
+    }
+    return null;
+  },
 };

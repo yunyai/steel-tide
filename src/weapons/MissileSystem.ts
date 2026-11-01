@@ -336,7 +336,9 @@ export class MissileSystem {
     const g = this.game;
     const ult = m.skill?.ult ? m.owner.mods.ultDamageMul : 1;
     const mul = m.owner.mods.damageMul * m.owner.mods.missileDamageMul * s.mods.missileTakenMul * ult;
+    g.hitKind = 'missile';
     const dmg = s.takeDamage(m.damage * fall * mul * m.owner.critMul(s), m.owner, m.skill);
+    g.hitKind = 'gun';
     if (g.rng() < m.fire) s.startFire(Math.floor(g.rng() * 4), m.owner);
     if (m.flood > 0 && g.rng() < m.flood) s.startFlood(m.owner);
     if (m.onHit && s.alive && (s.stepper?.phaseUntil ?? 0) <= g.time) m.onHit(s);

@@ -43,7 +43,9 @@ export class DepthChargeSystem {
     for (const s of this.game.ships) {
       if (!s.alive || !s.isSub || s.team === owner.team || s.deep || !s.submerged) continue;
       if (dist2D(x, z, s.pos.x, s.pos.z) < 55) {
+        this.game.hitKind = 'air';
         const dmg = s.takeDamage(damage * 0.6, owner);
+        this.game.hitKind = 'gun';
         this.game.events.emit('ribbon', { ship: owner, kind: 'Bomb Hit', damage: dmg });
       }
     }
@@ -62,7 +64,9 @@ export class DepthChargeSystem {
         const d = dist2D(c.x, c.z, s.pos.x, s.pos.z);
         if (d > CHARGE_RADIUS) continue;
         const fall = 1 - d / CHARGE_RADIUS;
+        g.hitKind = 'torp';
         const dmg = s.takeDamage(CHARGE_DAMAGE * (0.35 + 0.65 * fall), c.owner);
+        g.hitKind = 'gun';
         if (g.rng() < 0.2) s.startFlood(c.owner);
         g.events.emit('ribbon', { ship: c.owner, kind: 'Depth Charge Hit', damage: dmg });
       }

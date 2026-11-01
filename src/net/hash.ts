@@ -2,7 +2,7 @@ import { ARCHITECT_TYPES } from '../data/architectLoadout';
 import { CUBE_STATES, PATH_KINDS } from '../skills/misc/TungstenRuntime';
 import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import type { Game } from '../core/Game';
-import type { Sections } from './protocol';
+import { DUMMY_MODES, SANDBOX_CHEATS, type Sections } from './protocol';
 
 export { diffSections, type Sections } from './protocol';
 
@@ -142,6 +142,13 @@ export function hashSections(g: Game): Sections {
   const c = g.convoy;
   h = mix(h, c ? 1 : 0);
   if (c) for (const n of [c.arrived, c.sunk, ...c.transports.map((t) => t.id)]) h = mix(h, n);
+  const sb = g.sandbox;
+  h = mix(h, sb ? 1 : 0);
+  if (sb) {
+    for (const k of SANDBOX_CHEATS) h = mix(h, sb.cheats[k] ? 1 : 0);
+    h = mix(h, DUMMY_MODES.indexOf(sb.mode));
+    for (const d of sb.dummies) for (const n of [d.ship.id, d.x, d.z, d.heading, d.back, d.leg]) h = mix(h, n);
+  }
   out.push(['mode', h >>> 0]);
 
   h = SEED;
