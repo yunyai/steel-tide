@@ -1712,7 +1712,8 @@ export class Ship {
       mul *= attacker.trait?.ambush ?? 1;
       this.game.events.emit('ribbon', { ship: attacker, kind: 'Ambush', damage: 0, target: this });
     }
-    let raw = amount * mul;
+    // Protection only ever shrinks a hit: however it stacks, damage never turns into healing.
+    let raw = amount * Math.max(0, mul);
     if (hostile && attacker.mods.inverted) {
       this.heal(raw);
       return 0;

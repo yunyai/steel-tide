@@ -6,6 +6,7 @@ import type { SkillSpec } from '../../core/types';
 import { canTrack } from '../../core/Targeting';
 import { distToHull, segmentHitsHull } from '../../core/hull';
 import { buff,hurt } from '../kit';
+import { stackCount } from './ArchitectStacks';
 import { clearLine,dockPoint, type ModuleSlot } from './ArchitectRuntime';
 
 export const ELEMENTS=['furnace','cryo','storm','gravity','prism'] as const;
@@ -32,17 +33,19 @@ export function elementTarget(s:Ship,a:ModuleSlot,surfaceOnly=false):Ship|null {
  for(const t of arsenalTeam(s,true)){if(!canTrack(a.entity??s,t)||t.mods.banished||(t.submerged&&(surfaceOnly||a.type!=='abyss')))continue;const d=Math.hypot(t.pos.x-p.x,t.pos.z-p.z);if(d>(a.type==='abyss'&&a.skill===1?4000:6000)||clearLine(s,p.x,p.z,t.pos.x,t.pos.z,p.y,t.pos.y+4)<1)continue;const u=s.architect?.ultimate;if(u?.kind==='killbox'&&Math.hypot(t.pos.x-u.x,t.pos.z-u.z)>1500)continue;const priority=t.id===(s.architect!.huntUntil>s.game.time?s.architect!.huntTarget:s.control.targetId)?-1:d;if(priority<dist||priority===dist&&t.id<(best?.id??Infinity)){best=t;dist=priority;}}
  return best;
 }
-export function moduleLinked(s:Ship,a:ModuleSlot):boolean {
- const ar=s.architect;if(!ar||ar.linkUntil<=s.game.time||!a.entity?.alive||!['deployed','citadel'].includes(a.state))return false;
- return ar.slots.some(b=>b.index!==a.index&&b.entity?.alive&&['deployed','citadel'].includes(b.state)&&Math.hypot(a.entity!.pos.x-b.entity.pos.x,a.entity!.pos.z-b.entity.pos.z)<=2500&&clearLine(s,a.entity!.pos.x,a.entity!.pos.z,b.entity.pos.x,b.entity.pos.z,a.entity!.pos.y+16,b.entity.pos.y+16)===1);
+/** Connected platforms this one links to: each link adds its recharge and reload bonus again. */
+export function moduleLinks(s:Ship,a:ModuleSlot):number {
+ const ar=s.architect;if(!ar||ar.linkUntil<=s.game.time||!a.entity?.alive||!['deployed','citadel'].includes(a.state))return 0;
+ return ar.slots.filter(b=>b.index!==a.index&&b.entity?.alive&&['deployed','citadel'].includes(b.state)&&Math.hypot(a.entity!.pos.x-b.entity.pos.x,a.entity!.pos.z-b.entity.pos.z)<=2500&&clearLine(s,a.entity!.pos.x,a.entity!.pos.z,b.entity.pos.x,b.entity.pos.z,a.entity!.pos.y+16,b.entity.pos.y+16)===1).length;
 }
-/** Recharge work per simulation second; control effects block casting, not recharge. */
+export const moduleLinked=(s:Ship,a:ModuleSlot):boolean=>moduleLinks(s,a)>0;
+/** Recharge work per simulation second; control effects block casting, not recharge. Links and Accelerandos add per copy; Citadel multiplies the lot. */
 export function architectSkillRechargeRate(s:Ship,a:ModuleSlot):number {
  if(!s.alive||!['deployed','citadel'].includes(a.state)||!a.entity?.alive||s.architect?.ultimate?.kind==='assembly')return 0;
- return a.state==='citadel'?5:Math.min(1.5,1+(moduleLinked(s,a)?.25:0)+(a.boostUntil>s.game.time?.25:0));
+ return (a.state==='citadel'?5:1)*(1+.25*moduleLinks(s,a)+.25*stackCount(a.boosts,s.game.time));
 }
 export function emitElement(s:Ship,a:ModuleSlot,j:ElementJob,phase:'cast'|'hit',p?:Ship,pair?:ArchitectElement,chain?:readonly {x:number;y:number;z:number}[]):void{s.game.events.emit('architectElement',{ship:s,slot:a.index,element:a.element,attack:j.attack,phase,id:j.id,x:j.x,y:j.y,z:j.z,tx:p?.pos.x??j.tx,ty:p?p.pos.y+12:j.ty,tz:p?.pos.z??j.tz,radius:j.radius||j.beam,pair,type:a.type,target:p?.id,chain});}
-function slow(t:Ship){buff(t,'debuff:architectCryo',3,m=>{m.speedMul=Math.min(m.speedMul,.8);});}
+function slow(t:Ship){buff(t,'debuff:architectCryo',3,m=>{m.speedMul*=.8;});}
 function pull(s:Ship,t:Ship,x:number,z:number){if(t.mods.knockImmune||t.mods.ccImmune||t.mods.invulnerable)return;const a=s.architect!.elements;const old=a.pulls.find(p=>p.target===t.id);if(old){old.x=x;old.z=z;old.until=s.game.time+.5;}else a.pulls.push({target:t.id,x,z,until:s.game.time+.5});}
 /** Distance to the hull's physical vertical span, combined with its plan-view footprint. */
 export function inElementBlast(t:Ship,x:number,y:number,z:number,r:number):boolean {
@@ -51,7 +54,7 @@ export function inElementBlast(t:Ship,x:number,y:number,z:number,r:number):boole
 }
 function damage(s:Ship,a:ModuleSlot,t:Ship,n:number,attack:ElementAttack,mark=true,underwater=false,pair?:ArchitectElement):number {
  if(!s.alive||!s.architect||!t.alive||t.team===s.team||t.submerged&&!underwater)return 0;
- const dealt=hurt(s,t,n*(attack==='reaction'&&a.reactionUntil>s.game.time?1.4:1),{...spec(s,a,attack),...(pair?{reaction:[pair,a.element] as [ArchitectElement,ArchitectElement],short:REACTION_NAMES[[pair,a.element].sort().join('+')]}:{})});if(dealt>0&&mark&&t.alive)applyElementMark(s,a,t,underwater);return dealt;
+ const dealt=hurt(s,t,n*(attack==='reaction'?1+.4*stackCount(a.amps,s.game.time):1),{...spec(s,a,attack),...(pair?{reaction:[pair,a.element] as [ArchitectElement,ArchitectElement],short:REACTION_NAMES[[pair,a.element].sort().join('+')]}:{})});if(dealt>0&&mark&&t.alive)applyElementMark(s,a,t,underwater);return dealt;
 }
 export function applyElementMark(s:Ship,a:ModuleSlot,t:Ship,underwater=false):void {
  if(!s.architect||!s.alive||!t.alive||t.team===s.team||t.submerged&&!underwater||t.mods.invulnerable)return;

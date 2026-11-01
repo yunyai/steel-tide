@@ -7,20 +7,20 @@ import { buff } from '../kit';
 // Docked passives: every platform sitting whole on its dock lends the hull its type's passive.
 // Shell passives ride on the shells a docked gun fires (the type is read at the muzzle, so a
 // platform that launches while its shells are in flight still delivers them); hull passives count
-// the docked platforms of a type, each up to its cap.
+// the docked platforms of a type and add up per copy, with a cap only where one could reach 100%.
 
 export const DOCKED = {
   kindling: { dps: 3000, time: 3 },
-  rime: { speed: 0.1, traverse: 0.15, time: 3 },
+  rime: { speed: 0.1, traverse: 0.15, time: 3, cap: 0.9 },
   arc: { share: 0.25, range: 600 },
   massDriver: { velocity: 1.3, reach: 1.2 },
   /** Shell damage, and the total against a shielded target. */
   lens: { damage: 1.25, shield: 1.5 },
-  watch: { surface: 4000, periscope: 2000, extra: 1000, cap: 6000 },
-  sonar: { range: 2500, torp: 0.1, torpCap: 0.3 },
-  fieldRepair: { perSecond: 0.001, cap: 0.003 },
-  plating: { dr: 0.04, cap: 0.16 },
-  harmonic: { reload: 0.1, cap: 0.4 },
+  watch: { surface: 4000, periscope: 2000, extra: 1000 },
+  sonar: { range: 2500, torp: 0.1, torpCap: 0.9 },
+  fieldRepair: { perSecond: 0.001 },
+  plating: { dr: 0.04 },
+  harmonic: { reload: 0.1 },
   flak: { range: 1500, every: 3 },
   vanes: { speed: 0.03, rudder: 0.1, dash: 0.1 },
 } as const;
@@ -44,7 +44,7 @@ export function dockedCount(s: Ship, type: ArchitectType): number {
 export function applyDockedPassives(s: Ship, m: Mods): void {
   if (!s.architect) return;
   const bastion = dockedCount(s, 'bastion'), abyss = dockedCount(s, 'abyss'), vector = dockedCount(s, 'vector');
-  if (bastion) m.damageTakenMul *= 1 - Math.min(DOCKED.plating.cap, DOCKED.plating.dr * bastion);
+  if (bastion) m.damageTakenMul *= 1 - DOCKED.plating.dr * bastion;
   if (abyss) m.torpTakenMul *= 1 - Math.min(DOCKED.sonar.torpCap, DOCKED.sonar.torp * abyss);
   if (vector) {
     m.speedMul *= 1 + DOCKED.vanes.speed * vector;
@@ -55,12 +55,12 @@ export function applyDockedPassives(s: Ship, m: Mods): void {
 /** Harmonic: how much faster docked Resonance makes this docked gun reload (1 for Resonance itself). */
 export function harmonicTempo(s: Ship, type: ArchitectType): number {
   if (type === 'resonance') return 1;
-  return 1 + Math.min(DOCKED.harmonic.cap, DOCKED.harmonic.reload * dockedCount(s, 'resonance'));
+  return 1 + DOCKED.harmonic.reload * dockedCount(s, 'resonance');
 }
 
-/** Thrust Vanes: Hull Dash recharges this much faster while any Vector is docked. */
+/** Thrust Vanes: Hull Dash recharges this much faster, per docked Vector. */
 export function vanesDashTempo(s: Ship): number {
-  return dockedCount(s, 'vector') ? 1 + DOCKED.vanes.dash : 1;
+  return 1 + DOCKED.vanes.dash * dockedCount(s, 'vector');
 }
 
 /** Muzzle effects of a docked gun: shell damage, speed and how far a miss carries. */
@@ -90,9 +90,12 @@ export function dockedHit(s: Ship, type: ArchitectType, t: Ship, dealt: number):
     if (burn) burn.until = until;
     else a.kindling.push({ target: t.id, until });
   } else if (type === 'cryo') {
+    // Each docked Cryo deepens the chill; a fresh hit refreshes it at today's count.
+    const n = Math.max(1, dockedCount(s, 'cryo'));
+    const speed = 1 - Math.min(DOCKED.rime.cap, DOCKED.rime.speed * n), traverse = 1 - Math.min(DOCKED.rime.cap, DOCKED.rime.traverse * n);
     buff(t, 'debuff:architectRime', DOCKED.rime.time, (m) => {
-      m.speedMul *= 1 - DOCKED.rime.speed;
-      m.traverseMul *= 1 - DOCKED.rime.traverse;
+      m.speedMul *= speed;
+      m.traverseMul *= traverse;
     });
   } else if (type === 'storm' && dealt > 0) {
     let best: Ship | null = null, dist: number = DOCKED.arc.range;
@@ -115,8 +118,8 @@ export function updateDockedPassives(s: Ship, dt: number): void {
   const sentinel = dockedCount(s, 'sentinel'), abyss = dockedCount(s, 'abyss');
   if (sentinel || abyss) {
     const extra = DOCKED.watch.extra * Math.max(0, sentinel - 1);
-    const surface = sentinel ? Math.min(DOCKED.watch.cap, DOCKED.watch.surface + extra) : 0;
-    const periscope = sentinel ? Math.min(DOCKED.watch.cap, DOCKED.watch.periscope + extra) : 0;
+    const surface = sentinel ? DOCKED.watch.surface + extra : 0;
+    const periscope = sentinel ? DOCKED.watch.periscope + extra : 0;
     const deep = abyss ? DOCKED.sonar.range : 0;
     for (const t of g.ships) {
       if (!t.alive || t.withdrawn || t.team === s.team || t.mods.banished) continue;
@@ -125,7 +128,7 @@ export function updateDockedPassives(s: Ship, dt: number): void {
     }
   }
   const restoration = dockedCount(s, 'restoration');
-  if (restoration && s.alive) s.heal(a.fullHp * Math.min(DOCKED.fieldRepair.cap, DOCKED.fieldRepair.perSecond * restoration) * dt * s.mods.regenMul);
+  if (restoration && s.alive) s.heal(a.fullHp * DOCKED.fieldRepair.perSecond * restoration * dt * s.mods.regenMul);
   const swarm = dockedCount(s, 'swarm');
   if (swarm && s.alive && g.time >= a.flakReadyAt && flak(s, swarm)) a.flakReadyAt = g.time + DOCKED.flak.every;
   if (a.kindling.length) burn(s, dt);
@@ -156,14 +159,15 @@ function flak(s: Ship, n: number): boolean {
   return downed > 0;
 }
 
-/** Kindling: each marked target burns until its mark lapses; a dead or vanished one drops off. */
+/** Kindling: each marked target burns until its mark lapses, harder for every docked Furnace; a dead or vanished one drops off. */
 function burn(s: Ship, dt: number): void {
   const a = s.architect!, g = s.game;
+  const dps = DOCKED.kindling.dps * Math.max(1, dockedCount(s, 'furnace'));
   let spent: SkillSpec | null = null;
   a.kindling = a.kindling.filter((k) => {
     const t = g.ships.find((v) => v.id === k.target);
     if (!t?.alive || k.until <= g.time) return false;
-    if (s.alive) t.takeDamage(DOCKED.kindling.dps * Math.min(dt, k.until - g.time) * s.mods.damageMul, s, (spent ??= spec(s, 'furnace', 'Kindling')), false, false, true);
+    if (s.alive) t.takeDamage(dps * Math.min(dt, k.until - g.time) * s.mods.damageMul, s, (spent ??= spec(s, 'furnace', 'Kindling')), false, false, true);
     return t.alive;
   });
 }

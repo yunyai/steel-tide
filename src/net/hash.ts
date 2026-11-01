@@ -55,7 +55,7 @@ function shipHash(s: Game['ships'][number]): number {
     for (const slot of a.slots) {
       h=mix(h,slot.capacitorCycles);h=mix(h,slot.capacitorCharged?1:0);
       h=mix(h,slot.follow?1:0);if(slot.follow)for(const n of [slot.follow.angle,slot.follow.radius,slot.follow.height,slot.follow.tilt,slot.follow.phase,slot.follow.rate])h=mix(h,n);
-      for (const n of [ELEMENTS.indexOf(slot.element),slot.skillTimer,ARCHITECT_TYPES.indexOf(slot.type),slot.skill,slot.boostUntil,slot.reactionUntil,slot.castGap,slot.opening?1:0,slot.aboard?1:0,slot.index,['docked','launching','deployed','moving','returning','destroyed','assembling','citadel'].indexOf(slot.state),slot.hp,slot.reload,slot.reloadScale,slot.disabled,slot.rebuild,slot.dockedFor,slot.entity?.id??0])h=mix(h,n);
+      for (const n of [ELEMENTS.indexOf(slot.element),slot.skillTimer,ARCHITECT_TYPES.indexOf(slot.type),slot.skill,Object.keys(slot.boosts).length,...Object.values(slot.boosts),Object.keys(slot.amps).length,...Object.values(slot.amps),slot.castGap,slot.opening?1:0,slot.aboard?1:0,slot.index,['docked','launching','deployed','moving','returning','destroyed','assembling','citadel'].indexOf(slot.state),slot.hp,slot.reload,slot.reloadScale,slot.disabled,slot.rebuild,slot.dockedFor,slot.entity?.id??0])h=mix(h,n);
       if(slot.path)for(const n of [slot.path.x,slot.path.y,slot.path.z,slot.path.tx,slot.path.ty,slot.path.tz,slot.path.elapsed,slot.path.duration,slot.path.damage?1:0,slot.path.settling?1:0,...slot.path.hit])h=mix(h,n);
     }
     h=mix(h,a.elements.serial);

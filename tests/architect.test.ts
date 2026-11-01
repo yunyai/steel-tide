@@ -85,7 +85,18 @@ describe('Architect normal skills',()=>{
     expect(s.architect!.huntTarget).toBe(t.id);
     expect(s.turrets.every(t=>t.reload===0)).toBe(true);
   });
-  it('connects modules without multiplying damage where links overlap',()=>{
+  it('stacks link damage for every link an enemy crosses',()=>{
+    const {g,s,t:titan}=deploy();titan.withdraw();
+    s.skills[0].cooldown=0;s.control.aimX=-800;s.activateSkill(0);run(g,2);
+    const out=s.architect!.slots.filter(a=>a.state==='deployed'&&a.entity?.alive);expect(out).toHaveLength(4);
+    // A cross of four platforms: the enemy sits where the two long links meet.
+    for(const [a,[x,z]] of out.map((a,i)=>[a,[[-1000,0],[1000,0],[0,-1000],[0,1000]][i]] as const)){a.entity!.pos.set(x,a.entity!.pos.y,z);a.entity!.prevPos.copy(a.entity!.pos);}
+    const t=place(g,'iowa',1,0,0);t.hp=t.maxHp=1e8;t.throttle=2;t.speed=0;t.secondaries.length=0;
+    let linkDamage=0;g.events.on('skillHit',e=>{if(e.skill.id==='architectConnect'&&e.ship===t)linkDamage+=e.damage;});
+    expect(s.activateSkill(2)).toBe(true);run(g,.5);
+    expect(linkDamage).toBeCloseTo(2*2*3000);
+  });
+  it('connects modules and bites once for a single crossed link',()=>{
     const {g,s,t}=deploy();t.pos.set(800,0,0);t.heading=Math.PI/2;t.prevPos.copy(t.pos);
     let linkDamage=0;g.events.on('skillHit',e=>{if(e.skill.id==='architectConnect')linkDamage+=e.damage;});
     expect(s.activateSkill(2)).toBe(true);run(g,.5);

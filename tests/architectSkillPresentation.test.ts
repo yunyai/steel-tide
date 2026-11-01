@@ -38,9 +38,9 @@ it('uses recharge work for one selected-skill ring and real-rate seconds for its
  const a=s.architect!.slots[0];a.skillTimer=8;
  expect(architectModuleSkillPresentation(s,0)).toMatchObject({eta:8,phase:'recharging',progress:0,name:'Inferno Barrage'});
  a.state='citadel';expect(architectModuleSkillPresentation(s,0)).toMatchObject({eta:1.6});
- a.state='deployed';a.boostUntil=g.time+5;s.architect!.linkUntil=g.time+5;s.architect!.links=[{a:0,b:1}];
+ a.state='deployed';a.boosts={x:g.time+5};s.architect!.linkUntil=g.time+5;s.architect!.links=[{a:0,b:1}];
  expect(architectModuleSkillPresentation(s,0).eta).toBeCloseTo(8/1.5);
- a.boostUntil=0;s.architect!.linkUntil=0;expect(architectModuleSkillPresentation(s,0).eta).toBe(8);
+ a.boosts={};s.architect!.linkUntil=0;expect(architectModuleSkillPresentation(s,0).eta).toBe(8);
  a.state='moving';expect(architectModuleSkillPresentation(s,0)).toMatchObject({eta:null,phase:'paused',label:expect.stringMatching(/Paused/)});
  a.state='deployed';a.disabled=2;expect(architectModuleSkillPresentation(s,0)).toMatchObject({phase:'disabled',label:expect.stringMatching(/Disabled/)});
 });

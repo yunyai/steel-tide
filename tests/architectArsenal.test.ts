@@ -3,6 +3,7 @@ import { emptyGame,place,run } from './helpers';
 import { grantSupportShield,supportHeal,bulwarkTaken } from '../src/skills/misc/ArchitectSupport';
 import { ARCHETYPES } from '../src/data/architectLoadout';
 import { startElementAttack,updateElements } from '../src/skills/misc/ArchitectElements';
+import { stackCount } from '../src/skills/misc/ArchitectStacks';
 function setup(){const g=emptyGame('open',713,'freeplay'),s=place(g,'architect',0,0,2000),t=place(g,'leviathan',1,0,-1000);t.hp=t.maxHp=1e8;t.colossus=false;s.control.aimZ=0;s.throttle=t.throttle=2;s.secondaries.length=t.secondaries.length=0;return {g,s,t};}
 it('heals at full strength from every support emitter and owner with no diminishing returns',()=>{const {g,s}=setup();const ally=place(g,'architect',0,100,2000),hurtShip=place(g,'iowa',0,0,1000);hurtShip.hp=hurtShip.maxHp=1e8;hurtShip.hp=1e7;
  for(let i=0;i<10;i++)for(const owner of [s,ally]){const before=hurtShip.hp;supportHeal(owner,hurtShip,20000);expect(hurtShip.hp-before).toBeCloseTo(20000);}
@@ -34,7 +35,7 @@ it('casts all support skills and distinguishes surface scans from submarine scan
   if(type==='sentinel'){expect(canTrack(s,skill?sub:t)).toBe(true);expect((skill?t:sub).architectReveal[0]).toBe(0);}
   if(type==='restoration')expect(ally.hp).toBeGreaterThan(50000);
   if(type==='bastion'){if(skill===0)expect(ally.shield).toBe(120000);else expect(ally.effects.some(e=>e.id.startsWith('architectBulwark:'))).toBe(true);}
-  if(type==='resonance'){const b=s.architect!.slots[1];expect(skill?b.reactionUntil:b.boostUntil).toBeGreaterThan(g.time);}
+  if(type==='resonance'){const b=s.architect!.slots[1];expect(stackCount(skill?b.amps:b.boosts,g.time)).toBe(1);}
  }
 });
 it('Abyss damages revealed submarines while ordinary skills remain depth restricted',()=>{
@@ -70,14 +71,15 @@ it('automatically acquires both Amplifiers with eight nearby docked elemental re
  for(const a of s.architect!.slots.slice(0,2)){a.type='resonance';a.skill=1;a.element='storm';a.skillTimer=0;a.castGap=0;a.entity!.pos.set(s.pos.x+(a.index?100:-100),0,s.pos.z);}
  updateElements(s,.3);
  expect(casts).toEqual([0,1]);
- for(const a of s.architect!.slots.slice(2))expect(a.reactionUntil).toBeCloseTo(g.time+4);
+ // Both Amplifiers reach every docked recipient, and their copies stack.
+ for(const a of s.architect!.slots.slice(2)){expect(stackCount(a.amps,g.time)).toBe(2);for(const until of Object.values(a.amps))expect(until).toBeCloseTo(g.time+4);}
 });
 it('keeps all-Resonance Accelerando ineligible and excludes distant Amplifier recipients',()=>{
  const {g,s,t}=setup();t.withdraw();s.activateSkill(0);run(g,2);
  for(const a of s.architect!.slots){a.type='resonance';a.skill=0;a.element='storm';a.skillTimer=0;a.opening=false;a.castGap=0;if(a.entity)a.entity.pos.set(s.pos.x+a.index*100,0,s.pos.z);}
  const casts:number[]=[];g.events.on('architectElement',e=>{if(e.phase==='cast')casts.push(e.slot);});updateElements(s,.3);expect(casts).toHaveLength(0);
  for(const a of s.architect!.slots.slice(0,2)){a.skill=1;a.entity!.pos.z-=3000;}
- updateElements(s,.3);expect(s.architect!.slots.slice(2).every(a=>a.reactionUntil===0)).toBe(true);
+ updateElements(s,.3);expect(s.architect!.slots.slice(2).every(a=>stackCount(a.amps,g.time)===0)).toBe(true);
 });
 it('emits an execution result for accepted and rejected refits',()=>{
  const {g,s}=setup(),results:any[]=[];g.events.on('architectRefit' as any,(e:any)=>results.push(e));
@@ -97,8 +99,8 @@ it('resolves exact support output and duration, and a recast refreshes its own f
  a.type='bastion';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(target.shield).toBe(120000);expect(target.shieldTime).toBe(5);
  a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.bulwark).toBe(1);expect(target.effects.find(e=>e.id.startsWith('architectBulwark:'))!.time).toBe(4);
  startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.bulwark).toBe(1);
- a.type='resonance';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(b.boostUntil).toBe(g.time+4);
- a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(b.reactionUntil).toBe(g.time+4);
+ a.type='resonance';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(Object.values(b.boosts)).toEqual([g.time+4]);
+ a.skill=1;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(Object.values(b.amps)).toEqual([g.time+4]);
 });
 it('Hunt strengthens repair and shield output by forty percent exactly once',()=>{
  const {g,s,t}=setup();t.withdraw();s.activateSkill(0);run(g,2);const [a,b]=s.architect!.slots,target=b.entity!;
@@ -106,8 +108,8 @@ it('Hunt strengthens repair and shield output by forty percent exactly once',()=
  a.entity!.pos.copy(target.pos);target.hp=10000;a.type='restoration';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,2);expect(target.hp).toBe(122000);
  a.type='bastion';a.skill=0;startElementAttack(s,a,target,'skill');updateElements(s,.3);expect(target.shield).toBe(168000);
 });
-it('stacks Bulwark fields from separate emitters but never past a 60% reduction',()=>{
- expect([0,1,2,3,4,5,10].map(bulwarkTaken)).toEqual([1,.8,.64,.512,.4096,.4,.4].map(v=>expect.closeTo(v,10)));
+it('adds Bulwark fields from separate emitters but never past a 60% reduction',()=>{
+ expect([0,1,2,3,4,5,10].map(bulwarkTaken)).toEqual([1,.8,.6,.4,.4,.4,.4].map(v=>expect.closeTo(v,10)));
  const {g,s,t}=setup();t.withdraw();const target=s;
  for(const [x,z] of [[600,2000],[-600,2000],[0,1400]]){s.control.aimX=x;s.control.aimZ=z;s.skills[0].cooldown=0;s.activateSkill(0);run(g,4);}
  for(const slot of s.architect!.slots){slot.skillTimer=100;slot.opening=false;slot.castGap=0;}s.architect!.elements.jobs=[];
@@ -115,7 +117,7 @@ it('stacks Bulwark fields from separate emitters but never past a 60% reduction'
  target.refreshModifiers();const base=target.mods.damageTakenMul,taken:number[]=[];
  for(const a of emitters){a.type='bastion';a.skill=1;a.element=ARCHETYPES.bastion.element;startElementAttack(s,a,target,'skill');updateElements(s,.3);target.refreshModifiers();taken.push(target.mods.damageTakenMul/base);}
  startElementAttack(s,emitters[0],target,'skill');updateElements(s,.3);target.refreshModifiers();expect(target.mods.bulwark).toBe(6);
- expect(taken).toEqual([.8,.64,.512,.4096,.4,.4].map(v=>expect.closeTo(v,10)));
+ expect(taken).toEqual([.8,.6,.4,.4,.4,.4].map(v=>expect.closeTo(v,10)));
 });
 it('stacks Aegis shields up to one full shield per living Aegis Projector',()=>{
  const {s,t}=setup();const slots=s.architect!.slots;

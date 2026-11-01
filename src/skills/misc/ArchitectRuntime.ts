@@ -1,6 +1,6 @@
 import { arsenalTeam } from './ArchitectTargets';
 import { ARCHETYPES, validSelection, copyLoadout, type ArchitectLoadout, type ArchitectType } from '../../data/architectLoadout';
-import { newElementState, updateElements, moduleLinked, elementTarget, fireCapacitorBolt, type ArchitectElement, type ElementState } from './ArchitectElements';
+import { newElementState, updateElements, moduleLinks, elementTarget, fireCapacitorBolt, type ArchitectElement, type ElementState } from './ArchitectElements';
 import { ensureArchitectHealth, detachArchitectHealth, returnArchitectHealth, rebuildArchitectHealth, ARCHITECT_FULL_HP, MODULE_COMBAT_HP, PLATFORM_HEALTH_RATIO } from './ArchitectHealth';
 import { Vector3 } from 'three';
 import type { Mods, Ship, TurretState } from '../../ships/Ship';
@@ -14,10 +14,13 @@ import { safeStep, type Landing } from './StepperRuntime';
 import { updateArchitectUltimate, endArchitectUltimate, type ArchitectUltimate } from './ArchitectUltimates';
 import { BATTERY_FOLD_TIME } from './ArchitectBatteryPose';
 import { applyDockedPassives, harmonicTempo, updateDockedPassives, vanesDashTempo } from './ArchitectDocked';
+import type { Stacks } from './ArchitectStacks';
 
 export type ModuleMode = 'docked'|'launching'|'deployed'|'moving'|'returning'|'destroyed'|'assembling'|'citadel';
 export interface ModuleSlot {
-  type:ArchitectType; skill:0|1; element:ArchitectElement; skillTimer:number; castGap:number; opening:boolean; boostUntil:number; reactionUntil:number; aboard:boolean; index:number; state:ModuleMode; hp:number; reload:number; reloadScale:number; disabled:number; rebuild:number; dockedFor:number;
+  type:ArchitectType; skill:0|1; element:ArchitectElement; skillTimer:number; castGap:number; opening:boolean;
+  /** Accelerando and Reaction Amplifier copies on this platform, one timer per emitter (see ArchitectStacks). */
+  boosts:Stacks; amps:Stacks; aboard:boolean; index:number; state:ModuleMode; hp:number; reload:number; reloadScale:number; disabled:number; rebuild:number; dockedFor:number;
   entity:Ship|null;
   path:{ x:number;y:number;z:number;tx:number;ty:number;tz:number;elapsed:number;duration:number;hit:number[];damage:boolean;settling?:boolean }|null;
   capacitorCycles:0|1;capacitorCharged:boolean;
@@ -41,19 +44,21 @@ export const MODULE_HP=MODULE_COMBAT_HP;
 const smooth=(x:number)=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t);};
 export function newArchitectState(_rng:()=>number=()=>.5,loadout?:ArchitectLoadout):ArchitectState {
   const selections=copyLoadout(loadout);
-  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:1,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null,capacitorCycles:0,capacitorCharged:false,follow:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false,drive:null,capacitorReadyAt:0,kindling:[],flakReadyAt:0};
+  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boosts:{},amps:{},aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:1,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null,capacitorCycles:0,capacitorCharged:false,follow:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false,drive:null,capacitorReadyAt:0,kindling:[],flakReadyAt:0};
 }
-/** Per living docked platform: damage reduction (capped) and hull repair per second as a share of full hull. */
-const DOCK_DR=.015,DOCK_DR_CAP=.15,DOCK_REGEN=.0003;
+/** Per living docked platform: damage reduction and hull repair per second as a share of full hull. */
+const DOCK_DR=.015,DOCK_REGEN=.0003;
 export function architectDockingStatus(s:Ship){
   const a=s.architect,slots=a?.slots.filter(v=>v.state==='docked'&&v.hp>0)??[];
-  return {count:slots.length,damageReduction:Math.min(DOCK_DR_CAP,slots.length*DOCK_DR),hullRegenPerSecond:(a?.fullHp??0)*slots.filter(v=>v.dockedFor>2).length*DOCK_REGEN,capacitors:a?.slots.filter(v=>v.capacitorCharged).length??0,chargingCycles:a?.slots.reduce((n,v)=>n+v.capacitorCycles,0)??0};
+  return {count:slots.length,damageReduction:slots.length*DOCK_DR,hullRegenPerSecond:(a?.fullHp??0)*slots.filter(v=>v.dockedFor>2).length*DOCK_REGEN,capacitors:a?.slots.filter(v=>v.capacitorCharged).length??0,chargingCycles:a?.slots.reduce((n,v)=>n+v.capacitorCycles,0)??0};
 }
 export interface VectorMobilityState {
   /** Charges ready now, and the time each spent charge comes back (ascending); spent charges recharge in parallel. */
   dashCharges:number;dashRecharge:number[];mobileReadyAt:number;mobileUntil:number;mobileDuration:number;
 }
 export const DASH_TIME=.55;
+/** Each Mobile Battery specialization past the first cuts this share of its cooldown, down to the floor. */
+const MOBILE_CUT=.15,MOBILE_FLOOR=1;
 const DASH_RECHARGE=10,MOBILE_COOLDOWN=14,HOVER_SPEED=1200,HOVER_CLEARANCE=80,HOVER_LANDING=1.2;
 /** Hull Dash pose: the bow swings onto the dash bearing, the hull lifts clear of the water and sets back down. */
 const DASH_TURN=.15,DASH_RISE=.12,DASH_LIFT=50;
@@ -82,7 +87,7 @@ export function vectorTuning(s:Ship){
   const {count,dashSpecs,mobileSpecs}=vectorStats(s),extraDash=Math.max(0,dashSpecs-1),extraMobile=Math.max(0,mobileSpecs-1);
   // Resonance tempo shortens both recharges too; a charge keeps the length it started with.
   const tempo=1+RESONANCE_TEMPO*living(s,'resonance').length;
-  let cooldown=MOBILE_COOLDOWN;for(let i=0;i<extraMobile;i++)cooldown*=.85;
+  const cooldown=Math.max(MOBILE_FLOOR,MOBILE_COOLDOWN*(1-MOBILE_CUT*extraMobile));
   const extra=Math.max(0,count-1);
   return {count,dashSpecs,mobileSpecs,dashDistance:dashSpecs?1100+150*extraDash:800,dashCharges:2+extraDash,dashRecharge:DASH_RECHARGE/tempo/vanesDashTempo(s),mobileDuration:mobileSpecs?14+3*extraMobile:10,mobileCooldown:cooldown/tempo,
     pathDamage:15000+3000*extra,landDamage:25000+5000*extra,landRadius:450+50*extra,escortSpeed:HOVER_SPEED*(1+VECTOR_THRUST.escort*count)};
@@ -504,11 +509,12 @@ export function updateArchitect(s:Ship,dt:number):void {
       a.linkTick-=.25;
       for(const t of s.game.ships){
         if(!t.alive||t.team===s.team||t.deep||t.pos.y>30)continue;
-        const hit=a.links.some(edge=>{
+        // Every link the hull crosses bites: overlapping links stack.
+        const hit=a.links.filter(edge=>{
           const x=a.slots[edge.a],y=a.slots[edge.b];if(x.state!=='deployed'||y.state!=='deployed'||!x.entity?.alive||!y.entity?.alive)return false;
           const p=x.entity.pos,q=y.entity.pos;return Math.hypot(p.x-q.x,p.z-q.z)<=2500&&clearLine(s,p.x,p.z,q.x,q.z)===1&&segmentHitsHull(t,p.x,p.z,q.x,q.z,30)>=0;
         });
-        if(hit)hurt(s,t,3000,s.skills[2].spec);
+        if(hit.length)hurt(s,t,3000*hit.length,s.skills[2].spec);
       }
     }
   }else a.links=[];
@@ -522,7 +528,7 @@ export function preparePlatform(m:Ship):void {
   m.mods.damageMul*=s.mods.damageMul;m.mods.apDamageMul*=s.mods.apDamageMul;m.mods.reloadMul*=s.mods.reloadMul;
   setModuleReloadScale(s,slot,architectGunReloadScale(s,slot.state,slot));
   if(slot.state==='deployed'||slot.state==='citadel'){
-    m.mods.damageMul*=3;m.mods.reloadMul*=slot.reloadScale/(slot.state!=='citadel'&&a.ultimate?.kind!=='killbox'&&moduleLinked(s,slot)?1.25:1);if(a.ultimate?.kind==='killbox')m.mods.damageMul*=1.5;
+    m.mods.damageMul*=3;m.mods.reloadMul*=slot.reloadScale/(1+.25*moduleLinks(s,slot));if(a.ultimate?.kind==='killbox')m.mods.damageMul*=1.5;
   }
   m.control.fire=false;
   if(slot.state!=='deployed'&&slot.state!=='citadel')return;

@@ -3,13 +3,13 @@ import type { Ship } from '../../ships/Ship';
 import type { ModuleSlot } from './ArchitectRuntime';
 import { buff } from '../kit';
 import { elementOrigin, type ElementJob, emitElement } from './ArchitectElements';
+import { addStack } from './ArchitectStacks';
 /** Support turrets stack at full strength: every heal and shield lands in full however many emitters share a target. */
 const supportBoost=(s:Ship)=>s.architect!.huntUntil>s.game.time?1.4:1;
-/** Each Bulwark field cuts this share of what still gets through; together they never pass the cap. */
+/** Each Bulwark field adds this much damage reduction, up to the cap; other protection multiplies on top. */
 export const BULWARK_DR=.2,BULWARK_CAP=.6;
 export function bulwarkTaken(fields:number):number{
- let taken=1;for(let i=0;i<fields;i++)taken*=1-BULWARK_DR;
- return Math.max(1-BULWARK_CAP,taken);
+ return 1-Math.min(BULWARK_CAP,BULWARK_DR*fields);
 }
 /** Living Aegis Projectors across every Architect on the team. */
 function aegisEmitters(s:Ship):number{
@@ -49,8 +49,10 @@ export function resolveSupport(s:Ship,a:ModuleSlot,j:ElementJob):void{
  }else if(a.type==='resonance'){
   for(const t of targets)if(t.team===s.team){
    const tag=t.architectPlatform,slot=tag?.owner.architect?.slots[tag.index];
-   if(slot){if(a.skill===1)slot.reactionUntil=s.game.time+4;else if(slot.type!=='resonance')slot.boostUntil=s.game.time+4;}
-   if(a.skill===1&&t.architect)for(const slot of t.architect.slots)if(slot.state==='docked')slot.reactionUntil=s.game.time+4;
+   // Each emitter keeps its own copy: a second Resonance stacks, its own recast only refreshes.
+   const now=s.game.time,source=`${s.id}:${a.index}`;
+   if(slot){if(a.skill===1)addStack(slot.amps,source,now+4,now);else if(slot.type!=='resonance')addStack(slot.boosts,source,now+4,now);}
+   if(a.skill===1&&t.architect)for(const slot of t.architect.slots)if(slot.state==='docked')addStack(slot.amps,source,now+4,now);
   }
  }
  emitElement(s,a,j,'hit');

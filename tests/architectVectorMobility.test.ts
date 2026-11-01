@@ -9,6 +9,8 @@ import { DOCKED } from '../src/skills/misc/ArchitectDocked';
 
 /** Thrust Vanes: a docked Vector recharges Hull Dash this much faster. */
 const VANES=1+DOCKED.vanes.dash;
+/** Thrust Vanes with two Vectors docked: each one adds its share. */
+const VANES2=1+2*DOCKED.vanes.dash;
 
 function arena(skill:0|1=0){
  const g=emptyGame('open',713,'freeplay');g.map.heightAt=()=>-100;
@@ -73,7 +75,7 @@ describe('independent Vector mobility',()=>{
   const lost=s.architect!.slots[1];lost.state='destroyed';lost.hp=0;lost.rebuild=60;g.step();
   expect(s.mods.speedMul).toBeCloseTo(1.06*1.03);expect(s.vectorMobility.dashCharges).toBe(2);expect(s.vectorMobility.dashRecharge).toEqual([]);
   lost.state='docked';lost.hp=5000;g.step();
-  expect(s.getVectorMobilityStatus()?.hullDash).toMatchObject({charges:2,maxCharges:3});expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeGreaterThan(10/VANES-.1);
+  expect(s.getVectorMobilityStatus()?.hullDash).toMatchObject({charges:2,maxCharges:3});expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeGreaterThan(10/VANES2-.1);
  });
  it('rejects Mobile Battery without deployed platforms instead of spending the cooldown',()=>{
   const {g,s}=arena(1);expect(s.getVectorMobilityStatus()?.mobileBattery.blockedReason).toBe('No deployed platforms');
@@ -149,11 +151,11 @@ describe('independent Vector mobility',()=>{
   const {g,s,t}=arena(1);t.withdraw();const picks=defaultLoadout().map(p=>p.type==='resonance'?{type:'storm' as const,skill:0 as const}:p);
   picks[0]={type:'vector',skill:0};picks[1]={type:'vector',skill:1};picks[2]={type:'resonance',skill:0};picks[3]={type:'resonance',skill:1};setArchitectLoadout(s,picks);
   const tempo=1+RESONANCE_TEMPO*2,tuning=vectorTuning(s);
-  expect(tuning.dashRecharge).toBeCloseTo(10/tempo/VANES);expect(tuning.mobileCooldown).toBeCloseTo(14/tempo);
+  expect(tuning.dashRecharge).toBeCloseTo(10/tempo/VANES2);expect(tuning.mobileCooldown).toBeCloseTo(14/tempo);
   escorts(s,0);const slot=s.architect!.slots[4],m=materialize(s,slot);slot.state='deployed';m.pos.set(1500,0,1500);
   const start=g.time;dash(s);mobile(s);g.step();
-  expect(s.vectorMobility.dashRecharge[0]-start).toBeCloseTo(10/tempo/VANES+1/60);expect(s.vectorMobility.mobileReadyAt-start).toBeCloseTo(14/tempo+1/60);
-  const lost=s.architect!.slots[2];lost.state='destroyed';lost.hp=0;expect(vectorTuning(s).dashRecharge).toBeCloseTo(10/(1+RESONANCE_TEMPO)/VANES);
+  expect(s.vectorMobility.dashRecharge[0]-start).toBeCloseTo(10/tempo/VANES2+1/60);expect(s.vectorMobility.mobileReadyAt-start).toBeCloseTo(14/tempo+1/60);
+  const lost=s.architect!.slots[2];lost.state='destroyed';lost.hp=0;expect(vectorTuning(s).dashRecharge).toBeCloseTo(10/(1+RESONANCE_TEMPO)/VANES2);
  });
  it('keeps hull spans separated vertically while sweeping under a raised carrier',()=>{
   const {g,s}=arena(),slot=s.architect!.slots[0],block=materialize(s,slot);slot.state='deployed';block.pos.set(0,200,2000);

@@ -82,7 +82,7 @@ describe('Architect docked guns', () => {
 });
 
 describe('docked passives that ride on the shells', () => {
-  it('Kindling: a docked Furnace hit burns for three seconds, refreshed rather than stacked', () => {
+  it('Kindling: a docked Furnace hit burns for three seconds, refreshed rather than stacked, harder per docked Furnace', () => {
     const { g, s } = architect('furnace');
     const t = target(g, 0, 500);
     dockedHit(s, 'furnace', t, 10000);
@@ -90,8 +90,8 @@ describe('docked passives that ride on the shells', () => {
     dockedHit(s, 'furnace', t, 10000);
     const before = t.stats.received;
     run(g, 5);
-    // Stacked burns would add two more seconds of the first one on top.
-    expect(t.stats.received - before).toBeCloseTo(DOCKED.kindling.dps * DOCKED.kindling.time, -3);
+    // Stacked burns would add two more seconds of the first one on top. Ten Furnaces sit docked.
+    expect(t.stats.received - before).toBeCloseTo(DOCKED.kindling.dps * 10 * DOCKED.kindling.time, -3);
   });
 
   it('Kindling comes from a real docked volley, and not from a deployed one', () => {
@@ -109,15 +109,15 @@ describe('docked passives that ride on the shells', () => {
     expect(out.s.architect!.kindling).toHaveLength(0);
   });
 
-  it('Rime: a docked Cryo hit slows the target and its turrets for three seconds', () => {
+  it('Rime: a docked Cryo hit slows the target and its turrets for three seconds, to the cap with ten docked', () => {
     const { g, s } = architect('cryo');
     const t = target(g, 0, 500);
     const speed = t.mods.speedMul;
     const traverse = t.mods.traverseMul;
     dockedHit(s, 'cryo', t, 10000);
     run(g, 1 / 60);
-    expect(t.mods.speedMul).toBeCloseTo(speed * (1 - DOCKED.rime.speed));
-    expect(t.mods.traverseMul).toBeCloseTo(traverse * (1 - DOCKED.rime.traverse));
+    expect(t.mods.speedMul).toBeCloseTo(speed * (1 - DOCKED.rime.cap));
+    expect(t.mods.traverseMul).toBeCloseTo(traverse * (1 - DOCKED.rime.cap));
     run(g, 3.1);
     expect(t.mods.speedMul).toBeCloseTo(speed);
   });
@@ -179,12 +179,12 @@ describe('docked passives that ride on the shells', () => {
 });
 
 describe('docked passives on the hull', () => {
-  it('Plating: each docked Bastion trims hull damage, to a cap, and none deployed', () => {
+  it('Plating: each docked Bastion trims hull damage, with no cap, and none deployed', () => {
     const one = architect(['bastion', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace']);
     const base = architect('furnace').s.mods.damageTakenMul;
     expect(one.s.mods.damageTakenMul / base).toBeCloseTo(1 - DOCKED.plating.dr);
     const all = architect('bastion');
-    expect(all.s.mods.damageTakenMul / base).toBeCloseTo(1 - DOCKED.plating.cap);
+    expect(all.s.mods.damageTakenMul / base).toBeCloseTo(1 - DOCKED.plating.dr * 10);
     const plain = architect('furnace');
     deployAll(all.g, all.s);
     deployAll(plain.g, plain.s);
@@ -219,7 +219,7 @@ describe('docked passives on the hull', () => {
     boat.throttle = 0;
     run(g, 12);
     expect(boat.submerged && !boat.deep).toBe(true);
-    // Five docked Sentinels: 4 km plus a kilometre for each extra, capped at 6 km.
+    // Five docked Sentinels: 4 km plus a kilometre for each extra, 8 km in all.
     expect(canTrack(s, cloaked)).toBe(true);
     expect(canTrack(s, boat)).toBe(true);
     const lone = architect(['sentinel', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace']);
@@ -229,7 +229,7 @@ describe('docked passives on the hull', () => {
     expect(canTrack(lone.s, far)).toBe(false);
   });
 
-  it('Field Repair: each docked Restoration repairs a share of the hull every second, to a cap', () => {
+  it('Field Repair: each docked Restoration repairs a share of the hull every second, with no cap', () => {
     const heal = (types: ArchitectType[]) => {
       const { g, s } = architect(types);
       run(g, 3);
@@ -244,14 +244,14 @@ describe('docked passives on the hull', () => {
     const lots = heal(['restoration', 'restoration', 'restoration', 'restoration', 'restoration', ...furnace.slice(5)]);
     const mul = one.s.mods.regenMul, full = one.s.architect!.fullHp;
     expect(one.gained - plain.gained).toBeCloseTo(full * DOCKED.fieldRepair.perSecond * mul, -3);
-    expect(lots.gained - plain.gained).toBeCloseTo(full * DOCKED.fieldRepair.cap * mul, -3);
+    expect(lots.gained - plain.gained).toBeCloseTo(full * DOCKED.fieldRepair.perSecond * 5 * mul, -3);
   });
 
-  it('Harmonic: docked Resonance speeds the other docked guns, to a cap, but not itself', () => {
+  it('Harmonic: docked Resonance speeds the other docked guns, with no cap, but not itself', () => {
     const { s } = architect(['resonance', 'furnace']);
     const furnace = s.architect!.slots[1];
     const resonance = s.architect!.slots[0];
-    expect(architectGunReloadScale(s, 'docked', furnace)).toBeCloseTo(1 / (1 + DOCKED.harmonic.cap));
+    expect(architectGunReloadScale(s, 'docked', furnace)).toBeCloseTo(1 / (1 + DOCKED.harmonic.reload * 5));
     expect(architectGunReloadScale(s, 'docked', resonance)).toBe(1);
     const one = architect(['resonance', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace']);
     expect(architectGunReloadScale(one.s, 'docked', one.s.architect!.slots[1])).toBeCloseTo(1 / (1 + DOCKED.harmonic.reload));
@@ -282,7 +282,7 @@ describe('docked passives on the hull', () => {
     expect(m.alive).toBe(true);
   });
 
-  it('Thrust Vanes: each docked Vector adds speed and rudder, and any of them a faster Hull Dash', () => {
+  it('Thrust Vanes: each docked Vector adds speed, rudder and a faster Hull Dash', () => {
     const docked = architect('vector');
     const out = architect('vector');
     const dash = vectorTuning(docked.s).dashRecharge;
@@ -290,8 +290,8 @@ describe('docked passives on the hull', () => {
     const n = 10;
     expect(docked.s.mods.speedMul / out.s.mods.speedMul).toBeCloseTo(1 + DOCKED.vanes.speed * n);
     expect(docked.s.mods.rudderMul / out.s.mods.rudderMul).toBeCloseTo(1 + DOCKED.vanes.rudder * n);
-    expect(vectorTuning(out.s).dashRecharge / dash).toBeCloseTo(1 + DOCKED.vanes.dash);
+    expect(vectorTuning(out.s).dashRecharge / dash).toBeCloseTo(1 + DOCKED.vanes.dash * n);
     const lone = architect(['vector', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace', 'furnace']);
-    expect(vectorTuning(lone.s).dashRecharge).toBeCloseTo(dash);
+    expect(vectorTuning(lone.s).dashRecharge).toBeCloseTo((dash * (1 + DOCKED.vanes.dash * n)) / (1 + DOCKED.vanes.dash));
   });
 });

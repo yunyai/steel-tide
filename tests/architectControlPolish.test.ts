@@ -38,7 +38,7 @@ describe('Architect command and gun polish',()=>{
   expect(m.turrets[0].reload).toBeCloseTo(2.4);attachModule(s,slot);expect(s.turrets[0].reload).toBeCloseTo(4.8);
   s.architect!.huntUntil=g.time;updateArchitect(s,0);expect(s.turrets[0].reload).toBeCloseTo(6);
  });
- it('applies multiplicative capped docking protection only to living docked slots',()=>{
+ it('applies multiplicative docking protection only to living docked slots',()=>{
   const {s,t}=arena();s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(4250);
   for(const a of s.architect!.slots.slice(0,5)){a.state='destroyed';a.hp=0;}
   expect(s.takeDamage(10000,t)).toBeCloseTo(4625);

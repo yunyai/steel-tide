@@ -1,7 +1,7 @@
 import { ARCHITECT_BATTERY_FLIGHT, type ArchitectBatteryCast, type ArchitectBatteryStage } from '../../data/architectBattery';
 import { planArchitectBatteryLayout, buildArchitectBatteryPaths, planArchitectBatteryFormation, BATTERY_TRANSPORT_TIME, BATTERY_FOLD_TIME } from './ArchitectBatteryPose';
 import { applyElementMark, ultimateElementHit } from './ArchitectElements';
-import type { Ship } from '../../ships/Ship';
+import type { Mods, Ship } from '../../ships/Ship';
 import { MAP_HALF } from '../../config';
 import { bearingTo } from '../../core/math';
 import { distToHull, segmentHitsHull } from '../../core/hull';
@@ -14,6 +14,9 @@ export interface ArchitectUltimate {
   kind:ArchitectUltimateKind;elapsed:number;members:number[];x:number;z:number;
   aimX:number;aimY:number;aimZ:number;locked:boolean;waves:number;fired:boolean;granted:number[];
 }
+/** Citadels from different Architects add their protection, to this much. */
+export const CITADEL_DR_CAP=.9;
+export function addCitadelDR(m:Mods,dr:number):void{m.citadelDR=Math.min(CITADEL_DR_CAP,m.citadelDR+dr);}
 const indexOf=(kind:ArchitectUltimateKind)=>kind==='assembly'?6:kind==='killbox'?7:8;
 export function beginArchitectUltimate(s:Ship,kind:ArchitectUltimateKind):boolean {
   const a=s.architect!,slots=available(s);
@@ -96,7 +99,7 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
     if(u.elapsed+1e-8>=4)endArchitectUltimate(s);
   }else if(u.kind==='killbox'){
     if(u.elapsed+1e-8>=1.5){
-      for(const t of s.game.ships)if(t.alive&&t.team!==s.team&&!t.submerged&&!t.mods.ccImmune&&distToHull(t,u.x,u.z)<=1500)buff(t,'debuff:grandBattery',.1,m=>m.speedMul=Math.min(m.speedMul,.8));
+      for(const t of s.game.ships)if(t.alive&&t.team!==s.team&&!t.submerged&&!t.mods.ccImmune&&distToHull(t,u.x,u.z)<=1500)buff(t,'debuff:grandBattery',.1,m=>m.speedMul*=.8);
       // Each scheduled module stage is consumed once, even when that module was destroyed.
       const count=u.members.length;
       while(u.waves<count*4){
@@ -128,8 +131,8 @@ export function updateArchitectUltimate(s:Ship,dt:number):void {
       const count=u.members.filter(i=>a.slots[i].state==='citadel'&&a.slots[i].entity?.alive).length;
       if(count>=1)for(const t of s.game.ships){
         if(!t.alive||t.team!==s.team||Math.hypot(t.pos.x-s.pos.x,t.pos.z-s.pos.z)>900)continue;
-        const dr=Math.min(.6,.3+count*.03);
-        buff(t,`architectCitadel:${s.id}`,.05,m=>{m.citadelDR=Math.max(m.citadelDR,dr);});
+        const dr=.3+count*.03;
+        buff(t,`architectCitadel:${s.id}`,.05,m=>addCitadelDR(m,dr));
         if(!u.granted.includes(t.id)){
           raiseShield(t,t===s?500000:150000,12);u.granted.push(t.id);
         }
