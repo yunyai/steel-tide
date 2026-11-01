@@ -65,6 +65,8 @@ interface FreeCube {
   /** How much a merged die's rainbow shows, 0 to 1; `merged` when the die it last landed was one. */
   rainbow: number;
   merged: boolean;
+  /** Render time its last die landed a jackpot (-1 when none). */
+  jackpotAt: number;
   /** Render time it merged into a die (-1 when not merged), and where it slides in from. */
   mergeAt: number;
   mergeFrom: Vector3;
@@ -107,6 +109,17 @@ const SWAP_BOW = 190;
 /** Seconds a cube takes to slide into an Overdrive die, and a landed die to shrink back to size. */
 const MERGE = 0.3;
 const H = CUBE.edge / 2;
+/**
+ * A jackpot: seconds between the six face rings setting out, how long the rainbow pillar stands and the cube runs
+ * rainbow, and the owner's camera shake.
+ */
+export const JACKPOT = { ringGap: 0.08, ringTime: 0.5, pillar: 1.2, rainbow: 1.2, shake: 0.7 } as const;
+
+/** How far out (0 to 1) the jackpot ring of face `m` has spread `age` seconds after the die lands. */
+export function jackpotRing(age: number, m: number): number {
+  const t = age - m * JACKPOT.ringGap;
+  return t <= 0 ? 0 : ease(t / JACKPOT.ringTime);
+}
 const TETHER = modeOf('tether');
 const tint2 = new Color();
 
@@ -127,6 +140,8 @@ export class TungstenCubeFx {
   readonly ult: TungstenUltFx;
   /** Screen flash for a strike at (x, z), faded by the distance to the nearest camera. */
   onFlash: ((x: number, z: number, amount: number, color: number) => void) | null = null;
+  /** A jackpot kicks its own captain's camera; the battle scales it by how far the camera is from (x, z). */
+  onShake: ((ship: Ship, x: number, z: number, amount: number) => void) | null = null;
   private views = new Map<string, FreeCube>();
   private bursts: Burst[] = [];
   private off: (() => void)[] = [];
@@ -198,8 +213,10 @@ export class TungstenCubeFx {
         v.face = e.face ?? e.mode;
         v.faceAt = this.game.time;
         v.merged = !!e.merged;
+        v.jackpotAt = e.jackpot ? this.game.time : -1;
         this.settleDie(v, v.face);
       }
+      if (e.jackpot && !this.paint.reduce) this.onShake?.(e.ship, e.x, e.z, JACKPOT.shake);
     }
     this.sound(e);
   }
@@ -275,7 +292,8 @@ export class TungstenCubeFx {
         break;
       case 'die':
         play('explosion', 'blast-shock', 0.9, e.jackpot ? 0.8 : 1.15, 2);
-        if (e.jackpot) play('charge', 'transform', 0.8, 1.2);
+        // A jackpot rings its own sting over the blast.
+        if (e.jackpot) play('charge', 'ui-streak', 1, 1.15);
         break;
       case 'signature': {
         const sig = TUNGSTEN_MODES[e.mode].signature.id;
@@ -409,7 +427,7 @@ export class TungstenCubeFx {
         mesh.frustumCulled = false;
         this.scene.add(mesh);
         this.renderPos(c, this.v);
-        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, face: -1, faceAt: -1, mode: c.mode, base: new Quaternion(), from: new Quaternion(), to: new Quaternion(), settleAt: -1, wobble: 0, die: 0, rainbow: 0, merged: false, mergeAt: -1, mergeFrom: new Vector3() };
+        v = { mesh, material, u, sweep: new ModeSweep(), trail: [], tumble: 0, yaw: c.yaw, axisX: 1, axisZ: 0, lastX: this.v.x, lastY: this.v.y, lastZ: this.v.z, live: true, gone: -1, struck: -1, face: -1, faceAt: -1, mode: c.mode, base: new Quaternion(), from: new Quaternion(), to: new Quaternion(), settleAt: -1, wobble: 0, die: 0, rainbow: 0, merged: false, jackpotAt: -1, mergeAt: -1, mergeFrom: new Vector3() };
         // A cube first seen merging left the magnet for the die this step: it slides in from its slot.
         if (c.state === 'merged') {
           dockPoint(s, c.slot, v.mergeFrom);
@@ -447,7 +465,9 @@ export class TungstenCubeFx {
       const shown = v.face >= 0 && this.game.time - v.faceAt < DIE_SHOW ? clamp01(1 - (this.game.time - v.faceAt - DIE_HOLD) / (DIE_SHOW - DIE_HOLD)) : 0;
       v.die = rolling ? Math.min(1, v.die + dt / 0.15) : shown;
       // A merged die runs rainbow while it rolls and fades back like the faces once it lands.
-      v.rainbow = mergedDie(c) ? Math.min(1, v.rainbow + dt / 0.15) : v.merged ? shown : 0;
+      // A jackpot runs it rainbow too, for a moment after it lands.
+      const jackpot = v.jackpotAt >= 0 && this.game.time - v.jackpotAt < JACKPOT.rainbow ? 1 : 0;
+      v.rainbow = mergedDie(c) ? Math.min(1, v.rainbow + dt / 0.15) : Math.max(v.merged ? shown : 0, jackpot);
       if (!this.paint.reduce && rolling) {
         v.tumble += moved / 110;
         v.wobble = 0.45 * Math.sin(c.flown / 240);
@@ -1055,12 +1075,22 @@ export class TungstenCubeFx {
         return;
       }
       case 'die': {
-        // The die erupts out to its blast radius in the colour of the face it rolled; a jackpot rings in all six.
+        // The die erupts out to its blast radius in the colour of the face it rolled; a jackpot rings out all six
+        // in turn and stands a rainbow pillar of light over the spot.
         const base = this.paint.surface(e.x, e.z);
         const face = modeColor(e.face ?? e.mode);
         const k = ease(age / 0.5);
-        if (e.jackpot) for (let m = 0; m < 6; m++) this.paint.ring(e.x, e.z, e.radius * k * (0.7 + m * 0.06), hot(modeColor(m), 2), 0.7 * (1 - f));
-        else this.paint.ring(e.x, e.z, e.radius * k, hot(face, 2), 0.8 * (1 - f));
+        if (e.jackpot) {
+          for (let m = 0; m < 6; m++) {
+            const r = jackpotRing(age, m);
+            if (r > 0) this.paint.ring(e.x, e.z, e.radius * r * (0.7 + m * 0.06), hot(modeColor(m), 2), 0.7 * (1 - f));
+          }
+          if (age < JACKPOT.pillar) {
+            const fade = 1 - age / JACKPOT.pillar,
+              turn = Math.floor(age * 8);
+            for (let i = 0; i < 12; i++) p.push(BK.Glow, e.x, base + H + i * 70, e.z, CUBE.edge * (1.6 - i * 0.07), hot(modeColor((i + turn) % 6), 1.6), 0.55 * fade);
+          }
+        } else this.paint.ring(e.x, e.z, e.radius * k, hot(face, 2), 0.8 * (1 - f));
         this.paint.ring(e.x, e.z, H + e.radius * 0.5 * k, FOAM, 0.5 * (1 - f), BK.Foam, b.id);
         if (age < 0.2) p.push(BK.Flare, e.x, base + H, e.z, 420 * (1 - age / 0.2) + 80, hot(WHITE, 1.8), 1 - age / 0.2);
         p.push(BK.Glow, e.x, base + H, e.z, CUBE.edge * 3, hot(face, 1.2), 0.5 * (1 - f));

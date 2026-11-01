@@ -3,7 +3,7 @@ import { architectDockingStatus } from '../skills/misc/ArchitectRuntime';
 import { dockedCount } from '../skills/misc/ArchitectDocked';
 import { CROSS } from '../skills/misc/CrossStep';
 import { vectorMobilityPresentation } from './VectorMobilityPresentation';
-import { cubeMarkers, cubeReticle, cubeSlot, tungstenPresentation, type TungstenView } from './TungstenPresentation';
+import { cubeMarkers, cubeReticle, cubeSlot, jackpotCue, JACKPOT_COLORS, tungstenPresentation, type TungstenView } from './TungstenPresentation';
 import { ARCHETYPES, ARCHITECT_TYPES } from '../data/architectLoadout';
 import { canTrack, contactVisible, proximityContact, revealSource } from '../core/Targeting';
 import { cameraOccluded } from '../render/Visibility';
@@ -507,6 +507,12 @@ export class HUD {
           this.banner(`Enemy ${captainName(a.ship)}: ${sp.name}`, sp.description, c);
         }
       }),
+      ev.view('tungsten', (t) => {
+        const cue = jackpotCue(t, pc.ship);
+        if (!cue) return;
+        this.callout(cue.title, cue.sub, JACKPOT_COLORS[t.mode], true);
+        this.flashScreen(JACKPOT_COLORS[t.mode], true);
+      }),
       ev.view('pickupTaken', (p) => {
         if (p.ship !== pc.ship) return;
         this.banner(PICKUP_LABEL[p.pickup.kind], '', accentCss(PICKUP_COLOR[p.pickup.kind]));
@@ -564,9 +570,11 @@ export class HUD {
   }
 
   /** Big centre-screen word: kill streaks, ultimates, waves. */
-  private callout(title: string, sub: string, color: string): void {
+  private callout(title: string, sub: string, color: string, rainbow = false): void {
     const c = this.e.callout;
     c.style.setProperty('--c', color);
+    c.classList.toggle('rainbow', rainbow);
+    if (rainbow) c.style.setProperty('--rainbow', `linear-gradient(100deg, ${JACKPOT_COLORS.join(', ')}, ${JACKPOT_COLORS[0]})`);
     c.replaceChildren(title);
     if (sub) {
       const s = document.createElement('small');
@@ -576,8 +584,10 @@ export class HUD {
     flash(c, 'on');
   }
 
-  private flashScreen(color: string): void {
+  private flashScreen(color: string, rainbow = false): void {
     this.e.flashfx.style.setProperty('--c', `${color}66`);
+    this.e.flashfx.classList.toggle('rainbow', rainbow);
+    if (rainbow) this.e.flashfx.style.setProperty('--rainbow', `linear-gradient(115deg, ${JACKPOT_COLORS.map((c) => `${c}59`).join(', ')})`);
     flash(this.e.flashfx, 'on');
   }
 

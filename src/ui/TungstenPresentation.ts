@@ -74,6 +74,15 @@ const REACH: Record<SignatureId, (r: string) => string> = {
 };
 
 /** The Tungsten's HUD state at game time `time`, for a ship standing at (x, z). */
+/** The six mode colours, in mode order: a jackpot's callout and flash run through them. */
+export const JACKPOT_COLORS = TUNGSTEN_MODES.map((m) => css(m.color));
+
+/** The centre-screen call when a captain's own Loaded Die rolls a jackpot; null for anyone else or a plain roll. */
+export function jackpotCue(e: { kind: string; ship: Ship; mode: number; jackpot?: boolean }, me: Ship | null): { title: string; sub: string } | null {
+  if (e.kind !== 'die' || !e.jackpot || !me || e.ship !== me) return null;
+  return { title: 'JACKPOT', sub: `Every face · ${TUNGSTEN_MODES[e.mode].name}` };
+}
+
 export function tungstenPresentation(t: TungstenState, time: number, x: number, z: number): TungstenView {
   const mode = TUNGSTEN_MODES[t.mode];
   const sig = mode.signature;

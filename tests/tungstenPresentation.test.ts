@@ -4,7 +4,11 @@ import { ShipView } from '../src/render/ShipModel';
 import { DAIS, HORN_TIPS, SPINE, TungstenModel } from '../src/render/TungstenModel';
 import { Effects } from '../src/fx/Effects';
 import type { ParticleSystem } from '../src/fx/Particles';
-import { TungstenCubeFx } from '../src/render/TungstenCubeFx';
+import { JACKPOT, jackpotRing, TungstenCubeFx } from '../src/render/TungstenCubeFx';
+import { jackpotCue } from '../src/ui/TungstenPresentation';
+import type { GameEventMap } from '../src/core/Events';
+
+type TungstenEvent = GameEventMap['tungsten'];
 import { dieFaceNormal, modeColor, storeLook } from '../src/render/TungstenLook';
 import { CUBE, dockLift } from '../src/skills/misc/TungstenModes';
 import { SHIP_BY_ID } from '../src/data/ships';
@@ -1033,5 +1037,96 @@ describe('Tungsten hull effects', () => {
   it('burns without smoke on the Tungsten, though fires still smoke on a gun ship', () => {
     expect(smoke('iowa', true)).toBeGreaterThan(smoke('iowa', false));
     expect(smoke('tungsten', true)).toBe(smoke('tungsten', false));
+  });
+});
+
+describe('Tungsten jackpot', () => {
+  /** Rolls the Loaded Die from a Kinetic cube onto a foe 2 km ahead; `face` 0 is a jackpot. */
+  function rollDie(face: number) {
+    const g = emptyGame('open', 7, 'freeplay');
+    const s = place(g, 'tungsten', 0, 0, 0);
+    const foe = place(g, 'iowa', 1, 0, -2000);
+    foe.hp = foe.maxHp = 1e8;
+    foe.secondaries.length = 0;
+    (g as unknown as { rng: () => number }).rng = () => (face + 0.5) / 6;
+    const fx = new TungstenCubeFx(new Scene(), g);
+    const shakes: { ship: Ship; amount: number }[] = [];
+    fx.onShake = (ship, _x, _z, amount) => shakes.push({ ship, amount });
+    const labels: string[] = [];
+    g.events.on('skillHit', (h) => {
+      if (h.attacker === s) labels.push(h.skill.short);
+    });
+    let die: TungstenEvent | null = null;
+    g.events.on('tungsten', (e) => {
+      if (e.kind === 'die') die = e;
+    });
+    s.control.aimX = 0;
+    s.control.aimZ = -2000;
+    cast(s, DIE);
+    for (let i = 0; i < 400 && !die; i++) play(g, fx, 1 / 60, [s]);
+    expect(die).not.toBeNull();
+    return { g, s, foe, fx, die: die! as TungstenEvent, shakes, labels, cube: s.tungsten!.cubes[0].id };
+  }
+
+  it('calls JACKPOT with every face for its own captain only', () => {
+    const won = rollDie(0);
+    expect(won.die.jackpot).toBe(true);
+    expect(jackpotCue(won.die, won.s)).toEqual({ title: 'JACKPOT', sub: 'Every face · Kinetic' });
+    expect(jackpotCue(won.die, won.foe)).toBeNull();
+    expect(jackpotCue(won.die, null)).toBeNull();
+    const plain = rollDie(3);
+    expect(plain.die.jackpot).toBe(false);
+    expect(jackpotCue(plain.die, plain.s)).toBeNull();
+  });
+
+  it("shakes the owner's camera on a jackpot, not on a plain roll", () => {
+    const won = rollDie(0);
+    expect(won.shakes).toHaveLength(1);
+    expect(won.shakes[0].ship).toBe(won.s);
+    expect(won.shakes[0].amount).toBeGreaterThan(0);
+    expect(rollDie(3).shakes).toHaveLength(0);
+  });
+
+  it('runs the cube rainbow for 1.2 s after a jackpot', () => {
+    const rainbow = (face: number, after: number) => {
+      const r = rollDie(face);
+      play(r.g, r.fx, after, [r.s]);
+      r.fx.prepare(0, 720);
+      const v = r.fx.skin(r.s, r.cube)!.uRainbow.value;
+      r.fx.dispose();
+      return v;
+    };
+    expect(rainbow(0, 0.6)).toBeCloseTo(1);
+    expect(rainbow(0, JACKPOT.rainbow + 0.3)).toBe(0);
+    expect(rainbow(3, 0.6)).toBe(0);
+  });
+
+  it('rings the six faces out in turn rather than all at once', () => {
+    expect(jackpotRing(JACKPOT.ringGap / 2, 0)).toBeGreaterThan(0);
+    expect(jackpotRing(JACKPOT.ringGap / 2, 1)).toBe(0);
+    expect(jackpotRing(JACKPOT.ringGap * 5 - 0.01, 5)).toBe(0);
+    expect(jackpotRing(JACKPOT.ringGap * 5 + 0.05, 5)).toBeGreaterThan(0);
+    for (let m = 0; m < 6; m++) expect(jackpotRing(JACKPOT.ringGap * m + 0.5, m)).toBeCloseTo(1);
+  });
+
+  it('raises a rainbow pillar that outlasts a plain roll’s eruption', () => {
+    const glow = (face: number) => {
+      const r = rollDie(face);
+      play(r.g, r.fx, 1, [r.s]);
+      r.fx.prepare(0, 720);
+      const n = r.fx.particles.stats.additive.count;
+      r.fx.dispose();
+      return n;
+    };
+    expect(glow(0)).toBeGreaterThan(glow(3) + 8);
+  });
+
+  it('labels jackpot damage JACKPOT and a plain roll DIE', () => {
+    const won = rollDie(0);
+    expect(won.labels.length).toBeGreaterThan(0);
+    expect(new Set(won.labels)).toEqual(new Set(['JACKPOT']));
+    const plain = rollDie(3);
+    expect(plain.labels).toContain('DIE');
+    expect(plain.labels).not.toContain('JACKPOT');
   });
 });

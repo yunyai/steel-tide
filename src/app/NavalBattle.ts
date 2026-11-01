@@ -124,6 +124,14 @@ export class NavalBattle implements ActiveBattle {
         if (k > 0) pc.shake(s.amount * k * k);
       }
     };
+    // A Tungsten jackpot kicks its own captain's camera, harder the nearer it lands.
+    this.scene.tungstenFx.onShake = (ship, x, z, amount) => {
+      for (const pc of this.pcs) {
+        if (pc.ship !== ship) continue;
+        const d = Math.hypot(pc.camera.position.x - x, pc.camera.position.z - z);
+        pc.shake(amount * Math.max(0.3, 1 - d / 5000));
+      }
+    };
     // Hull Dash kicks only its own captain's camera.
     this.scene.dashFx.onShake = (ship, amount) => {
       for (const pc of this.pcs) if (pc.ship === ship) pc.shake(amount);

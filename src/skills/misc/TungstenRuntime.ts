@@ -742,7 +742,8 @@ function dieLands(s: Ship, c: Cube, skill: number, merged: boolean): void {
   const face = merged ? c.mode : Math.min(5, Math.floor(g.rng() * 6));
   const jackpot = face === c.mode;
   const rolled = (m: number) => jackpot || face === m;
-  const spec = skillSpec(s, skill);
+  // A jackpot's damage reads JACKPOT rather than DIE.
+  const spec = jackpot ? { ...skillSpec(s, skill), short: 'JACKPOT' } : skillSpec(s, skill);
   const gain = rolled(KINETIC) ? 1 + HIT.kinetic.bonus * k * Math.min(1, c.flown / HIT.kinetic.full) : 1;
   let dealt = 0;
   for (const o of foesNear(s, c.x, c.z, D.radius)) {
