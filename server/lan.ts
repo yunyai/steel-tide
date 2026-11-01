@@ -6,11 +6,12 @@ import type { Server as NetServer } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { Server as TlsServer } from 'node:tls';
 import type { Duplex } from 'node:stream';
-import { WebSocketServer } from 'ws';
+import { type WebSocket, WebSocketServer } from 'ws';
 import type { BattleConfig } from '../src/core/BattleSetup';
 import type { Team } from '../src/core/types';
 import {
   AI_TAKEOVER_MS,
+  AWAY_AI_MS,
   type ClientMsg,
   type Continuous,
   type Edge,
@@ -18,6 +19,7 @@ import {
   IDLE_MS,
   LAN_BATTLE_LIMIT_S,
   LAN_PATH,
+  LINK_PING_MS,
   LOBBY_NAME_MAX,
   type LobbySettings,
   type LobbyState,
@@ -30,6 +32,8 @@ import {
   type Turn,
   type TurnEvent,
 } from '../src/net/protocol';
+import { RateLimiter } from './limits';
+import { originAllowed } from './origin';
 import { type BattleRules, navalRules } from './rules';
 
 // LAN lobby server. It holds the lobbies and, once a battle starts, clocks lockstep turns:
@@ -48,6 +52,12 @@ export interface LanOptions {
   loadTimeoutMs?: number;
   /** Longest a battle is clocked. */
   maxBattleMs?: number;
+  /** A captain whose tab stays hidden this long is handed to the AI. */
+  awayAiMs?: number;
+  /** How often the server pings each socket. */
+  pingMs?: number;
+  /** Milliseconds on a monotonic clock. */
+  now?: () => number;
   rules?: BattleRules;
 }
 
@@ -55,6 +65,7 @@ export interface LanOptions {
 export interface Peer {
   send(m: ServerMsg): void;
   session: Session | null;
+  limits: RateLimiter;
 }
 
 interface Session {
@@ -65,6 +76,8 @@ interface Session {
   lobby: Lobby | null;
   /** When a waiting-room member who lost their connection is dropped. */
   dropTimer: ReturnType<typeof setTimeout> | null;
+  /** The captain's tab is hidden. */
+  away: boolean;
 }
 
 interface MemberState {
@@ -98,6 +111,8 @@ interface PlayerInput {
   /** Still in the lobby (false once they leave; their ship stays with the AI). */
   present: boolean;
   takeover: ReturnType<typeof setTimeout> | null;
+  /** Hands the ship to the AI once the tab has stayed hidden long enough. */
+  awayTimer: ReturnType<typeof setTimeout> | null;
   lastDesync: number;
 }
 
@@ -142,7 +157,9 @@ export class LobbyServer {
   private readonly endGraceMs: number;
   private readonly loadTimeoutMs: number;
   private readonly maxBattleMs: number;
+  private readonly awayAiMs: number;
   private readonly rules: BattleRules;
+  private readonly now: () => number;
 
   constructor(private opts: LanOptions = {}) {
     this.turnMs = opts.turnMs ?? TURN_MS;
@@ -151,11 +168,13 @@ export class LobbyServer {
     this.endGraceMs = opts.endGraceMs ?? END_GRACE_MS;
     this.loadTimeoutMs = opts.loadTimeoutMs ?? 15000;
     this.maxBattleMs = opts.maxBattleMs ?? LAN_BATTLE_LIMIT_S * 1000;
+    this.awayAiMs = opts.awayAiMs ?? AWAY_AI_MS;
     this.rules = opts.rules ?? navalRules;
+    this.now = opts.now ?? (() => performance.now());
   }
 
   connect(send: (m: ServerMsg) => void): Peer {
-    return { send, session: null };
+    return { send, session: null, limits: new RateLimiter(this.now) };
   }
 
   /** Shut every battle clock down (server closing, tests). */
@@ -166,9 +185,16 @@ export class LobbyServer {
 
   receive(peer: Peer, raw: unknown): void {
     if (!raw || typeof raw !== 'object') return;
-    const m = raw as ClientMsg;
+    let m = raw as ClientMsg;
+    if (typeof m.t !== 'string') return;
+    if (!peer.limits.allow(m.t)) {
+      // Past the budget an order still counts, so a fast screen never loses a key press; its aim waits.
+      if (m.t !== 'in' || !m.e) return;
+      m = { t: 'in', e: m.e };
+    }
     if(m.t==='hello'&&m.protocol!==SIM_PROTOCOL){peer.send({t:'error',text:'Game versions differ. Refresh all clients and restart the server.'});return;}
     if (m.t === 'hello') return this.hello(peer, m);
+    if (m.t === 'ping') return peer.send({ t: 'pong' });
     const s = peer.session;
     if (!s || s.peer !== peer) return;
     switch (m.t) {
@@ -203,6 +229,8 @@ export class LobbyServer {
         return this.end(s);
       case 'resync':
         return this.sendLog(s);
+      case 'away':
+        return this.away(s, m.on);
     }
   }
 
@@ -238,8 +266,10 @@ export class LobbyServer {
       }
       if (s.dropTimer) clearTimeout(s.dropTimer);
       s.dropTimer = null;
+      // A new tab reports whether it is hidden once it is in.
+      s.away = false;
     } else {
-      s = { id: id(), token: id(16), name: '', peer: null, lobby: null, dropTimer: null };
+      s = { id: id(), token: id(16), name: '', peer: null, lobby: null, dropTimer: null, away: false };
       this.sessions.set(s.token, s);
     }
     s.name = cleanName(m.name, NAME_MAX, s.name || 'Captain');
@@ -254,13 +284,13 @@ export class LobbyServer {
     this.pushLobby(l);
     const p = this.playerOf(s);
     if (p && l.battle) {
-      if (p.takeover) clearTimeout(p.takeover);
-      p.takeover = null;
+      for (const t of [p.takeover, p.awayTimer]) if (t) clearTimeout(t);
+      p.takeover = p.awayTimer = null;
       if (p.ai) {
         p.ai = false;
         l.battle.events.push({ human: l.battle.players.indexOf(p) });
       }
-      p.lastIn = Date.now();
+      p.lastIn = this.now();
       this.sendLog(s);
     }
   }
@@ -417,10 +447,10 @@ export class LobbyServer {
     const refused = rules.startError(st, captains);
     if (refused) return this.send(s, { t: 'error', text: refused });
     const config: BattleConfig = rules.config(st, captains, randomBytes(4).readUInt32BE(0) % 1e9);
-    const now = Date.now();
+    const now = this.now();
     const battle: Battle = {
       config,
-      players: sailing.map((m) => ({ session: m.session, cont: null, sent: null, edges: [], lastIn: now, loaded: false, over: false, ai: false, present: true, takeover: null, lastDesync: -Infinity })),
+      players: sailing.map((m) => ({ session: m.session, cont: null, sent: null, edges: [], lastIn: now, loaded: false, over: false, ai: false, present: true, takeover: null, awayTimer: null, lastDesync: -Infinity })),
       turns: [],
       events: [],
       clock: null,
@@ -437,6 +467,7 @@ export class LobbyServer {
       m.ready = false;
     }
     sailing.forEach((m, you) => this.send(m.session, { t: 'start', config, you }));
+    for (const p of battle.players) if (p.session.away) this.setAway(battle, p, true);
     battle.loadTimer = setTimeout(() => this.beginClock(l), this.loadTimeoutMs);
     this.pushLobby(l);
   }
@@ -459,9 +490,9 @@ export class LobbyServer {
     if (!b || b.clock) return;
     if (b.loadTimer) clearTimeout(b.loadTimer);
     b.loadTimer = null;
-    b.startedAt = b.lastManned = Date.now();
+    b.startedAt = b.lastManned = this.now();
     const loop = () => {
-      const now = Date.now();
+      const now = this.now();
       // Catch up after a stall, but never burst more than a few turns at once.
       for (let i = 0; i < 6 && b.startedAt + b.turns.length * this.turnMs <= now; i++) this.emitTurn(b, now);
       const ran = b.turns.length * this.turnMs;
@@ -474,14 +505,14 @@ export class LobbyServer {
       }
       // Everyone has gone, or it has run for far too long: stop rather than clock turns for nobody.
       if (now - b.lastManned > ABANDON_MS || ran > this.maxBattleMs + (hostEnds ? this.endGraceMs : 0)) return this.finish(l);
-      b.clock = setTimeout(loop, Math.max(0, b.startedAt + b.turns.length * this.turnMs - Date.now()));
+      b.clock = setTimeout(loop, Math.max(0, b.startedAt + b.turns.length * this.turnMs - this.now()));
     };
     b.clock = setTimeout(loop, 0);
   }
 
   private stopClock(b: Battle): void {
     for (const t of [b.clock, b.loadTimer, b.endTimer]) if (t) clearTimeout(t);
-    for (const p of b.players) if (p.takeover) clearTimeout(p.takeover);
+    for (const p of b.players) for (const t of [p.takeover, p.awayTimer]) if (t) clearTimeout(t);
     b.clock = b.loadTimer = b.endTimer = null;
   }
 
@@ -508,15 +539,39 @@ export class LobbyServer {
   private input(s: Session, m: Extract<ClientMsg, { t: 'in' }>): void {
     const p = this.playerOf(s);
     if (!p) return;
-    p.lastIn = Date.now();
+    p.lastIn = this.now();
     const c = this.rules.cleanContinuous(m.c);
     if (c) p.cont = c;
     const e = this.rules.cleanEdge(m.e, s.lobby!.settings);
     if (e && p.edges.length < 32) p.edges.push(e);
   }
 
+  /** The captain's tab was hidden or shown again. */
+  private away(s: Session, on: unknown): void {
+    if (typeof on !== 'boolean') return;
+    s.away = on;
+    const b = s.lobby?.battle;
+    const p = this.playerOf(s);
+    if (b && p) this.setAway(b, p, on);
+  }
+
+  /** Hidden for long enough, the AI sails the ship; shown again, the captain has it back. */
+  private setAway(b: Battle, p: PlayerInput, on: boolean): void {
+    if (p.awayTimer) clearTimeout(p.awayTimer);
+    p.awayTimer = null;
+    if (on) {
+      if (!p.ai) p.awayTimer = setTimeout(() => this.handToAI(b, p), this.awayAiMs);
+      return;
+    }
+    p.lastIn = this.now();
+    if (p.ai && p.present && p.session.peer && !p.takeover) {
+      p.ai = false;
+      b.events.push({ human: b.players.indexOf(p) });
+    }
+  }
+
   private handToAI(b: Battle, p: PlayerInput): void {
-    p.takeover = null;
+    p.takeover = p.awayTimer = null;
     if (p.ai) return;
     p.ai = true;
     p.edges = [];
@@ -550,16 +605,17 @@ export class LobbyServer {
     if (sections) rec.parts.set(idx, sections);
     if (rec.tied) return;
     if (rec.agreed === null) {
-      const voters = b.players.filter((x) => x.present && x.session.peer && !x.ai).map((x) => b.players.indexOf(x));
-      if (!voters.every((v) => rec.by.has(v))) return;
+      // Captains sailing their own ship in a shown tab vote; the rest are checked against the result.
+      const voters = b.players.filter((x) => x.present && x.session.peer && !x.ai && !x.session.away).map((x) => b.players.indexOf(x));
+      if (!voters.length || !voters.every((v) => rec.by.has(v))) return;
       const counts = new Map<number, number>();
-      for (const hv of rec.by.values()) counts.set(hv, (counts.get(hv) ?? 0) + 1);
+      for (const v of voters) counts.set(rec.by.get(v)!, (counts.get(rec.by.get(v)!) ?? 0) + 1);
       let best = -1;
       for (const [hv, n] of counts) if (best < 0 || n > counts.get(best)!) best = hv;
       // A strict majority decides; without one nobody can tell who drifted, so everyone rebuilds.
-      if (counts.get(best)! * 2 <= rec.by.size) {
+      if (counts.get(best)! * 2 <= voters.length) {
         rec.tied = true;
-        for (const [v, hv] of rec.by) this.desync(b.players[v], k as number, this.drift(rec, v, (o) => o !== hv), true);
+        for (const v of voters) this.desync(b.players[v], k as number, this.drift(rec, v, (o) => o !== rec.by.get(v)), true);
         return;
       }
       rec.agreed = best;
@@ -576,7 +632,7 @@ export class LobbyServer {
   }
 
   private desync(p: PlayerInput, k: number, diff?: string[], tie = false): void {
-    const now = Date.now();
+    const now = this.now();
     if (now - p.lastDesync < DESYNC_COOLDOWN) return;
     p.lastDesync = now;
     if (diff) console.warn(`[lan] ${p.session.name} drifted at turn ${k}: ${diff.join(', ')}`);
@@ -638,17 +694,33 @@ export function lanUrls(server: NetServer): string[] {
   return out;
 }
 
+/** A socket holding more than this unsent is not keeping up (or not reading): it is dropped. */
+const MAX_BUFFERED = 8 * 1024 * 1024;
+
+/** Send `m` on `ws`, or drop a socket whose backlog has grown past MAX_BUFFERED. */
+export function deliver(ws: Pick<WebSocket, 'readyState' | 'OPEN' | 'bufferedAmount' | 'send' | 'terminate'>, m: ServerMsg): void {
+  if (ws.readyState !== ws.OPEN) return;
+  if (ws.bufferedAmount > MAX_BUFFERED) return ws.terminate();
+  ws.send(JSON.stringify(m));
+}
+
 /** Serve LAN lobbies on `/lan` of an existing HTTP server, leaving its other upgrades (Vite's HMR) alone. */
 export function attachLan(server: NetServer, opts: LanOptions = {}): LobbyServer {
   const lobby = new LobbyServer({ urls: () => lanUrls(server), ...opts });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
+  const alive = new WeakMap<WebSocket, boolean>();
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const path = (req.url ?? '').split('?')[0];
     if (path !== LAN_PATH) return;
+    // Only pages on this machine or the local network may open a lobby link (not authentication).
+    if (!originAllowed(req.headers.origin, req.headers.host)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      return;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const peer = lobby.connect((m) => {
-        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
-      });
+      alive.set(ws, true);
+      ws.on('pong', () => alive.set(ws, true));
+      const peer = lobby.connect((m) => deliver(ws, m));
       ws.on('message', (data, binary) => {
         if (binary) return;
         let msg: unknown;
@@ -663,7 +735,20 @@ export function attachLan(server: NetServer, opts: LanOptions = {}): LobbyServer
       ws.on('error', () => ws.terminate());
     });
   });
+  // A link that missed the last ping is gone (sleeping laptop, dead Wi-Fi): drop it so the AI takes over.
+  const pinger = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (!alive.get(ws)) {
+        ws.terminate();
+        continue;
+      }
+      alive.set(ws, false);
+      ws.ping();
+    }
+  }, opts.pingMs ?? LINK_PING_MS);
+  pinger.unref();
   server.on('close', () => {
+    clearInterval(pinger);
     lobby.close();
     wss.close();
   });

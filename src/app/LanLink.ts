@@ -1,7 +1,7 @@
 import type { BattleConfig } from '../core/BattleSetup';
 import { Game } from '../core/Game';
 import { audio } from '../fx/Audio';
-import { describeDesync, Lockstep, type LockstepSim } from '../net/Lockstep';
+import { describeDesync, HIDDEN_BUDGET_MS, Lockstep, type LockstepSim, REPLAY_BUDGET_MS } from '../net/Lockstep';
 import { TurnApplier } from '../net/navalTurns';
 import { NetClient } from '../net/NetClient';
 import { type ServerMsg, TURN_TICKS, type Turn } from '../net/protocol';
@@ -90,7 +90,7 @@ export class LanLink {
   frame(): boolean {
     const nb = this.lan;
     if (!nb?.replaying) return false;
-    nb.lockstep.fastForward(40);
+    nb.lockstep.fastForward(REPLAY_BUDGET_MS);
     if (nb.lockstep.backlog <= TURN_TICKS * 2) {
       nb.replaying = false;
       this.present(nb);
@@ -206,7 +206,10 @@ export class LanLink {
       case 'start':
         return this.start(m.config, m.you, null);
       case 'turn':
-        lan?.lockstep.onTurn(m.turn);
+        if (!lan) return;
+        lan.lockstep.onTurn(m.turn, performance.now());
+        // A hidden tab gets no frames: play each turn as it comes, so it keeps hashing in step.
+        if (document.hidden) lan.lockstep.fastForward(HIDDEN_BUDGET_MS);
         return;
       case 'log': {
         const same = lan && lan.config.seed === m.config.seed && lan.you === m.you;

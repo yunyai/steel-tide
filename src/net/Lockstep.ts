@@ -1,6 +1,7 @@
 import { SIM_DT } from '../config';
 import { clamp } from '../core/math';
 import { foldSections } from './hash';
+import { JitterEstimator } from './Jitter';
 import { type ClientMsg, type Continuous, type Edge, HASH_EVERY, type Sections, TURN_TICKS, type Turn } from './protocol';
 
 // Deterministic lockstep over a LAN. Every peer runs the whole battle; the lobby server clocks
@@ -9,12 +10,14 @@ import { type ClientMsg, type Continuous, type Edge, HASH_EVERY, type Sections, 
 // peers step identical battles. What a turn does to a battle is the battle's own business
 // (see navalTurns.ts); this file only keeps time.
 
-/** Ticks of backlog the playback aims to keep (absorbs Wi-Fi jitter). */
-const TARGET_TICKS = 4;
-/** Beyond this much backlog (a hidden tab, a hitch) playback fast-forwards. */
+/** Beyond this much backlog (a hitch, a slow machine) playback fast-forwards. */
 const CATCH_UP_TICKS = 120;
-/** Milliseconds per frame fast-forwarding may spend. */
-const CATCH_UP_BUDGET = 12;
+/** Milliseconds of sim a frame may spend, playing at least one tick, so a slow peer still draws. */
+const PLAY_BUDGET_MS = 8;
+/** Milliseconds a frame may spend replaying the log off screen (rejoining, resyncing). */
+export const REPLAY_BUDGET_MS = 120;
+/** Milliseconds a hidden tab spends on each turn as it arrives, to keep up without frames. */
+export const HIDDEN_BUDGET_MS = 6;
 /** Continuous orders are resent at least this often (ms), so the server knows the captain is there. */
 const HEARTBEAT_MS = 250;
 
@@ -56,11 +59,18 @@ export class Lockstep {
   desyncNote: string | null = null;
   private lastSent: Continuous | null = null;
   private lastSentAt = -Infinity;
+  private jitter = new JitterEstimator();
 
   constructor(
     readonly sim: LockstepSim,
     private send: (m: ClientMsg) => void,
+    private clock: () => number = () => performance.now(),
   ) {}
+
+  /** Ticks of backlog playback aims to keep: enough to ride out how unevenly turns arrive. */
+  get cushion(): number {
+    return this.jitter.cushion(SIM_DT * 1000);
+  }
 
   /** The first turn has arrived, so the battle is under way. */
   get started(): boolean {
@@ -72,37 +82,46 @@ export class Lockstep {
     return (this.queue.length - this.head) * TURN_TICKS - this.tick;
   }
 
-  onTurn(turn: Turn): void {
+  /** A turn from the server; `at` is when a live one arrived (log turns come all at once and have none). */
+  onTurn(turn: Turn, at?: number): void {
     // The socket delivers in order; anything older is a repeat from a log.
     if (turn.k < this.expect) return;
     this.expect = turn.k + 1;
     this.queue.push(turn);
+    if (at !== undefined) this.jitter.sample(at);
   }
 
   /** Play buffered turns for a real frame of `frameDt` seconds, then interpolate poses for drawing. */
   advance(frameDt: number): void {
+    const deadline = this.clock() + PLAY_BUDGET_MS;
+    const cushion = this.cushion;
+    let played = 0;
+    const inTime = () => played === 0 || this.clock() < deadline;
     if (this.backlog > CATCH_UP_TICKS) {
       this.catchingUp = true;
-      this.fastForward(CATCH_UP_BUDGET, TARGET_TICKS);
-    } else if (this.catchingUp && this.backlog <= TARGET_TICKS * 2) this.catchingUp = false;
-    // Drift the playback rate to hold a small cushion of turns.
-    const rate = clamp(1 + (this.backlog - TARGET_TICKS) * 0.08, 0.9, 2);
+      while (this.backlog > cushion && inTime()) {
+        this.stepTick();
+        played++;
+      }
+      if (this.backlog <= cushion) this.acc = 0;
+    } else if (this.catchingUp && this.backlog <= cushion * 2) this.catchingUp = false;
+    // Drift the playback rate to hold the cushion.
+    const rate = clamp(1 + (this.backlog - cushion) * 0.08, 0.9, 2);
     this.acc += frameDt * rate;
-    while (this.acc >= SIM_DT && this.backlog > 0) {
+    while (this.acc >= SIM_DT && this.backlog > 0 && inTime()) {
       this.stepTick();
+      played++;
       this.acc -= SIM_DT;
     }
-    // Starved: hold at the newest pose instead of running ahead of the server.
-    if (this.backlog === 0) this.acc = Math.min(this.acc, SIM_DT);
+    // Starved, or out of time: hold at the newest pose instead of running up a debt.
+    this.acc = Math.min(this.acc, SIM_DT);
     this.sim.interpolate(Math.min(1, this.acc / SIM_DT));
   }
 
   /** Play turns as fast as possible for up to `budgetMs`, leaving `keep` ticks. Returns ticks left. */
   fastForward(budgetMs: number, keep = 0): number {
-    const until = performance.now() + budgetMs;
-    while (this.backlog > keep && performance.now() < until) {
-      for (let i = 0; i < 8 && this.backlog > keep; i++) this.stepTick();
-    }
+    const until = this.clock() + budgetMs;
+    while (this.backlog > keep && this.clock() < until) this.stepTick();
     if (this.backlog <= keep) this.acc = 0;
     return this.backlog;
   }

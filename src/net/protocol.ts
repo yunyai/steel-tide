@@ -17,6 +17,12 @@ export const HASH_EVERY = 60;
 export const AI_TAKEOVER_MS = 10000;
 /** Fire is released when a connected captain has sent nothing for this long (hidden tab). */
 export const IDLE_MS = 1000;
+/** A captain whose tab stays hidden this long is handed to the AI until it is shown again. */
+export const AWAY_AI_MS = 3000;
+/** The server pings every socket this often and drops one that missed the last ping. */
+export const LINK_PING_MS = 5000;
+/** A browser that has heard nothing from the server for this long drops the link and reconnects. */
+export const LINK_SILENCE_MS = 10000;
 /** Turns keep coming this long after the first captain reports the battle over. */
 export const END_GRACE_MS = 30000;
 export const NAME_MAX = 24;
@@ -132,7 +138,10 @@ export type ClientMsg =
   | { t: 'hash'; k: number; h: number; s?: Sections }
   | { t: 'over' }
   | { t: 'end' }
-  | { t: 'resync' };
+  | { t: 'resync' }
+  /** The tab was hidden (`on`) or shown again. */
+  | { t: 'away'; on: boolean }
+  | { t: 'ping' };
 
 export type ServerMsg =
   | { t: 'welcome'; id: string; token: string; urls: string[] }
@@ -143,6 +152,7 @@ export type ServerMsg =
   | { t: 'log'; config: BattleConfig; you: number; turns: Turn[] }
   | { t: 'desync'; tie?: boolean; k?: number; diff?: string[] }
   | { t: 'ended' }
+  | { t: 'pong' }
   | { t: 'error'; text: string };
 
 export const DEFAULT_SETTINGS: LobbySettings = {

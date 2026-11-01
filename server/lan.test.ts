@@ -6,12 +6,13 @@ import type { ClientMsg, LobbyState, ServerMsg, Turn } from '../src/net/protocol
 import { SIM_PROTOCOL } from '../src/net/protocol';
 import { eraOf } from '../src/data/factions';
 import { SHIPS, SHIP_BY_ID } from '../src/data/ships';
-import { attachLan, type LanOptions, LobbyServer } from './lan';
+import { readFileSync } from 'node:fs';
+import { attachLan, deliver, type LanOptions, LobbyServer } from './lan';
 import { navalRules } from './rules';
 
 // The lobby server over real sockets, with its clocks sped up.
 
-const FAST: LanOptions = { turnMs: 10, aiTakeoverMs: 120, idleMs: 60, endGraceMs: 300, loadTimeoutMs: 400 };
+const FAST: LanOptions = { turnMs: 10, aiTakeoverMs: 120, idleMs: 60, endGraceMs: 300, loadTimeoutMs: 400, awayAiMs: 120 };
 
 type Msg<T extends ServerMsg['t']> = Extract<ServerMsg, { t: T }>;
 
@@ -34,8 +35,8 @@ class Client {
     });
   }
 
-  static async open(port: number, name: string, token?: string): Promise<Client> {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/lan`);
+  static async open(port: number, name: string, token?: string, origin?: string): Promise<Client> {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/lan`, origin ? { origin } : {});
     await new Promise((res, rej) => (ws.once('open', res), ws.once('error', rej)));
     const c = new Client(ws);
     c.send({ t: 'hello', protocol:SIM_PROTOCOL, name, token });
@@ -130,7 +131,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 afterEach(async () => {
   await Promise.all(clients.splice(0).map((c) => (c.ws.readyState === WebSocket.OPEN ? c.close() : undefined)));
-  await new Promise((res) => http.close(res));
+  await new Promise((res) => (http?.listening ? http.close(res) : res(undefined)));
 });
 
 describe('LAN lobby server', () => {
@@ -392,6 +393,104 @@ describe('LAN lobby server', () => {
   });
 });
 
+describe('LAN liveness and limits', () => {
+  it('hands a captain whose tab is hidden to the AI, and back when the tab is shown', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    await battle(cs);
+    cs[1].send({ t: 'away', on: true });
+    const handed = await cs[0].next('turn', (m) => !!m.turn.ev?.some((e) => 'ai' in e && e.ai === 1));
+    cs[1].send({ t: 'away', on: false });
+    const back = await cs[0].next('turn', (m) => !!m.turn.ev?.some((e) => 'human' in e && e.human === 1));
+    expect(back.turn.k).toBeGreaterThan(handed.turn.k);
+  });
+
+  it('keeps the helm with a captain who only glances away', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    await battle(cs);
+    cs[1].send({ t: 'away', on: true });
+    await wait(20);
+    cs[1].send({ t: 'away', on: false });
+    await wait(250);
+    expect(cs[0].turns().some((t) => t.ev?.some((e) => 'ai' in e))).toBe(false);
+  });
+
+  it('settles a checkpoint without waiting on a hidden tab', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben', 'Cy');
+    await battle(cs);
+    cs[2].send({ t: 'away', on: true });
+    await cs[0].next('turn', (m) => m.turn.k >= 59);
+    cs[2].send({ t: 'hash', k: 59, h: 222 });
+    cs[0].send({ t: 'hash', k: 59, h: 111 });
+    cs[1].send({ t: 'hash', k: 59, h: 222 });
+    // Two voters split one to one: the hidden tab's hash neither decides it nor holds it up.
+    expect((await cs[0].next('desync')).tie).toBe(true);
+    expect((await cs[1].next('desync')).tie).toBe(true);
+  });
+
+  it('drops a link that stops answering pings and hands its ship to the AI', async () => {
+    await serve({ ...FAST, pingMs: 40 });
+    const cs = await room('Ana', 'Ben');
+    await battle(cs);
+    // A paused socket reads nothing, so it never answers a ping: like a laptop gone to sleep.
+    cs[1].ws.pause();
+    await cs[0].next('turn', (m) => !!m.turn.ev?.some((e) => 'ai' in e && e.ai === 1));
+    await cs[0].next('lobby', (m) => m.lobby!.members.some((x) => x.name === 'Ben' && !x.connected));
+    cs[1].ws.terminate();
+  });
+
+  it('answers app pings so a browser can tell its link is alive, but not a flood of them', async () => {
+    await serve();
+    const ana = await client('Ana');
+    for (let i = 0; i < 10; i++) ana.send({ t: 'ping' });
+    await ana.next('pong');
+    await wait(50);
+    expect(ana.inbox.filter((m) => m.t === 'pong').length).toBeLessThanOrEqual(2);
+  });
+
+  it('answers a flood of resyncs with one log', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben');
+    await battle(cs);
+    for (let i = 0; i < 20; i++) cs[1].send({ t: 'resync' });
+    await cs[1].next('log');
+    await wait(100);
+    expect(cs[1].inbox.filter((m) => m.t === 'log')).toHaveLength(1);
+  });
+
+  it('cuts a flood of name changes to the rate limit', async () => {
+    await serve();
+    const [ana, ben] = await room('Ana', 'Ben');
+    for (let i = 0; i < 50; i++) ana.send({ t: 'name', name: `n${i}` });
+    await wait(150);
+    const names = ben.inbox.filter((m): m is Msg<'lobby'> => m.t === 'lobby').map((m) => m.lobby?.members[0].name);
+    expect(names).toContain('n0');
+    expect(names).not.toContain('n49');
+  });
+
+  it('refuses a page from outside the local network, and lets a LAN page in', async () => {
+    await serve();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/lan`, { origin: 'https://evil.example' });
+    const status = await new Promise<number | undefined>((res) => {
+      ws.once('unexpected-response', (_req, r) => res(r.statusCode));
+      ws.once('open', () => res(101));
+      ws.once('error', () => res(undefined));
+    });
+    ws.terminate();
+    expect(status).toBe(403);
+    await client('Home', undefined);
+    const lan = await Client.open(port, 'Lan', undefined, 'http://192.168.1.20:5173');
+    clients.push(lan);
+    expect(lan.inbox[0].t).toBe('welcome');
+  });
+
+  it('keeps its clocks on a monotonic timer', () => {
+    expect(readFileSync(new URL('./lan.ts', import.meta.url), 'utf8')).not.toMatch(/Date\.now/);
+  });
+});
+
 describe('AI counts and free play', () => {
   /** Ready the guests (settings changes unready everyone) and wait until the host sees it. */
   async function ready(cs: Client[]): Promise<void> {
@@ -481,6 +580,18 @@ describe('AI counts and free play', () => {
 });
 
 describe('LobbyServer without sockets', () => {
+  it('drops a socket that has stopped reading rather than buffering for it forever', () => {
+    const sent: string[] = [];
+    let dropped = false;
+    const ws = { readyState: 1, OPEN: 1 as const, bufferedAmount: 0, send: (d: string) => sent.push(d), terminate: () => void (dropped = true) };
+    deliver(ws as never, { t: 'pong' });
+    expect(sent).toHaveLength(1);
+    ws.bufferedAmount = 9 * 1024 * 1024;
+    deliver(ws as never, { t: 'pong' });
+    expect(sent).toHaveLength(1);
+    expect(dropped).toBe(true);
+  });
+
   it('ignores messages before hello', () => {
     const s = new LobbyServer(FAST);
     const sent: ServerMsg[] = [];
