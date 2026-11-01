@@ -10,6 +10,10 @@
 // Medium adds a 1.13 km warp sample (+1); High adds that warp sample, a two-phase flow on the
 // 237 m layer (+1) whose samples also carry the foam ridge (−1), and a second set of short wind
 // waves blended in by the mask.
+//
+// The vertex shader lives here too: both sum the swells of WAVES, the same the hulls ride.
+
+import { WAVES } from '../world/Waves';
 
 export type OceanTier = 0 | 1 | 2;
 
@@ -103,6 +107,75 @@ function rippleLine(l: RippleLayer, o: OceanOptions): string {
   return `  slope += ${call} * ${f(l.weight)}${mask} * ${l.fade} * rough;`;
 }
 
+/** Swells the shaders sum: every one of WAVES, so the hulls ride the sea that is drawn. */
+const N = WAVES.length;
+
+/**
+ * Swells whose slope the fragment shader draws. WAVES runs longest first; the lite sea leaves out
+ * the four shortest (its coarse grid flattens them past a hundred metres anyway) to save their cost.
+ */
+const swellNormals = (o: OceanOptions) => (o.tier === 0 ? 8 : N);
+
+/** A short wind wave for the normals only: direction, wavelength (m) and slope. */
+type ShortWave = [number, number, number, number];
+
+/** The short wind waves the sea had before anti-tiling. */
+const SMALL: ShortWave[] = [
+  [0.955, 0.296, 14.0, 0.05],
+  [-0.129, 0.992, 21.0, 0.045],
+  [-0.857, 0.515, 33.0, 0.04],
+  [-0.575, -0.818, 45.0, 0.035],
+];
+
+/**
+ * With anti-tiling the swells cover everything from 24 m up, at many angles, so each set of short
+ * waves keeps only what lies below them. The second set, turned off the first, takes over in its
+ * own wind patches on high.
+ */
+const SMALL_ANTI: ShortWave[] = SMALL.slice(0, 2);
+const SMALL2: ShortWave[] = [
+  [0.643, 0.766, 17.3, 0.045],
+  [-0.574, 0.819, 11.9, 0.04],
+];
+
+const shortWaves = (name: string, ws: ShortWave[]) =>
+  `const vec4 ${name}[${ws.length}] = vec4[${ws.length}](\n${ws.map(([x, z, l, a]) => `  vec4(${f(x)}, ${f(z)}, ${f(l)}, ${a.toFixed(3)})`).join(',\n')}\n);`;
+
+/** The ocean's vertex shader: Gerstner displacement by every swell, on the camera-centred grid. */
+export function oceanVertex(): string {
+  return /* glsl */ `
+uniform float uTime;
+uniform vec4 uWaves[${N}];
+uniform float uSteep[${N}];
+uniform float uCell;
+varying vec3 vWorld;
+varying float vHeight;
+
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  float dist = length(wp.xz - cameraPosition.xz);
+  float atten = 1.0 - smoothstep(2500.0, 7000.0, dist);
+  // The grid coarsens with distance; a swell drawn on cells over a quarter of its wavelength
+  // would alias into a lattice, so it flattens out before that.
+  float cell = dist * uCell;
+  vec3 disp = vec3(0.0);
+  for (int i = 0; i < ${N}; i++) {
+    vec2 d = uWaves[i].xy;
+    float k = uWaves[i].z;
+    float amp = uWaves[i].w * (1.0 - smoothstep(0.25, 0.5, cell * k / 6.2831853));
+    float c = sqrt(9.81 / k);
+    float ph = k * (dot(d, wp.xz) - c * uTime);
+    disp.y += amp * sin(ph);
+    disp.xz -= d * (uSteep[i] * amp * cos(ph));
+  }
+  wp.xyz += disp * atten;
+  vHeight = disp.y * atten;
+  vWorld = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}
+`;
+}
+
 /** The ocean fragment shader for a tier. */
 export function oceanFragment(o: OceanOptions): string {
   const anti = o.antiTile;
@@ -138,11 +211,13 @@ export function oceanFragment(o: OceanOptions): string {
   }
   vec2 P = vWorld.xz + warp;${flows ? '\n  vec2 flow = clamp((wa.rg - 0.5) * 6.0, -1.0, 1.0);\n  float flowRidge;' : ''}`
     : '';
-  // Each swell takes its own component of the patch waves (a quarter turn apart), at no dot product.
-  const swell = anti ? ' * (1.0 + 0.2 * pb[i])' : '';
+  // Each swell takes a component of the patch waves (a quarter turn apart), at no dot product; the
+  // next four take the same components turned over, so neighbouring swells trade weight.
+  const swell = anti ? ' * (1.0 + 0.2 * pb[i % 4] * (((i / 4) % 2 == 0) ? 1.0 : -1.0))' : '';
   // The short wind waves only shade the surface, so with anti-tiling they take the warp too: their
   // wavefronts curve and their lattice never settles.
-  const small =
+  const small = anti ? SMALL_ANTI : SMALL;
+  const shortGlsl =
     o.tier === 0
       ? ''
       : hasSmall2(o)
@@ -152,7 +227,7 @@ export function oceanFragment(o: OceanOptions): string {
   // light the surface, so their wavefronts can curve where the swells the hulls ride cannot.
   float sb = smoothstep(0.4, 0.6, 0.5 + 0.5 * pb.y);
   if (sb < 1.0) {
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < ${small.length}; i++) {
       vec2 d = SMALL[i].xy;
       float k = 6.2831853 / SMALL[i].z;
       float ph = k * (dot(d, P) - sqrt(9.81 / k) * uTime);
@@ -161,7 +236,7 @@ export function oceanFragment(o: OceanOptions): string {
     }
   }
   if (sb > 0.0) {
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < ${SMALL2.length}; i++) {
       vec2 d = SMALL2[i].xy;
       float k = 6.2831853 / SMALL2[i].z;
       float ph = k * (dot(d, P) - sqrt(9.81 / k) * uTime);
@@ -170,7 +245,7 @@ export function oceanFragment(o: OceanOptions): string {
     }
   }`
         : /* glsl */ `
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < ${small.length}; i++) {
     vec2 d = SMALL[i].xy;
     float k = 6.2831853 / SMALL[i].z;
     float ph = k * (dot(d, ${anti ? 'P' : 'vWorld.xz'}) - sqrt(9.81 / k) * uTime);
@@ -188,7 +263,7 @@ export function oceanFragment(o: OceanOptions): string {
   const glint = anti ? 'mix(1400.0, 600.0, wind)' : '900.0';
   return /* glsl */ `
 uniform float uTime;
-uniform vec4 uWaves[4];
+uniform vec4 uWaves[${N}];
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform vec3 uHorizon;
@@ -241,22 +316,12 @@ vec2 rippleFlow(vec2 p, float scale, float ang, vec2 drift, vec2 flow, out float
 `
     : ''
 }
-// Short wind waves for the normals only (the hulls float on the four big swells).
-const vec4 SMALL[4] = vec4[4](
-  vec4(0.955, 0.296, 14.0, 0.050),
-  vec4(-0.129, 0.992, 21.0, 0.045),
-  vec4(-0.857, 0.515, 33.0, 0.040),
-  vec4(-0.575, -0.818, 45.0, 0.035)
-);${
+// Short wind waves for the normals only (the hulls float on the swells).
+${shortWaves('SMALL', small)}${
   hasSmall2(o)
     ? `
-// A second set, turned and stretched off the first, for the patches where it takes over.
-const vec4 SMALL2[4] = vec4[4](
-  vec4(0.643, 0.766, 17.3, 0.045),
-  vec4(-0.574, 0.819, 26.9, 0.040),
-  vec4(-0.966, -0.259, 39.1, 0.035),
-  vec4(0.259, -0.966, 55.7, 0.030)
-);`
+// A second set, turned off the first, for the patches where it takes over.
+${shortWaves('SMALL2', SMALL2)}`
     : ''
 }
 
@@ -278,14 +343,14 @@ ${warp}
   // shimmer into a moiré lattice toward the horizon.
   float foot = max(length(fwidth(vWorld.xz)), 1e-3);
   vec2 slope = vec2(0.0);
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < ${swellNormals(o)}; i++) {
     vec2 d = uWaves[i].xy;
     float k = uWaves[i].z;
     float amp = uWaves[i].w * (1.0 - smoothstep(0.15, 0.5, foot * k / 6.2831853));
     float c = sqrt(9.81 / k);
     float ph = k * (dot(d, vWorld.xz) - c * uTime);
     slope += d * (amp * k * cos(ph)) * mix(0.35, 1.0, atten)${swell};
-  }${small}
+  }${shortGlsl}
 ${ripples}
   vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
 

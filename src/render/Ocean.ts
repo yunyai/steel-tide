@@ -18,10 +18,10 @@ import {
 import { makeRng } from '../core/math';
 import { WAVES } from '../world/Waves';
 import { SHORE_LOW, SHORE_SPAN } from './Islands';
-import { oceanFragment, type OceanTier } from './OceanLayers';
+import { oceanFragment, oceanVertex, type OceanTier } from './OceanLayers';
 
 // Gerstner-swell ocean on a camera-following polar grid. Vertex displacement
-// uses the same WAVES as the CPU buoyancy (Waves.ts); per-pixel normals add
+// uses the same dozen WAVES as the CPU buoyancy (Waves.ts); per-pixel normals add
 // short shader-only waves and baked ripples (see OceanLayers: each ripple layer is
 // rotated and scaled off the others, domain-warped and masked by a kilometre-scale
 // wind field, so no tile repeat reads). It reflects the baked sky,
@@ -72,38 +72,6 @@ function polarGrid(lite: boolean): BufferGeometry {
   geo.boundingSphere = null;
   return geo;
 }
-
-const vertexShader = /* glsl */ `
-uniform float uTime;
-uniform vec4 uWaves[4];
-uniform float uSteep[4];
-uniform float uCell;
-varying vec3 vWorld;
-varying float vHeight;
-
-void main() {
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  float dist = length(wp.xz - cameraPosition.xz);
-  float atten = 1.0 - smoothstep(2500.0, 7000.0, dist);
-  // The grid coarsens with distance; a swell drawn on cells over a quarter of its wavelength
-  // would alias into a lattice, so it flattens out before that.
-  float cell = dist * uCell;
-  vec3 disp = vec3(0.0);
-  for (int i = 0; i < 4; i++) {
-    vec2 d = uWaves[i].xy;
-    float k = uWaves[i].z;
-    float amp = uWaves[i].w * (1.0 - smoothstep(0.25, 0.5, cell * k / 6.2831853));
-    float c = sqrt(9.81 / k);
-    float ph = k * (dot(d, wp.xz) - c * uTime);
-    disp.y += amp * sin(ph);
-    disp.xz -= d * (uSteep[i] * amp * cos(ph));
-  }
-  wp.xyz += disp * atten;
-  vHeight = disp.y * atten;
-  vWorld = wp.xyz;
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}
-`;
 
 /** Tiling ripple map from periodic value noise: RG hold the slope, B the smooth height, A a ridge mask for foam. */
 function detailTexture(): DataTexture {
@@ -192,7 +160,7 @@ export class Ocean {
     if (lite) skyCube = null;
     const waves = WAVES.map((w) => new Vector4(Math.cos(w.dir), Math.sin(w.dir), (2 * Math.PI) / w.length, w.amp));
     this.material = new ShaderMaterial({
-      vertexShader,
+      vertexShader: oceanVertex(),
       fragmentShader: oceanFragment({ tier, antiTile }),
       uniforms: {
         uTime: { value: 0 },

@@ -53,7 +53,7 @@ describe('ocean layers', () => {
 
   it.each(TIERS)('gives each swell on tier %i its own patch straight from a patch-wave component', (t) => {
     const glsl = oceanFragment({ tier: t, antiTile: true });
-    expect(glsl).toContain('* (1.0 + 0.2 * pb[i]);');
+    expect(glsl).toContain('* (1.0 + 0.2 * pb[i % 4] * (((i / 4) % 2 == 0) ? 1.0 : -1.0));');
     expect(glsl).not.toContain('SWELL_PATCH');
   });
 
