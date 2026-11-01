@@ -10,6 +10,7 @@ import { cameraOccluded } from '../render/Visibility';
 import { Vector3 } from 'three';
 import { BATTLE_TIME_LIMIT, DOMINATION_WIN_SCORE, KNOT, SPEED_SCALE } from '../config';
 import { openPlay } from '../core/BattleSetup';
+import { CalloutSlot } from './CalloutSlot';
 import type { Game } from '../core/Game';
 import { dist2D } from '../core/math';
 import { PICKUP_COLOR, PICKUP_LABEL } from '../core/Pickups';
@@ -110,6 +111,8 @@ interface SkillEl {
 
 /** Edge chevrons shown at most, nearest first. */
 const MAX_OFFSCREEN = 8;
+/** Seconds a jackpot callout keeps the slot, so the ultimate its damage fills is called out after it. */
+const JACKPOT_HOLD = 1.6;
 const v3 = new Vector3();
 
 /** An isometric cube glyph for the Tungsten card: filled bottom-up by health, ringed in gold by the Shield store. */
@@ -186,6 +189,7 @@ export class HUD {
   private lastHp: number;
   private lastHullCapacity = 0;
   private lastCombo = 0;
+  private readonly callouts = new CalloutSlot<[string, string, string, boolean]>(([t, s, c, r]) => this.showCallout(t, s, c, r));
 
   constructor(
     private game: Game,
@@ -511,7 +515,7 @@ export class HUD {
       ev.view('tungsten', (t) => {
         const cue = jackpotCue(t, pc.ship);
         if (!cue) return;
-        this.callout(cue.title, cue.sub, JACKPOT_COLORS[t.mode], true);
+        this.callout(cue.title, cue.sub, JACKPOT_COLORS[t.mode], true, JACKPOT_HOLD);
         this.flashScreen(JACKPOT_COLORS[t.mode], true);
       }),
       ev.view('pickupTaken', (p) => {
@@ -574,8 +578,12 @@ export class HUD {
     this.bannerUntil = this.game.time + 4;
   }
 
-  /** Big centre-screen word: kill streaks, ultimates, waves. */
-  private callout(title: string, sub: string, color: string, rainbow = false): void {
+  /** Big centre-screen word: kill streaks, ultimates, waves. `hold` seconds keep it up against later ones. */
+  private callout(title: string, sub: string, color: string, rainbow = false, hold = 0): void {
+    this.callouts.push([title, sub, color, rainbow], this.game.time, hold);
+  }
+
+  private showCallout(title: string, sub: string, color: string, rainbow: boolean): void {
     const c = this.e.callout;
     c.style.setProperty('--c', color);
     c.classList.toggle('rainbow', rainbow);
@@ -616,6 +624,7 @@ export class HUD {
   }
 
   update(dt: number): void {
+    this.callouts.update(this.game.time);
     // Read before HUD writes: projections later in this update must not force layout again.
     this.viewportWidth = this.root.clientWidth;
     this.viewportHeight = this.root.clientHeight;
