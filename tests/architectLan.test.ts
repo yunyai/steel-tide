@@ -4,6 +4,7 @@ import { TurnApplier } from '../src/net/navalTurns';
 import { TURN_TICKS, DEFAULT_SETTINGS, type Turn, type Continuous } from '../src/net/protocol';
 import { navalRules } from '../server/rules';
 import type { BattleConfig } from '../src/core/BattleSetup';
+import { ERAS } from '../src/data/factions';
 it('replays Architect module deployments and Citadel identically across LAN peers',()=>{
   const config:BattleConfig={mode:'lan',type:'freeplay',mapId:'open',teamSize:1,ai:[0,0],difficulty:'normal',seed:713,era:'mixed',players:[{shipId:'architect',device:'mouse',team:0},{shipId:'iowa',device:'mouse',team:1}]};
   const a=new Game(config),b=new Game(structuredClone(config)),x=new TurnApplier(a),y=new TurnApplier(b);
@@ -22,14 +23,14 @@ it('replays Architect module deployments and Citadel identically across LAN peer
   expect(maxModules).toBe(10);
 });
 it('allows Architect under titan rules and rejects the hidden module as a player pick',()=>{
-  const settings={...DEFAULT_SETTINGS,era:'mixed' as const,titans:true};
+  const settings={...DEFAULT_SETTINGS,eras:[...ERAS],titans:true};
   expect(navalRules.pickAllowed('architect',settings)).toBe(true);
   expect(navalRules.pickAllowed('architect',{...settings,titans:false})).toBe(false);
   expect(navalRules.pickAllowed('architectPlatform',settings)).toBe(false);
 });
 import {loadoutPreset} from '../src/data/architectLoadout';
 it('shares custom loadouts and synchronized docked refits without divergence',()=>{
- const settings={...DEFAULT_SETTINGS,type:'freeplay' as const,era:'mixed' as const};
+ const settings={...DEFAULT_SETTINGS,type:'freeplay' as const,eras:[...ERAS]};
  const config=navalRules.config(settings,[{pick:'architect',team:0,name:'Builder',architectLoadout:loadoutPreset('unique')}],713);config.ai=[0,0];
  const a=new Game(config),b=new Game(structuredClone(config)),x=new TurnApplier(a),y=new TurnApplier(b);
  const valid=navalRules.cleanEdge({ar:{index:0,pick:{type:'resonance',skill:1}}},settings)!;

@@ -1,4 +1,4 @@
-import type { BattleEra, ShipSpec } from './types';
+import type { EraSel, ShipSpec } from './types';
 import { shipsIn, SHIP_BY_ID } from '../data/ships';
 
 export interface AISelection {
@@ -9,17 +9,17 @@ export interface AISelection {
 }
 export type TeamAISelection = [AISelection, AISelection];
 
-export function eligibleShips(era: BattleEra = 'historic', titans = false): ShipSpec[] {
+export function eligibleShips(era: EraSel = 'historic', titans = false): ShipSpec[] {
   return shipsIn(era).filter(s => !s.hidden && (titans || s.cls !== 'TT'));
 }
 
-export function randomShip(era: BattleEra, rng: () => number, titans = false): ShipSpec | null {
+export function randomShip(era: EraSel, rng: () => number, titans = false): ShipSpec | null {
   const pool = eligibleShips(era, titans);
   return pool.length ? pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))] : null;
 }
 
 /** Accept bounded, plain configuration from local saves or untrusted network patches. */
-export function cleanAISelection(value: unknown, era: BattleEra, titans: boolean): TeamAISelection | null {
+export function cleanAISelection(value: unknown, era: EraSel, titans: boolean): TeamAISelection | null {
   if (!Array.isArray(value) || value.length !== 2) return null;
   const allowed = new Set(eligibleShips(era, titans).map(s => s.id));
   const out: AISelection[] = [];
@@ -31,26 +31,26 @@ export function cleanAISelection(value: unknown, era: BattleEra, titans: boolean
   return out as TeamAISelection;
 }
 
-export function selectionError(selection: TeamAISelection | undefined, era: BattleEra = 'historic', titans = true, counts?: [number, number]): string | null {
+export function selectionError(selection: TeamAISelection | undefined, era: EraSel = 'historic', titans = true, counts?: [number, number]): string | null {
   if (!selection) return null;
   const clean = cleanAISelection(selection, era, titans);
   if (!clean) return 'Invalid AI selection configuration';
   for (const t of [0, 1] as const) {
     const s = clean[t];
     if (counts?.[t] === 0) continue;
-    if ((s.mode === 'pool' || s.mode === 'assign' && s.pool !== undefined) && !s.pool?.length) return `Team ${t === 0 ? 'A' : 'B'} has an empty eligible AI pool. Choose ships for this era.`;
+    if ((s.mode === 'pool' || s.mode === 'assign' && s.pool !== undefined) && !s.pool?.length) return `Team ${t === 0 ? 'A' : 'B'} has an empty eligible AI pool. Choose ships from these eras.`;
   }
   return null;
 }
 
 /** A ship answering the other fleet's titan: from this fleet's pool without its titans, else automatic. */
-export function extraAI(selection: AISelection | undefined, era: BattleEra, rng: () => number, automatic: () => ShipSpec): ShipSpec {
+export function extraAI(selection: AISelection | undefined, era: EraSel, rng: () => number, automatic: () => ShipSpec): ShipSpec {
   const allowed = new Set(eligibleShips(era, false).map(s => s.id));
   const pool = selection?.pool?.filter(id => allowed.has(id));
   return pool?.length ? SHIP_BY_ID[pool[Math.floor(rng() * pool.length)]] : automatic();
 }
 
-export function selectedAI(selection: AISelection | undefined, index: number, era: BattleEra, titans: boolean, rng: () => number, automatic: () => ShipSpec): ShipSpec {
+export function selectedAI(selection: AISelection | undefined, index: number, era: EraSel, titans: boolean, rng: () => number, automatic: () => ShipSpec): ShipSpec {
   if (!selection || selection.mode === 'auto') return automatic();
   const allowed = new Set(eligibleShips(era, titans).map(s => s.id));
   const assigned = selection.mode === 'assign' ? selection.slots?.[index] : null;

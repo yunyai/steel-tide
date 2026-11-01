@@ -66,7 +66,18 @@ try {
       await capture('garage');
       await click('Back');
       await page.getByRole('button', { name: /^Naval battle/ }).click();
-      await click('Mixed');
+      // Eras are a set: each toggles on its own, the last one with warships stays on, All eras is Mixed.
+      const eraSeg = page.getByRole('group', { name: 'Era', exact: true });
+      const pressed = () => eraSeg.locator('button[aria-pressed="true"]').allTextContents();
+      check((await pressed()).join() === 'Historic', `Orders must open on Historic: ${await pressed()}`);
+      await eraSeg.getByRole('button', { name: 'Anime', exact: true }).click();
+      check((await pressed()).join() === 'Historic,Anime', `Anime must join Historic: ${await pressed()}`);
+      check(await page.getByText('Historic + Anime:').count() === 1, 'The era note must name the set');
+      await eraSeg.getByRole('button', { name: 'Historic', exact: true }).click();
+      await eraSeg.getByRole('button', { name: 'Anime', exact: true }).click();
+      check((await pressed()).join() === 'Anime', `The last era with warships must stay on: ${await pressed()}`);
+      await eraSeg.getByRole('button', { name: 'All eras', exact: true }).click();
+      check(await eraSeg.locator('button[aria-pressed="false"]').count() === 0, 'All eras must press every era');
       await click('Free play');
       const enemy = page.getByRole('region', { name: 'Enemy AI', exact: true });
       await enemy.getByRole('button', { name: 'Random pool', exact: true }).click();
@@ -114,6 +125,9 @@ try {
         await page.getByRole('group', { name: 'AI allies', exact: true }).getByRole('button', { name: '0', exact: true }).click();
         await page.getByRole('group', { name: 'AI enemies', exact: true }).getByRole('button', { name: '1', exact: true }).click();
         await click('Choose ship');
+        // Narrowing the eras to Anime moved the captain off Stepper; All eras offers it again.
+        await click('Misc');
+        await page.getByRole('button', { name: /^Stepper/ }).click();
         await click('Set sail');
         const spawned = await page.evaluate(() => ({
           player: window.steel.battle.game.humans()[0].spec.id,
@@ -129,9 +143,9 @@ try {
       await click('Create lobby');
       await page.waitForFunction(() => window.steel.net.client?.lobby);
       await page.evaluate(() => window.steel.net.client.send({ t: 'settings', s: {
-        era: 'mixed', ai: [8, 1], type: 'freeplay', aiSelection: [{ mode: 'assign', slots: ['iowa', 'gato'] }, { mode: 'pool', pool: ['queenElizabeth'] }],
+        eras: ['historic', 'fantasy', 'modern', 'scifi', 'anime', 'misc'], ai: [8, 1], type: 'freeplay', aiSelection: [{ mode: 'assign', slots: ['iowa', 'gato'] }, { mode: 'pool', pool: ['queenElizabeth'] }],
       } }));
-      await page.waitForFunction(() => window.steel.net.client.lobby.settings.era === 'mixed');
+      await page.waitForFunction(() => window.steel.net.client.lobby.settings.eras.length === 6);
       const pool = page.getByRole('region', { name: 'Team B AI', exact: true });
       await pool.getByRole('searchbox').fill('gato');
       await pool.getByRole('checkbox', { name: /Gato/ }).check();
@@ -140,12 +154,17 @@ try {
       check(await pool.getByRole('checkbox', { name: /Gato/ }).isChecked(), 'LAN checkbox must stay checked');
       check(await page.evaluate(() => document.activeElement?.getAttribute('type') === 'checkbox'), 'LAN checkbox must retain focus');
       // An era change redraws the editors in place: the search and the focused checkbox stay.
-      await page.evaluate(() => window.steel.net.client.send({ t: 'settings', s: { era: 'historic' } }));
-      await page.waitForFunction(() => window.steel.net.client.lobby.settings.era === 'historic');
+      await page.evaluate(() => window.steel.net.client.send({ t: 'settings', s: { eras: ['historic'] } }));
+      await page.waitForFunction(() => window.steel.net.client.lobby.settings.eras.join() === 'historic');
       check(await pool.getByRole('searchbox').inputValue() === 'gato', 'An era change must keep the pool search');
       check(await page.evaluate(() => document.activeElement?.getAttribute('type') === 'checkbox'), 'An era change must keep focus in the pool');
-      await page.evaluate(() => window.steel.net.client.send({ t: 'settings', s: { era: 'mixed' } }));
-      await page.waitForFunction(() => window.steel.net.client.lobby.settings.era === 'mixed');
+      // The host's era buttons send the set: Anime joins, then All eras.
+      const lanEras = page.getByRole('group', { name: 'Eras', exact: true });
+      await lanEras.getByRole('button', { name: 'Anime', exact: true }).click();
+      await page.waitForFunction(() => window.steel.net.client.lobby.settings.eras.join() === 'historic,anime');
+      check(await lanEras.getByRole('button', { name: 'Anime', exact: true }).getAttribute('aria-pressed') === 'true', 'The lobby must show Anime pressed');
+      await lanEras.getByRole('button', { name: 'All eras', exact: true }).click();
+      await page.waitForFunction(() => window.steel.net.client.lobby.settings.eras.length === 6);
       await pool.getByRole('searchbox').fill('');
       await pool.evaluate(e => e.scrollIntoView({ block: 'start' }));
       await capture('lan-pool');

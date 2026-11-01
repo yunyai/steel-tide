@@ -1,7 +1,7 @@
 import { ARCHITECT } from './architect';
 import { AIRCRAFT_HP_BUFF, AIRCRAFT_INTERVAL_MUL, EXTRA_MAIN_BUFF, MAIN_DAMAGE_BUFF, WEAK_SKILL_SHIPS } from './Balance';
 import { HP_SCALE, RANGE_SCALE, RELOAD_SCALE } from '../config';
-import type { BattleEra, Era, ShipSpec } from '../core/types';
+import type { Era, EraSel, ShipSpec } from '../core/types';
 import { ANIME, ANIME_FORMS, ANIME_SUMMONS } from './anime';
 import { REPAIR_KIT } from './common';
 import { ERAS, FACTIONS, eraOf } from './factions';
@@ -88,19 +88,24 @@ export function shipsOf(era: Era): ShipSpec[] {
   return SHIPS.filter((s) => eraOf(s) === era);
 }
 
-/** The sailable ships of a battle's era (every era for Mixed). */
-export function shipsIn(era: BattleEra): ShipSpec[] {
-  return era === 'mixed' ? SHIPS : shipsOf(era);
+/** Does a selection (one era, Mixed or a set) take this era's ships? */
+function takes(sel: EraSel, era: Era): boolean {
+  return sel === 'mixed' || (typeof sel === 'string' ? sel === era : sel.includes(era));
 }
 
-/** The titans of a battle's era, in roster order. */
-export function titansOf(era: BattleEra): ShipSpec[] {
-  return shipsIn(era).filter((s) => s.cls === 'TT');
+/** The sailable ships of a battle's eras (every era for Mixed), in roster order. */
+export function shipsIn(sel: EraSel): ShipSpec[] {
+  return sel === 'mixed' ? SHIPS : SHIPS.filter((s) => takes(sel, eraOf(s)));
 }
 
-/** Boss Rush bosses of a battle's era: its titans, then the Titan Shift forms of its ships (anime has no others). */
-export function bossesOf(era: BattleEra): ShipSpec[] {
-  return [...titansOf(era), ...ALL.filter((s) => s.formOf && (era === 'mixed' || eraOf(s) === era))];
+/** The titans of a battle's eras, in roster order. */
+export function titansOf(sel: EraSel): ShipSpec[] {
+  return shipsIn(sel).filter((s) => s.cls === 'TT');
+}
+
+/** Boss Rush bosses of a battle's eras: their titans, then the Titan Shift forms of their ships (anime has no others). */
+export function bossesOf(sel: EraSel): ShipSpec[] {
+  return [...titansOf(sel), ...ALL.filter((s) => s.formOf && takes(sel, eraOf(s)))];
 }
 
 /** Eras with line ships to fill a battle with. Misc holds only a titan, so it sails in Mixed battles alone. */

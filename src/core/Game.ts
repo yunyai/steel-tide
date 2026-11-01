@@ -3,6 +3,7 @@ import { copyLoadout } from '../data/architectLoadout';
 import { clearArchitect, destroyPlatform } from '../skills/misc/ArchitectRuntime';
 import { clearStepper, syncStepCopies } from '../skills/misc/StepperRuntime';
 import { clearTungsten } from '../skills/misc/TungstenRuntime';
+import { configEras } from '../data/eras';
 import { eraOf } from '../data/factions';
 import {
   BATTLE_TIME_LIMIT,
@@ -190,7 +191,7 @@ export class Game {
   pickShip(ship: Ship, specId: string): void {
     if (this.config.type !== 'freeplay' || ship.isSummon || !Object.hasOwn(SHIP_BY_ID, specId)) return;
     const spec = SHIP_BY_ID[specId];
-    if (spec.hidden || this.config.titans === false && spec.cls === 'TT' || this.config.era && this.config.era !== 'mixed' && eraOf(spec) !== this.config.era) return;
+    if (spec.hidden || this.config.titans === false && spec.cls === 'TT' || !configEras(this.config, 'mixed').includes(eraOf(spec))) return;
     ship.nextSpec = spec === ship.base ? null : spec;
   }
 

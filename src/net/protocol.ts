@@ -6,7 +6,7 @@ export const SIM_PROTOCOL=17;
 import type { TeamAISelection } from '../core/FleetSelection';
 import type { ShiftTempo } from '../config';
 import type { BattleConfig, BattleType, DifficultyId } from '../core/BattleSetup';
-import type { BattleEra, Team } from '../core/types';
+import type { Era, Team } from '../core/types';
 
 /** Sim steps per lockstep turn, and the server's turn period (30 turns a second at 60 Hz). */
 export const TURN_TICKS = 2;
@@ -86,8 +86,8 @@ export interface LobbySettings {
   /** Convoy: the fleet that escorts the transports. */
   escortTeam: Team;
   titans: boolean;
-  /** Which era's ships everyone sails. */
-  era: BattleEra;
+  /** Whose ships everyone sails: a set of eras in roster order, at least one with line ships. */
+  eras: Era[];
 }
 
 export interface Member {
@@ -119,7 +119,7 @@ export interface LobbySummary {
   host: string;
   type: LobbySettings['type'];
   mapId: string;
-  era: BattleEra;
+  eras: Era[];
   captains: number;
   state: LobbyState['state'];
 }
@@ -162,7 +162,7 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   difficulty: 'normal',
   escortTeam: 0,
   titans: true,
-  era: 'historic',
+  eras: ['historic'],
 };
 
 /** A battle fingerprint in named parts (`core`, `s<ship id>`, `shells`, …), see net/hash.ts. */

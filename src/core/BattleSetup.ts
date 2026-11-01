@@ -1,8 +1,9 @@
 import { extraAI, selectedAI, selectionError, type TeamAISelection } from './FleetSelection';
 import type { InputDeviceId, ShiftTempo } from '../config';
+import { configEras } from '../data/eras';
 import { SHIPS, SHIP_BY_ID, shipsIn } from '../data/ships';
 import { pick } from './math';
-import type { BattleEra, ShipClass, ShipSpec, Team } from './types';
+import type { BattleEra, Era, EraSel, ShipClass, ShipSpec, Team } from './types';
 
 /** One captain at this screen, or several on a LAN (each peer runs the same battle in lockstep). */
 export type BattleMode = 'solo' | 'lan';
@@ -43,7 +44,9 @@ export interface BattleConfig {
   escorts?: number;
   /** Convoy: which side of it the player's team is on (escort by default). */
   convoySide?: ConvoySide;
-  /** Which era's ships the bots sail (historic by default). */
+  /** The eras whose ships sail (see data/eras); replaces `era` when set. */
+  eras?: Era[];
+  /** Legacy single era ('mixed' for every era), read when `eras` is unset (historic by default). */
   era?: BattleEra;
   /** AI ships per fleet, besides its captains (0..8). When set it replaces `teamSize`. */
   ai?: [number, number];
@@ -75,7 +78,7 @@ export function groupOf(cls: ShipClass): Group {
 }
 
 /** A random ship of a group from the era (titans are never handed out at random). */
-export function randomOf(g: Group, rng: () => number, era: BattleEra = 'historic'): ShipSpec {
+export function randomOf(g: Group, rng: () => number, era: EraSel = 'historic'): ShipSpec {
   const fits = (s: ShipSpec) => s.cls !== 'TT' && groupOf(s.cls) === g;
   const pool = shipsIn(era).filter(fits);
   if (pool.length) return pick(pool, rng);
@@ -124,7 +127,8 @@ export function aiFleetSizes(config: Pick<BattleConfig, 'players' | 'teamSize' |
 
 /** Builds mirrored team compositions; humans replace a slot of their ship's class. */
 export function buildRoster(config: BattleConfig, rng: () => number): RosterEntry[] {
-  const error = selectionError(config.aiSelection, config.era, config.titans !== false, config.ai);
+  const eras = configEras(config);
+  const error = selectionError(config.aiSelection, eras, config.titans !== false, config.ai);
   if (error) throw new Error(error);
   const out: RosterEntry[] = [];
   const { humansByTeam, ai, extras } = aiFleetSizes(config);
@@ -149,8 +153,8 @@ export function buildRoster(config: BattleConfig, rng: () => number): RosterEntr
     groups.forEach((g, i) => {
       if (slots[i]) return;
       const index = botIndex++;
-      const automatic = () => randomOf(g, rng, config.era);
-      const chosen = index >= firstExtra ? extraAI(config.aiSelection?.[team], config.era ?? 'historic', rng, automatic) : selectedAI(config.aiSelection?.[team], index, config.era ?? 'historic', config.titans !== false, rng, automatic);
+      const automatic = () => randomOf(g, rng, eras);
+      const chosen = index >= firstExtra ? extraAI(config.aiSelection?.[team], eras, rng, automatic) : selectedAI(config.aiSelection?.[team], index, eras, config.titans !== false, rng, automatic);
       const id = config.resolvedAI?.[team][index];
       const spec = id && Object.hasOwn(SHIP_BY_ID, id) ? SHIP_BY_ID[id] : chosen;
       slots[i] = { team, spec, humanIndex: -1, name: takeName() };

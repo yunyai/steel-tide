@@ -2,13 +2,14 @@ import { FleetEditor } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, SHIFT_TEMPOS, type ShiftTempo } from '../config';
 import type { DifficultyId } from '../core/BattleSetup';
-import type { BattleEra, ShipSpec, Team } from '../core/types';
-import { ERA_LABEL } from '../data/factions';
-import { CLASS_LABEL, LINE_ERAS, SHIP_BY_ID, titansOf } from '../data/ships';
+import type { Era, ShipSpec, Team } from '../core/types';
+import { erasLabel } from '../data/eras';
+import { CLASS_LABEL, SHIP_BY_ID, titansOf } from '../data/ships';
 import type { NetClient } from '../net/NetClient';
 import { type LobbySettings, type LobbyState, MAX_AI, MAX_PER_TEAM, type Member, NAME_MAX, type ServerMsg } from '../net/protocol';
 import { MAPS } from '../world/GameMap';
 import { field, h, seg } from './dom';
+import { eraSeg } from './EraPicker';
 import { classIcon, glyph } from './Icons';
 
 // The LAN screens: the lobby list on this server, and the room of the lobby you are in.
@@ -19,19 +20,13 @@ export interface LobbyHooks {
   preview(spec: ShipSpec, offset: number): void;
   /** Back to the title screen. */
   back(): void;
-  /** Open the hangar for a LAN pick; the host's titan rule and era limit it. */
-  chooseShip(shipId: string, titans: boolean, era: BattleEra): void;
+  /** Open the hangar for a LAN pick; the host's titan rule and eras limit it. */
+  chooseShip(shipId: string, titans: boolean, eras: readonly Era[]): void;
 }
 
 const TYPE_LABEL: Record<LobbySettings['type'], string> = { domination: 'Domination', annihilation: 'Annihilation', convoy: 'Convoy', freeplay: 'Free play' };
 const FREEPLAY_NOTE = 'No score and no clock. Sunk ships come back after 8 s; change ship from the battle menu (Esc). The host ends it.';
 const TEAM_LABEL = ['Team A', 'Team B'];
-/** Eras with ships to sail, then Mixed once there are two. */
-const LAN_ERAS: BattleEra[] = LINE_ERAS.length > 1 ? [...LINE_ERAS, 'mixed'] : LINE_ERAS;
-
-function eraLabel(e: BattleEra): string {
-  return e === 'mixed' ? 'Mixed' : ERA_LABEL[e];
-}
 
 /** Fleet sizes as the battle will build them (see buildRoster): captains, the host's AI ships, and two more AI ships per enemy titan (only in a fleet that has AI). */
 function fleetSizes(l: LobbyState): [number, number] {
@@ -140,7 +135,7 @@ export class Lobby {
 
   private fleetEditor(l: LobbyState, t: Team, extra: number): HTMLElement {
     const st = l.settings;
-    const props = { era: st.era, titans: st.titans, value: st.aiSelection?.[t], count: st.ai[t], reinforcements: extra };
+    const props = { era: st.eras, titans: st.titans, value: st.aiSelection?.[t], count: st.ai[t], reinforcements: extra };
     const key = `${l.id}:${t}`;
     let editor = this.fleets.get(key);
     if (editor) editor.update(props);
@@ -237,7 +232,7 @@ export class Lobby {
         const map = MAPS.find((m) => m.id === l.mapId)?.name ?? l.mapId;
         b.append(
           h('span', { class: 'who' }, title, host),
-          h('span', { class: 'what' }, `${TYPE_LABEL[l.type]}, ${map}`),
+          h('span', { class: 'what' }, `${TYPE_LABEL[l.type]}, ${map}${Array.isArray(l.eras) ? `, ${erasLabel(l.eras)}` : ''}`),
           h('span', { class: 'num count' }, `${l.captains} ${l.captains === 1 ? 'captain' : 'captains'}`),
           h('span', { class: `state ${l.state}` }, l.state === 'battle' ? 'In battle' : 'Waiting'),
         );
@@ -286,22 +281,22 @@ export class Lobby {
       );
       settings.append(field('Titan Shift', sg<ShiftTempo>((Object.keys(SHIFT_TEMPOS) as ShiftTempo[]).map(value => ({ value, label: SHIFT_TEMPOS[value].label })), () => st.shiftTempo ?? 'staggered', shiftTempo => set({ shiftTempo }))));
       // Anime has no hangar titans (its ships become titans by Titan Shift), so the switch has nothing to gate.
-      if (titansOf(st.era).length) settings.append(field('Titans', sg([{ value: 1, label: 'Allowed' }, { value: 0, label: 'Not allowed' }], () => (st.titans ? 1 : 0), (v) => set({ titans: v === 1 }))));
-      if (LAN_ERAS.length > 1) settings.append(field('Era', sg<BattleEra>(LAN_ERAS.map((e) => ({ value: e, label: eraLabel(e) })), () => st.era, (v) => set({ era: v }))));
+      if (titansOf(st.eras).length) settings.append(field('Titans', sg([{ value: 1, label: 'Allowed' }, { value: 0, label: 'Not allowed' }], () => (st.titans ? 1 : 0), (v) => set({ titans: v === 1 }))));
+      settings.append(field('Eras', eraSeg(() => st.eras, (eras) => set({ eras }), () => this.hooks.click(), 'lobby-setting-era')));
     } else {
       const facts: [string, string][] = [
         ['Battle type', TYPE_LABEL[st.type] + (st.type === 'convoy' ? `, transports with ${TEAM_LABEL[st.escortTeam]}` : '')],
         ['Map', mapName],
         ['AI skill', DIFFICULTIES[st.difficulty].label],
-        ...(titansOf(st.era).length ? [['Titans', st.titans ? 'Allowed' : 'Not allowed'] as [string, string]] : []),
-        ['Era', eraLabel(st.era)],
+        ...(titansOf(st.eras).length ? [['Titans', st.titans ? 'Allowed' : 'Not allowed'] as [string, string]] : []),
+        ['Eras', erasLabel(st.eras)],
         ['Titan Shift', SHIFT_TEMPOS[st.shiftTempo ?? 'staggered'].label],
       ];
       settings.append(h('dl', { class: 'lan-facts' }, ...facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));
       if (st.type === 'freeplay') settings.append(h('p', { class: 'note' }, FREEPLAY_NOTE));
     }
 
-    const poolError = selectionError(st.aiSelection, st.era, st.titans, st.ai);
+    const poolError = selectionError(st.aiSelection, st.eras, st.titans, st.ai);
     if (poolError) settings.append(h('p', { class: 'note error', role: 'alert' }, poolError));
     const sizes = fleetSizes(l);
     const myTeam = me?.team ?? 0;
@@ -340,7 +335,7 @@ export class Lobby {
     if (l.state === 'battle') {
       notes.push(h('p', { class: 'lan-status' }, me && me.player >= 0 ? 'Your battle is still being fought.' : 'A battle is under way. You sail in the next one.'));
     } else if (me) {
-      actions.append(this.act('Choose ship', 'btn', () => this.hooks.chooseShip(me.shipId, st.titans, st.era)));
+      actions.append(this.act('Choose ship', 'btn', () => this.hooks.chooseShip(me.shipId, st.titans, st.eras)));
       if (host) {
         const waiting = l.members.filter((m) => m.id !== me.id && m.connected && !m.ready);
         const start = this.act('Start battle', 'btn-primary', () => n.send({ t: 'start' }));
@@ -408,7 +403,7 @@ export class Lobby {
     }
     row.append(icon, h('span', { class: 'who' }, name, ship), tag);
     if (m.id === me?.id && l.state === 'waiting') row.append(this.act('Random ship', 'btn-quiet', () => {
-      const s = randomShip(l.settings.era, Math.random);
+      const s = randomShip(l.settings.eras, Math.random);
       if (s) this.pickShip(s.id);
     }));
     return row;

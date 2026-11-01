@@ -5,10 +5,11 @@ import { FleetEditor, type FleetEditorProps } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId, SHIFT_SURGE, SHIFT_TEMPOS, type ShiftTempo } from '../config';
 import { aiFleetSizes, type BattleConfig, type BattleType, type DifficultyId, defaultAssist, type PlayerConfig } from '../core/BattleSetup';
-import type { BattleEra, Era, ShipClass, ShipSpec, Team } from '../core/types';
+import type { Era, EraSel, ShipClass, ShipSpec, Team } from '../core/types';
 import { accentCss } from '../data/accents';
-import { ERAS, ERA_BLURB, ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
-import { CLASS_LABEL, LINE_ERAS, SHIPS, SHIP_BY_ID, shipsIn, shipsOf } from '../data/ships';
+import { configEras, eraList } from '../data/eras';
+import { ERAS, ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
+import { CLASS_LABEL, SHIPS, SHIP_BY_ID, shipsIn, shipsOf } from '../data/ships';
 import { keyName, layoutFor } from '../input/Keybinds';
 import { RUSH_WAVES, loadBest } from '../modes/BossRush';
 import { consumableLabel } from '../ships/Consumables';
@@ -17,6 +18,7 @@ import type { VehicleSpec } from '../ground/sim/types';
 import { VEHICLES } from '../ground/sim/data';
 import { MAPS } from '../world/GameMap';
 import { field, h, html, seg } from './dom';
+import { eraSeg, erasBlurb } from './EraPicker';
 import { type GarageFlow, GroundMenu, kindSwitch } from './GroundMenu';
 import { classIcon, glyph, skillIcon, vehicleClassIcon } from './Icons';
 import { buildSettings } from './SettingsSheet';
@@ -56,10 +58,9 @@ export function tabOf(cls: ShipClass): Tab {
  * with line ships can fill a battle; Misc's lone titan sails in Mixed.
  */
 export const LIVE_ERAS = ERAS.filter((e) => shipsOf(e).length > 0);
-const BATTLE_ERAS: BattleEra[] = LINE_ERAS.length > 1 ? [...LINE_ERAS, 'mixed'] : LINE_ERAS;
 
 /** Eras whose ships can take a Titan Shift (the tempo switch shows for them). */
-const shifting = (e: BattleEra) => e === 'mixed' || shipsOf(e).some((s) => s.shift);
+const shifting = (eras: EraSel) => shipsIn(eras).some((s) => s.shift);
 
 /** What a Titan Shift tempo means for a form written at 40 s. */
 function tempoBlurb(k: ShiftTempo): string {
@@ -70,17 +71,9 @@ function tempoBlurb(k: ShiftTempo): string {
   return `A Titan Shift lasts about ${time} s, and ${ready}. Each fires once per shift.`;
 }
 
-function eraName(e: BattleEra): string {
-  return e === 'mixed' ? 'Mixed' : ERA_LABEL[e];
-}
-
-function eraBlurb(e: BattleEra): string {
-  return e === 'mixed' ? 'Every era at once: galleons, missile cruisers and railgun dreadnoughts in one fight.' : ERA_BLURB[e];
-}
-
-/** The ship to fall back on in an era: the first of the same hangar tab, else its first line ship. */
-function eraDefault(era: BattleEra, like: ShipSpec): ShipSpec {
-  const pool = shipsIn(era);
+/** The ship to fall back on in a set of eras: the first of the same hangar tab, else the first line ship. */
+function eraDefault(eras: EraSel, like: ShipSpec): ShipSpec {
+  const pool = shipsIn(eras);
   return pool.find((s) => tabOf(s.cls) === tabOf(like.cls)) ?? pool.find((s) => s.cls !== 'TT')!;
 }
 
@@ -150,7 +143,7 @@ export class Menu {
     players: [{ shipId: 'yamato', device: 'mouse',architectLoadout:savedArchitectLoadout() }],
     seed: 1,
     escorts: 2,
-    era: 'historic',
+    eras: ['historic'],
   };
   /** The fleet-battle type to return to after a Boss Rush. */
   private battleType: BattleType = 'domination';
@@ -162,7 +155,7 @@ export class Menu {
   /** The era tab open in the hangar. */
   private era: Era = 'historic';
   /** LAN hangar: whether the lobby allows titans, its era, and where the pick goes. */
-  private lan: { titans: boolean; era: BattleEra; done: (shipId: string) => void } | null = null;
+  private lan: { titans: boolean; eras: Era[]; done: (shipId: string) => void } | null = null;
 
   private ground: GroundMenu;
 
@@ -224,9 +217,9 @@ export class Menu {
   }
 
   /** Pick a ship for a LAN lobby; `done` gets the choice when the captain heads back. */
-  showLanHangar(shipId: string, titans: boolean, era: BattleEra, done: (shipId: string) => void): void {
+  showLanHangar(shipId: string, titans: boolean, eras: readonly Era[], done: (shipId: string) => void): void {
     if (SHIP_BY_ID[shipId]) this.draft.players[0].shipId = shipId;
-    this.lan = { titans, era, done };
+    this.lan = { titans, eras: eraList(eras), done };
     this.showHangar('lan');
   }
 
@@ -337,7 +330,7 @@ export class Menu {
     // The editors live as long as this screen; each change updates them in place.
     const fleetProps = (t: Team): FleetEditorProps => {
       const sizes = aiFleetSizes({ players: d.players, teamSize: d.teamSize, ai: d.type === 'freeplay' ? this.freeAi : undefined });
-      return { era: d.era ?? 'historic', titans: true, value: d.aiSelection?.[t], count: sizes.ai[t], reinforcements: sizes.extras[t] };
+      return { era: configEras(d), titans: true, value: d.aiSelection?.[t], count: sizes.ai[t], reinforcements: sizes.extras[t] };
     };
     const editors = ([0, 1] as const).map((t) => new FleetEditor(t === 0 ? 'Allied AI' : 'Enemy AI', fleetProps(t), (value) => {
       d.aiSelection ??= [{ mode: 'auto' }, { mode: 'auto' }];
@@ -389,25 +382,26 @@ export class Menu {
       ),
       tempoNote,
     );
-    tempo.hidden = !shifting(d.era ?? 'historic');
-    if (BATTLE_ERAS.length > 1) {
-      const eraNote = h('p', { class: 'note' }, eraBlurb(d.era ?? 'historic'));
+    tempo.hidden = !shifting(configEras(d));
+    if (LIVE_ERAS.length > 1) {
+      const eraNote = h('p', { class: 'note' }, erasBlurb(configEras(d)));
       fields.push(
         this.field(
           'Era',
-          this.seg<BattleEra>(
-            BATTLE_ERAS.map((e) => ({ value: e, label: eraName(e) })),
-            () => d.era ?? 'historic',
-            (v) => {
-              d.era = v;
-              eraNote.textContent = eraBlurb(v);
-              tempo.hidden = !shifting(v);
-              // The captain's ship has to come from the era too.
+          eraSeg(
+            () => configEras(d),
+            (eras) => {
+              d.eras = eras;
+              delete d.era;
+              eraNote.textContent = erasBlurb(eras);
+              tempo.hidden = !shifting(eras);
+              // The captain's ship has to come from the eras too.
               const pc = d.players[0];
               const cur = SHIP_BY_ID[pc.shipId];
-              if (v !== 'mixed' && eraOf(cur) !== v) pc.shipId = eraDefault(v, cur).id;
+              if (!eras.includes(eraOf(cur))) pc.shipId = eraDefault(eras, cur).id;
               renderFleets();
             },
+            () => this.hooks.click(),
           ),
           eraNote,
         ),
@@ -508,11 +502,12 @@ export class Menu {
     const d = this.draft;
     const pc = d.players[0];
     const lan = flow === 'lan' ? this.lan : null;
-    // A battle fixes the era; Mixed battles and plain browsing open every era.
-    const battleEra: BattleEra = lan ? lan.era : flow ? (d.era ?? 'historic') : 'mixed';
-    const eras = battleEra === 'mixed' ? LIVE_ERAS : [battleEra];
-    if (!eras.includes(eraOf(SHIP_BY_ID[pc.shipId]))) pc.shipId = eraDefault(eras[0], SHIP_BY_ID[pc.shipId]).id;
-    if (lan && !lan.titans && SHIP_BY_ID[pc.shipId].cls === 'TT') pc.shipId = shipsIn(battleEra).find((s) => s.cls !== 'TT')!.id;
+    // A battle fixes its eras; plain browsing opens every era. An era with nothing to pick (Misc's lone
+    // titan when the lobby bars titans) gets no tab.
+    const battleEras: Era[] = lan ? lan.eras : flow ? configEras(d) : LIVE_ERAS;
+    const eras = battleEras.filter((e) => shipsOf(e).some((s) => !lan || lan.titans || s.cls !== 'TT'));
+    if (!eras.includes(eraOf(SHIP_BY_ID[pc.shipId]))) pc.shipId = eraDefault(eras, SHIP_BY_ID[pc.shipId]).id;
+    if (lan && !lan.titans && SHIP_BY_ID[pc.shipId].cls === 'TT') pc.shipId = shipsIn(eras).find((s) => s.cls !== 'TT')!.id;
     let spec = SHIP_BY_ID[pc.shipId];
     this.tab = tabOf(spec.cls);
     this.era = eraOf(spec);
@@ -663,7 +658,7 @@ export class Menu {
     // Browsing from the title: the hangar and the garage are one screen with two halves.
     if (!flow) roster.append(kindSwitch('ships', () => {}, () => this.showGarage(null), () => this.hooks.click()));
     const random = this.act('Random ship', 'btn-quiet', () => {
-      const chosen = randomShip(lan?.era ?? (flow ? d.era ?? 'historic' : 'mixed'), Math.random);
+      const chosen = randomShip(eras, Math.random);
       if (!chosen) return;
       spec = chosen;
       pc.shipId = chosen.id;
@@ -699,7 +694,7 @@ export class Menu {
       d.seed = Math.floor(Math.random() * 1e9);
       const config = structuredClone(d);
       if (config.type === 'freeplay') config.ai = [this.freeAi[0], this.freeAi[1]];
-      const error = selectionError(config.aiSelection, config.era, config.titans !== false, config.ai);
+      const error = selectionError(config.aiSelection, configEras(config), config.titans !== false, config.ai);
       if (error) { startError.textContent = error; return; }
       this.hooks.start(config);
     };

@@ -308,7 +308,7 @@ export class LobbyServer {
       host: l.host.name,
       type: l.settings.type,
       mapId: l.settings.mapId,
-      era: l.settings.era,
+      eras: l.settings.eras,
       captains: l.members.length,
       state: l.battle ? 'battle' : 'waiting',
     }));

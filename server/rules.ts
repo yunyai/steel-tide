@@ -5,7 +5,8 @@ import { makeRng } from '../src/core/math';
 import type { BattleConfig } from '../src/core/BattleSetup';
 import type { Team } from '../src/core/types';
 import { eraOf } from '../src/data/factions';
-import { LINE_ERAS, SHIP_BY_ID, shipsIn } from '../src/data/ships';
+import { normalizeEras } from '../src/data/eras';
+import { SHIP_BY_ID, shipsIn } from '../src/data/ships';
 import { type Continuous, DEFAULT_SETTINGS, type Edge, type LobbySettings, MAX_AI } from '../src/net/protocol';
 import { MAPS } from '../src/world/GameMap';
 
@@ -48,17 +49,17 @@ const isTeam = (v: unknown): v is Team => v === 0 || v === 1;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const smallInt = (v: unknown, max: number): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= max;
 
-/** A ship captains may pick under these settings: of the lobby's era, and a titan only if allowed. */
+/** A ship captains may pick under these settings: of one of the lobby's eras, and a titan only if allowed. */
 function shipAllowed(id: unknown, st: LobbySettings): id is string {
   if (typeof id !== 'string' || !SHIP_ID.test(id) || !Object.hasOwn(SHIP_BY_ID, id)) return false;
   const spec = SHIP_BY_ID[id];
-  if (spec.hidden || (st.era !== 'mixed' && eraOf(spec) !== st.era)) return false;
+  if (spec.hidden || !st.eras.includes(eraOf(spec))) return false;
   return st.titans || spec.cls !== 'TT';
 }
 
 /** Naval battles: fleets of warships, picked by ship id. */
 export const navalRules: BattleRules = {
-  defaults: () => ({ ...DEFAULT_SETTINGS, ai: [...DEFAULT_SETTINGS.ai] }),
+  defaults: () => ({ ...DEFAULT_SETTINGS, ai: [...DEFAULT_SETTINGS.ai], eras: [...DEFAULT_SETTINGS.eras] }),
 
   applySettings(st, o) {
     if (o.type === 'domination' || o.type === 'annihilation' || o.type === 'convoy' || o.type === 'freeplay') st.type = o.type;
@@ -67,17 +68,19 @@ export const navalRules: BattleRules = {
     if (o.difficulty === 'easy' || o.difficulty === 'normal' || o.difficulty === 'hard') st.difficulty = o.difficulty;
     if (isTeam(o.escortTeam)) st.escortTeam = o.escortTeam;
     if (typeof o.titans === 'boolean') st.titans = o.titans;
-    // Only eras with line ships to fill the fleets (Misc's lone titan sails in Mixed).
-    if (o.era === 'mixed' || LINE_ERAS.includes(o.era as never)) st.era = o.era as LobbySettings['era'];
+    // A set needs an era with line ships to fill the fleets (Misc adds only its titans). The single
+    // `era` of older clients still reads as a set of one, or of all for 'mixed'.
+    const eras = normalizeEras(o.eras ?? (o as { era?: unknown }).era);
+    if (eras) st.eras = eras;
     if (o.shiftTempo === 'burst' || o.shiftTempo === 'staggered' || o.shiftTempo === 'long') st.shiftTempo = o.shiftTempo;
-    const selection = cleanAISelection(o.aiSelection ?? st.aiSelection, st.era, st.titans);
+    const selection = cleanAISelection(o.aiSelection ?? st.aiSelection, st.eras, st.titans);
     if (selection) st.aiSelection = selection;
   },
 
   pickAllowed: shipAllowed,
 
-  /** The era's first line ship. */
-  defaultPick: (st) => shipsIn(st.era).find((s) => s.cls !== 'TT')!.id,
+  /** The first line ship of the lobby's eras. */
+  defaultPick: (st) => shipsIn(st.eras).find((s) => s.cls !== 'TT')!.id,
 
   cleanContinuous(v) {
     if (!Array.isArray(v) || (v.length !== 5 && v.length !== 6) || !v.every(finite)) return null;
@@ -112,7 +115,7 @@ export const navalRules: BattleRules = {
   holdFire: (c) => { const held: Continuous = [...c]; held[3] = 0; return held; },
 
   startError(st, captains) {
-    const error = selectionError(st.aiSelection, st.era, st.titans, st.ai);
+    const error = selectionError(st.aiSelection, st.eras, st.titans, st.ai);
     if (error) return error;
     // Every other battle is decided by one fleet running out of ships (or never meeting one).
     if (st.type === 'freeplay') return null;
@@ -134,7 +137,7 @@ export const navalRules: BattleRules = {
       difficulty: st.difficulty,
       seed,
       convoySide: st.escortTeam === 0 ? 'escort' : 'raid',
-      era: st.era,
+      eras: [...st.eras],
       players: captains.map((c) => ({ shipId: c.pick, architectLoadout:copyLoadout(c.architectLoadout), device: 'mouse', team: c.team, name: c.name })),
     };
     const roster = buildRoster(config, makeRng(seed));

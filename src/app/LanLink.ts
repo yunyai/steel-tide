@@ -74,9 +74,9 @@ export class LanLink {
         click: () => audio.ui('click'),
         preview: (spec, offset) => this.shell.preview(spec, offset),
         back: () => this.close(),
-        chooseShip: (shipId, titans, era) => {
+        chooseShip: (shipId, titans, eras) => {
           l.hide();
-          menu.showLanHangar(shipId, titans, era, (id) => {
+          menu.showLanHangar(shipId, titans, eras, (id) => {
             l.pickShip(id,menu.captain.architectLoadout);
             l.show();
           });

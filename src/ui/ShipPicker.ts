@@ -1,13 +1,14 @@
 import { architectLoadoutEditor, type ArchitectEditor } from './ArchitectLoadout';
 import { architectRefitEligibility, type ArchitectApply } from './ArchitectEditorState';
 import { randomShip } from '../core/FleetSelection';
-import type { BattleEra, Era, ShipSpec } from '../core/types';
+import type { Era, EraSel, ShipSpec } from '../core/types';
+import { eraList } from '../data/eras';
 import { ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
 import { CLASS_LABEL, shipsIn, shipsOf } from '../data/ships';
 import type { Ship } from '../ships/Ship';
 import { h } from './dom';
 import { classIcon } from './Icons';
-import { LIVE_ERAS, TABS, type Tab, tabOf } from './Menu';
+import { TABS, type Tab, tabOf } from './Menu';
 
 // Free play's ship picker, opened from the battle menu: the next ship to sail, from the next
 // respawn or (while afloat) right away. No 3D preview: the battle owns the renderer.
@@ -16,7 +17,7 @@ export interface ShipPickerOptions {
   /** The captain's ship now (a new hull after a change of ship). */
   ship(): Ship;
   refit?:ArchitectApply;
-  era: BattleEra;
+  era: EraSel;
   titans: boolean;
   /** Sail `spec` from the next respawn; `now` also leaves the fight to change into it. */
   pick(spec: ShipSpec, now: boolean): void;
@@ -34,8 +35,8 @@ export function buildShipPicker(o: ShipPickerOptions): { el: HTMLElement; sync()
     editor.sync(event.ship.architectLoadout,architectRefitEligibility(event.ship));
   });
   const allowed = (s: ShipSpec) => o.titans || s.cls !== 'TT';
-  const eras: Era[] = o.era === 'mixed' ? LIVE_ERAS : [o.era];
-  // Ships of the battle's era only (a mixed battle offers them all), titans when allowed.
+  // Ships of the battle's eras only, titans when allowed; an era with nothing allowed gets no tab.
+  const eras: Era[] = eraList(o.era).filter((e) => shipsOf(e).some(allowed));
   let spec = me.nextSpec ?? me.base;
   if (!shipsIn(o.era).includes(spec) || !allowed(spec)) spec = shipsIn(o.era).find(allowed)!;
   let era: Era = eras.includes(eraOf(spec)) ? eraOf(spec) : eras[0];

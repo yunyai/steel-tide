@@ -7,6 +7,8 @@ export type ShipClass = 'BB' | 'CB' | 'CA' | 'CL' | 'DD' | 'CV' | 'SS' | 'TT' | 
 export type Era = 'historic' | 'fantasy' | 'modern' | 'scifi' | 'anime' | 'misc';
 /** A battle is fought in one era, or with every era's ships at once. */
 export type BattleEra = Era | 'mixed';
+/** The eras a battle draws from: one, every one ('mixed'), or any set of them (see data/eras). */
+export type EraSel = BattleEra | readonly Era[];
 /** A ship's navy or faction; each belongs to one era (see data/factions). */
 export type Nation =
   | 'japan'

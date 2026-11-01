@@ -3,6 +3,7 @@ import { applyArchitectRefits } from '../ui/ArchitectEditorState';
 import { refitArchitect } from '../skills/misc/ArchitectRuntime';
 import { Vector3 } from 'three';
 import { type BattleConfig, defaultAssist } from '../core/BattleSetup';
+import { configEras } from '../data/eras';
 import type { Game } from '../core/Game';
 import type { ShipSpec } from '../core/types';
 import { audio } from '../fx/Audio';
@@ -345,7 +346,7 @@ export class NavalBattle implements ActiveBattle {
         if(this.link){this.link.lockstep.sendEdge({ar:{index,pick}});return 'pending';}
         return refitArchitect(this.pcs[0].ship,index,pick);
       }),
-      era: this.config.era ?? 'historic',
+      era: configEras(this.config),
       titans: this.config.titans !== false,
       click: () => audio.ui('click'),
       back: () => this.showPauseMenu(),

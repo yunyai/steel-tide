@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import type { ClientMsg, LobbyState, ServerMsg, Turn } from '../src/net/protocol';
 import { SIM_PROTOCOL } from '../src/net/protocol';
-import { eraOf } from '../src/data/factions';
+import { ERAS, eraOf } from '../src/data/factions';
 import { SHIPS, SHIP_BY_ID } from '../src/data/ships';
 import { readFileSync } from 'node:fs';
 import { attachLan, deliver, type LanOptions, LobbyServer } from './lan';
@@ -190,7 +190,7 @@ describe('LAN lobby server', () => {
     await serve();
     const [ana, ben] = await room('Ana', 'Ben');
     ana.send({ t: 'settings', s: { era: 'modern' } });
-    await ben.next('lobby', (m) => m.lobby!.settings.era === 'modern');
+    await ben.next('lobby', (m) => m.lobby!.settings.eras.join() === 'modern');
     ben.send({ t: 'me', shipId: 'queenElizabeth' });
     await ana.next('lobby', (m) => m.lobby!.members[1].shipId === 'queenElizabeth');
   });
@@ -199,11 +199,19 @@ describe('LAN lobby server', () => {
     await serve();
     const browser = await client('Watcher');
     const [ana, ben] = await room('Ana', 'Ben');
-    expect(ana.lobby!.settings.era).toBe('historic');
+    expect(ana.lobby!.settings.eras).toEqual(['historic']);
     ana.send({ t: 'settings', s: { era: 'atlantis' as never } });
-    ana.send({ t: 'settings', s: { era: 'mixed' } });
-    await ben.next('lobby', (m) => m.lobby!.settings.era === 'mixed');
-    expect((await browser.next('lobbies', (m) => m.list[0]?.era === 'mixed')).list[0].era).toBe('mixed');
+    ana.send({ t: 'settings', s: { era: 'mixed' } as never });
+    await ben.next('lobby', (m) => m.lobby!.settings.eras.length === ERAS.length);
+    expect((await browser.next('lobbies', (m) => m.list[0]?.eras.length === ERAS.length)).list[0].eras).toEqual(ERAS);
+    // A set of eras, and one with no line ships refused.
+    ana.send({ t: 'settings', s: { eras: ['anime', 'historic'] } });
+    await ben.next('lobby', (m) => m.lobby!.settings.eras.join() === 'historic,anime');
+    ana.send({ t: 'settings', s: { eras: ['misc'] } });
+    ana.send({ t: 'settings', s: { difficulty: 'hard' } });
+    expect((await ben.next('lobby', (m) => m.lobby!.settings.difficulty === 'hard')).lobby!.settings.eras).toEqual(['historic', 'anime']);
+    ana.send({ t: 'settings', s: { era: 'mixed' } as never });
+    await ben.next('lobby', (m) => m.lobby!.settings.eras.length === ERAS.length);
 
     // Back to one era: a captain in another era's hull is moved to one of this era's.
     const other = SHIPS.find((x) => x.cls !== 'TT' && eraOf(x) !== 'historic');
@@ -211,7 +219,7 @@ describe('LAN lobby server', () => {
     ben.send({ t: 'me', shipId: other.id });
     await ana.next('lobby', (m) => m.lobby!.members[1].shipId === other.id);
     ana.send({ t: 'settings', s: { era: 'historic' } });
-    const after = (await ana.next('lobby', (m) => m.lobby!.settings.era === 'historic')).lobby!;
+    const after = (await ana.next('lobby', (m) => m.lobby!.settings.eras.join() === 'historic')).lobby!;
     expect(eraOf(SHIP_BY_ID[after.members[1].shipId])).toBe('historic');
     ben.send({ t: 'me', shipId: other.id });
     ben.send({ t: 'me', ready: true });

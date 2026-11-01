@@ -1,5 +1,5 @@
 import { eligibleShips, type AISelection } from '../core/FleetSelection';
-import type { BattleEra, ShipSpec } from '../core/types';
+import type { EraSel, ShipSpec } from '../core/types';
 import { ERA_LABEL, eraOf } from '../data/factions';
 import { field, h, seg } from './dom';
 import { clearVisible, defaultPool, poolShips, selectVisible } from './FleetPool';
@@ -9,7 +9,7 @@ import { CLASS_CHIPS, chipOf } from './ShipChoice';
 import { keepUi } from './uiMemory';
 
 export interface FleetEditorProps {
-  era: BattleEra;
+  era: EraSel;
   titans: boolean;
   value: AISelection | undefined;
   /** AI ships the fleet sails with. */

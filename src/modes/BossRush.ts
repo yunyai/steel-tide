@@ -4,7 +4,8 @@ import { randomOf, type Group } from '../core/BattleSetup';
 import type { Game } from '../core/Game';
 import { bearingTo, pick } from '../core/math';
 import type { PickupKind } from '../core/Pickups';
-import type { ShipSpec, Team } from '../core/types';
+import type { Era, ShipSpec, Team } from '../core/types';
+import { configEras } from '../data/eras';
 import { SHIP_BY_ID, bossesOf } from '../data/ships';
 import type { Ship } from '../ships/Ship';
 import { copyLoadout } from '../data/architectLoadout';
@@ -27,6 +28,15 @@ const BOSS_ULT_CHARGE = 0.7;
 const WAVE_ULT_CHARGE = 0.5;
 /** Skill cooldowns of the ships of a wave: they all hunt the one player, so they pace themselves. */
 const WAVE_COOLDOWN = 1.6;
+/** Fisher–Yates in place, drawing from the battle's rng. */
+function shuffle<T>(a: T[], rng: () => number): T[] {
+  for (let k = a.length - 1; k > 0; k--) {
+    const j = Math.floor(rng() * (k + 1));
+    [a[k], a[j]] = [a[j], a[k]];
+  }
+  return a;
+}
+
 /** A boss titan's ultimate damage and normal-skill cooldowns: the titan-only kits hit harder than the old ones did. */
 const BOSS_ULT_DAMAGE = 0.55;
 const BOSS_COOLDOWN = 1.3;
@@ -165,6 +175,8 @@ export class BossRush {
   boss: Ship | null = null;
   /** The order the battle's titans arrive in, settled at the first boss wave. */
   private titanOrder: ShipSpec[] | null = null;
+  /** Several eras: how many titans the round-robin order has dealt. */
+  private titansSent = 0;
   player: Ship | null = null;
   /** Wave 15 is behind us: the run is a win whatever happens next. */
   cleared = false;
@@ -201,7 +213,7 @@ export class BossRush {
     const groups: Group[] = ['cruiser', 'DD'];
     for (let i = 0; i < escorts; i++) {
       const p = player.localToWorld(-250, 0, (i % 2 ? 1 : -1) * 300);
-      const s = g.addShip(randomOf(groups[i % 2], g.rng, g.config.era), 0, `Escort ${i + 1}`, p.x, p.z, player.heading);
+      const s = g.addShip(randomOf(groups[i % 2], g.rng, configEras(g.config)), 0, `Escort ${i + 1}`, p.x, p.z, player.heading);
       s.throttle = 4;
       g.fleet.push(s);
       const ai = new AIController(s, g);
@@ -234,23 +246,34 @@ export class BossRush {
   /**
    * Titan `i` of the battle's era. Historic sends its three in order; the newer eras shuffle their
    * four once per battle, so the three boss waves bring three different titans (anime sends its
-   * Titan Shift forms); Mixed draws from every era.
+   * Titan Shift forms). Several eras (Mixed among them) take turns, see `dealt`.
    */
   private titan(i: number): ShipSpec {
-    const era = this.game.config.era ?? 'historic';
-    const list = bossesOf(era);
-    if (era === 'mixed') return pick(list, this.game.rng);
+    const eras = configEras(this.game.config);
+    if (eras.length > 1) return this.dealt(eras);
+    if (!this.titanOrder) this.titanOrder = this.shuffled(eras[0]);
+    return this.titanOrder[i % this.titanOrder.length];
+  }
+
+  /** An era's bosses in the order it sends them: historic as listed, the others shuffled once. */
+  private shuffled(era: Era): ShipSpec[] {
+    const order = [...bossesOf(era)];
+    if (era !== 'historic') shuffle(order, this.game.rng);
+    return order;
+  }
+
+  /**
+   * Several eras: each era's bosses in its own order, the eras themselves in a shuffled turn, dealt
+   * one era at a time. No boss comes twice until every one of them has sailed.
+   */
+  private dealt(eras: Era[]): ShipSpec {
     if (!this.titanOrder) {
-      const order = [...list];
-      if (era !== 'historic') {
-        for (let k = order.length - 1; k > 0; k--) {
-          const j = Math.floor(this.game.rng() * (k + 1));
-          [order[k], order[j]] = [order[j], order[k]];
-        }
-      }
+      const lists = shuffle(eras.map((e) => this.shuffled(e)).filter((l) => l.length), this.game.rng);
+      const order: ShipSpec[] = [];
+      for (let k = 0; lists.some((l) => k < l.length); k++) for (const l of lists) if (k < l.length) order.push(l[k]);
       this.titanOrder = order;
     }
-    return this.titanOrder[i % this.titanOrder.length];
+    return this.titanOrder[this.titansSent++ % this.titanOrder.length];
   }
 
   get isBossWave(): boolean {
@@ -269,7 +292,7 @@ export class BossRush {
     const count = Math.min(9, 5 + Math.floor((n - RUSH_WAVES) / 2));
     const pool: Group[] = ['BB', 'BB', 'cruiser', 'cruiser', 'DD', 'DD', 'SS', 'CV'];
     const out: Slot[] = [];
-    if (n % 5 === 0) out.push(`titan:${Math.floor(rng() * bossesOf(this.game.config.era ?? 'historic').length)}`);
+    if (n % 5 === 0) out.push(`titan:${Math.floor(rng() * bossesOf(configEras(this.game.config)).length)}`);
     while (out.length < count) out.push(pick(pool, rng));
     return out;
   }
@@ -285,7 +308,7 @@ export class BossRush {
     const dmgMul = 1 + 0.04 * (this.wave - 1);
     this.boss = null;
     slots.forEach((slot, i) => {
-      const spec: ShipSpec = slot.startsWith('titan:') ? this.titan(Number(slot.slice(6))) : randomOf(slot as Group, g.rng, g.config.era);
+      const spec: ShipSpec = slot.startsWith('titan:') ? this.titan(Number(slot.slice(6))) : randomOf(slot as Group, g.rng, configEras(g.config));
       const a = away + (i - (slots.length - 1) / 2) * 0.12;
       const r = MAP_HALF * 0.82;
       const pos = this.openWater(Math.cos(a) * r, Math.sin(a) * r);

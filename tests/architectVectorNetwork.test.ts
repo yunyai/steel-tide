@@ -1,3 +1,4 @@
+import {ERAS} from '../src/data/factions';
 import { expect, it } from 'vitest';
 import { Game } from '../src/core/Game';
 import { defaultLoadout } from '../src/data/architectLoadout';
@@ -16,7 +17,7 @@ it('roundtrips each independent Vector edge once alongside ordinary Search',()=>
 
 it('replays both mobility clocks, charge depletion, refits and Search identically on two peers',()=>{
  const picks=defaultLoadout();picks[0]={type:'vector',skill:0};
- const config=navalRules.config({...DEFAULT_SETTINGS,type:'freeplay',era:'mixed'},[{pick:'architect',team:0,name:'Builder',architectLoadout:picks}],713);config.ai=[0,0];
+ const config=navalRules.config({...DEFAULT_SETTINGS,type:'freeplay',eras:[...ERAS]},[{pick:'architect',team:0,name:'Builder',architectLoadout:picks}],713);config.ai=[0,0];
  const a=new Game(config),b=new Game(structuredClone(config)),x=new TurnApplier(a),y=new TurnApplier(b);
  for(const g of [a,b]){g.map.heightAt=()=>-100;const s=g.humans()[0];s.pos.set(0,0,1500);s.throttle=2;s.speed=0;s.secondaries=[];
   // One deployed escort so both Mobile Battery casts lift, orbit and land on each peer.
@@ -38,7 +39,7 @@ it('replays both mobility clocks, charge depletion, refits and Search identicall
 
 it('keeps stacked Vector thrusters, Hull Dash impacts and an ultimate refund identical on two peers',()=>{
  const picks=defaultLoadout();for(let i=0;i<6;i++)picks[i]={type:'vector',skill:(i%2) as 0|1};
- const config=navalRules.config({...DEFAULT_SETTINGS,type:'freeplay',era:'mixed'},[{pick:'architect',team:0,name:'Builder',architectLoadout:picks},{pick:'iowa',team:1,name:'Target'}],713);config.ai=[0,0];
+ const config=navalRules.config({...DEFAULT_SETTINGS,type:'freeplay',eras:[...ERAS]},[{pick:'architect',team:0,name:'Builder',architectLoadout:picks},{pick:'iowa',team:1,name:'Target'}],713);config.ai=[0,0];
  const a=new Game(config),b=new Game(structuredClone(config)),x=new TurnApplier(a),y=new TurnApplier(b);
  for(const g of [a,b]){g.map.heightAt=()=>-100;const [s,t]=g.humans();s.pos.set(0,0,1500);s.throttle=2;s.speed=0;s.secondaries=[];
   t.pos.set(600,0,1540);t.hp=t.maxHp=1e8;t.throttle=2;t.speed=0;t.secondaries=[];}
