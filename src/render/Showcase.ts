@@ -21,6 +21,8 @@ import { VehicleView, type VehicleViewSource } from '../ground/view/VehicleModel
 import { MAP_BY_ID } from '../world/GameMap';
 import { Environment } from './Environment';
 import { Ocean } from './Ocean';
+import type { OceanTier } from './OceanLayers';
+import { quality } from './Quality';
 import { ShipView } from './ShipModel';
 
 // Menu backdrop under a slowly orbiting camera: a ship riding the swell at dusk, or a vehicle
@@ -104,7 +106,7 @@ export class Showcase {
       const scene = new Scene();
       const env = new Environment(scene, MAP_BY_ID.dusk);
       env.bake(this.gl);
-      const ocean = new Ocean(env.look, env.sunDir, env.skyCube);
+      const ocean = new Ocean(env.look, env.sunDir, env.skyCube, Math.max(1, quality().oceanDetail) as OceanTier);
       scene.add(ocean.mesh);
       this.sea = { scene, env, ocean };
     }

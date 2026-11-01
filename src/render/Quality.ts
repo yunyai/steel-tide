@@ -15,18 +15,18 @@ export interface Quality {
   shadowMap: number;
   /** Haze multiplier: kept equal so every preset has the same combat view distance. */
   viewFog: number;
-  /** Coarse sea: fewer vertices, one ripple layer, no sky reflection. */
-  oceanLite: boolean;
+  /** Sea detail (see OceanLayers): 0 is the coarse lite sea with no sky reflection, 1 Medium, 2 High. */
+  oceanDetail: 0 | 1 | 2;
   trees: boolean;
   /** Scale on particle counts for effects. */
   particles: number;
 }
 
 export const QUALITIES: Record<QualityId, Quality> = {
-  ultralow: { id: 'ultralow', label: 'Ultra Low', pixelRatio: 1, bloom: false, samples: 0, shadowMap: 0, viewFog: 0.7, oceanLite: true, trees: false, particles: 0.5 },
-  low: { id: 'low', label: 'Low', pixelRatio: 1.1, bloom: false, samples: 0, shadowMap: 0, viewFog: 0.7, oceanLite: true, trees: true, particles: 0.8 },
-  medium: { id: 'medium', label: 'Medium', pixelRatio: 1.25, bloom: true, samples: 2, shadowMap: 1024, viewFog: 0.7, oceanLite: false, trees: true, particles: 1 },
-  high: { id: 'high', label: 'High', pixelRatio: 2, bloom: true, samples: 4, shadowMap: 2048, viewFog: 0.7, oceanLite: false, trees: true, particles: 1 },
+  ultralow: { id: 'ultralow', label: 'Ultra Low', pixelRatio: 1, bloom: false, samples: 0, shadowMap: 0, viewFog: 0.7, oceanDetail: 0, trees: false, particles: 0.5 },
+  low: { id: 'low', label: 'Low', pixelRatio: 1.1, bloom: false, samples: 0, shadowMap: 0, viewFog: 0.7, oceanDetail: 0, trees: true, particles: 0.8 },
+  medium: { id: 'medium', label: 'Medium', pixelRatio: 1.25, bloom: true, samples: 2, shadowMap: 1024, viewFog: 0.7, oceanDetail: 1, trees: true, particles: 1 },
+  high: { id: 'high', label: 'High', pixelRatio: 2, bloom: true, samples: 4, shadowMap: 2048, viewFog: 0.7, oceanDetail: 2, trees: true, particles: 1 },
 };
 
 const KEY = 'steel-tide.quality';

@@ -79,7 +79,7 @@ export class NavalScene implements BattleScene {
     if (q.shadowMap) this.env.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
     this.env.bake(gl);
     gl.toneMappingExposure = this.env.look.exposure;
-    this.ocean = new Ocean(this.env.look, this.env.sunDir, this.env.skyCube, q.oceanLite);
+    this.ocean = new Ocean(this.env.look, this.env.sunDir, this.env.skyCube, q.oceanDetail);
     this.ocean.setShore(shoreTexture(game.map, SHORE_HALF), SHORE_HALF);
     this.scene.add(this.ocean.mesh);
     this.islands = new Islands(game.map, game.config.seed);

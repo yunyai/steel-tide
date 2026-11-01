@@ -18,12 +18,13 @@ import {
 import { makeRng } from '../core/math';
 import { WAVES } from '../world/Waves';
 import { SHORE_LOW, SHORE_SPAN } from './Islands';
+import { oceanFragment, type OceanTier } from './OceanLayers';
 
 // Gerstner-swell ocean on a camera-following polar grid. Vertex displacement
 // uses the same WAVES as the CPU buoyancy (Waves.ts); per-pixel normals add
-// short shader-only waves and baked ripples. Each ripple layer is rotated and
-// scaled off the others, and a kilometre-scale wind mask breaks the sea into
-// rough and calm patches, so no tile repeat reads. It reflects the baked sky,
+// short shader-only waves and baked ripples (see OceanLayers: each ripple layer is
+// rotated and scaled off the others, domain-warped and masked by a kilometre-scale
+// wind field, so no tile repeat reads). It reflects the baked sky,
 // fades into the sky's own horizon colour and, given a shore map, shows
 // shallows and surf around the islands.
 
@@ -104,141 +105,6 @@ void main() {
 }
 `;
 
-const fragmentShader = /* glsl */ `
-uniform float uTime;
-uniform vec4 uWaves[4];
-uniform vec3 uSunDir;
-uniform vec3 uSunColor;
-uniform vec3 uHorizon;
-uniform vec3 uZenith;
-uniform vec3 uDeep;
-uniform vec3 uScatter;
-uniform vec3 uFogColor;
-uniform float uFogDensity;
-uniform sampler2D uDetail;
-uniform samplerCube uSkyCube;
-uniform float uHasCube;
-uniform sampler2D uShore;
-uniform float uShoreHalf;
-uniform float uShoreLow;
-uniform float uShoreSpan;
-varying vec3 vWorld;
-varying float vHeight;
-
-mat2 rot(float a) {
-  float c = cos(a);
-  float s = sin(a);
-  return mat2(c, -s, s, c);
-}
-
-// Baked ripple slope at one scale, sampled in a rotated frame (and rotated back) and drifting.
-vec2 ripple(vec2 p, float scale, float ang, vec2 drift) {
-  mat2 r = rot(ang);
-  vec2 s = texture2D(uDetail, (r * p) / scale + drift * uTime).rg * 2.0 - 1.0;
-  return s * r;
-}
-
-// Short wind waves for the normals only (the hulls float on the four big swells).
-const vec4 SMALL[4] = vec4[4](
-  vec4(0.955, 0.296, 14.0, 0.050),
-  vec4(-0.129, 0.992, 21.0, 0.045),
-  vec4(-0.857, 0.515, 33.0, 0.040),
-  vec4(-0.575, -0.818, 45.0, 0.035)
-);
-
-void main() {
-  vec3 toCam = cameraPosition - vWorld;
-  float dist = length(toCam);
-  vec3 V = toCam / dist;
-  float atten = 1.0 - smoothstep(2500.0, 7000.0, dist);
-  float fine = 1.0 - smoothstep(120.0, 2400.0, dist);
-  float mid = 1.0 - smoothstep(300.0, 4000.0, dist);
-  float broad = 1.0 - smoothstep(500.0, 6000.0, dist);
-
-  // Wind patches: two slow, rotated, kilometre-scale samples of the smooth noise channel.
-  float w1 = texture2D(uDetail, (rot(0.9) * vWorld.xz) / 7600.0 + uTime * vec2(0.00012, 0.00009)).b;
-  float w2 = texture2D(uDetail, (rot(2.3) * vWorld.xz) / 12100.0 - uTime * vec2(0.00006, 0.00008)).b;
-  float wind = smoothstep(0.3, 0.7, w1 * 0.6 + w2 * 0.4);
-  float rough = mix(0.55, 1.3, wind);
-
-  // Analytic slope of the swell, the short wind waves and the baked ripples. Analytic waves have
-  // no mipmaps: each fades out once a pixel spans a good part of its wavelength, or it would
-  // shimmer into a moiré lattice toward the horizon.
-  float foot = max(length(fwidth(vWorld.xz)), 1e-3);
-  vec2 slope = vec2(0.0);
-  for (int i = 0; i < 4; i++) {
-    vec2 d = uWaves[i].xy;
-    float k = uWaves[i].z;
-    float amp = uWaves[i].w * (1.0 - smoothstep(0.15, 0.5, foot * k / 6.2831853));
-    float c = sqrt(9.81 / k);
-    float ph = k * (dot(d, vWorld.xz) - c * uTime);
-    slope += d * (amp * k * cos(ph)) * mix(0.35, 1.0, atten);
-  }
-#ifndef LITE
-  for (int i = 0; i < 4; i++) {
-    vec2 d = SMALL[i].xy;
-    float k = 6.2831853 / SMALL[i].z;
-    float ph = k * (dot(d, vWorld.xz) - sqrt(9.81 / k) * uTime);
-    float aa = 1.0 - smoothstep(0.15, 0.5, foot / SMALL[i].z);
-    slope += d * (SMALL[i].w * cos(ph)) * fine * rough * aa;
-  }
-  slope += ripple(vWorld.xz, 13.7, 0.37, vec2(0.021, 0.013)) * 0.07 * fine * rough;
-  slope += ripple(vWorld.xz, 61.0, 1.93, vec2(-0.009, 0.014)) * 0.08 * mid * rough;
-#endif
-  slope += ripple(vWorld.xz, 237.0, 2.71, vec2(0.003, -0.005)) * 0.07 * broad * rough;
-  vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
-
-  float NdV = max(dot(N, V), 0.0);
-  float F = 0.02 + 0.98 * pow(1.0 - NdV, 5.0);
-  vec3 R = reflect(-V, N);
-  R.y = abs(R.y);
-  vec3 sky = mix(uHorizon, uZenith, pow(clamp(R.y, 0.0, 1.0), 0.45));
-  // The baked sky, clouds and all; blurrier where the ripples are too fine to resolve.
-  if (uHasCube > 0.5) sky = min(textureLod(uSkyCube, R, 1.0 + 3.0 * (1.0 - fine)).rgb, vec3(4.0));
-  float sunAmt = max(dot(R, uSunDir), 0.0);
-  vec3 spec = uSunColor * (pow(sunAmt, 900.0) * 6.0 + pow(sunAmt, 60.0) * 0.18 * (1.0 - smoothstep(0.0, 0.25, uSunDir.y) * 0.5));
-
-  float crest = clamp(vHeight * 0.35 + 0.2, 0.0, 1.0);
-  float diffuse = max(dot(N, uSunDir), 0.0) * 0.35 + 0.65;
-  vec3 body = mix(uDeep, uScatter, crest * (0.35 + 0.65 * pow(1.0 - V.y, 2.0))) * diffuse;
-  // Rough water scatters a little more light; calm patches stay dark and glassy.
-  body *= mix(0.9, 1.1, wind);
-
-  // Whitecaps on the highest crests, broken up by the ripple ridges, thicker in the wind.
-  float ridge = texture2D(uDetail, (rot(2.2) * vWorld.xz) / 131.0 + uTime * vec2(0.003, -0.002)).a;
-  float foam = smoothstep(1.5, 2.2, vHeight + ridge * 0.6) * smoothstep(0.5, 0.9, ridge) * atten * 0.45 * mix(0.4, 1.5, wind);
-
-  // Shallows turn green then sandy toward the islands, with surf rolling in at the waterline.
-  if (uShoreHalf > 0.0) {
-    vec2 suv = vWorld.xz / (2.0 * uShoreHalf) + 0.5;
-    float bed = texture2D(uShore, suv).r * uShoreSpan + uShoreLow;
-    float depth = max(0.0, vHeight * 0.4 - bed);
-    float shallow = 1.0 - smoothstep(1.0, 30.0, depth);
-    vec3 shallowCol = mix(uScatter * 1.6 + vec3(0.0, 0.03, 0.02), vec3(0.36, 0.34, 0.24), 1.0 - smoothstep(0.5, 7.0, depth));
-    body = mix(body, shallowCol * diffuse, shallow * 0.8);
-    float band = sin(depth * 1.2 - uTime * 1.5 + ridge * 2.5);
-    float surf = (1.0 - smoothstep(0.5, 8.0, depth)) * smoothstep(0.3, 0.95, band) + (1.0 - smoothstep(0.0, 1.2, depth)) * 0.7;
-    foam = max(foam, clamp(surf, 0.0, 1.0) * 0.8 * broad);
-  }
-
-  vec3 col = mix(body, sky, F) + spec;
-  col = mix(col, vec3(0.86, 0.9, 0.93) * (0.6 + 0.4 * diffuse), foam);
-
-  // Far off, the haze takes the colour of the sky right above the horizon, so sea and sky meet without a seam.
-  float fogF = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
-  vec3 fogCol = uFogColor;
-  if (uHasCube > 0.5) {
-    vec3 hz = normalize(vec3(-V.x, 0.02, -V.z));
-    vec3 skyHz = min(textureLod(uSkyCube, hz, 2.0).rgb, vec3(4.0));
-    fogCol = mix(uFogColor, skyHz, smoothstep(0.35, 0.95, fogF));
-  }
-  col = mix(col, fogCol, fogF);
-  gl_FragColor = vec4(col, 1.0);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-}
-`;
-
 /** Tiling ripple map from periodic value noise: RG hold the slope, B the smooth height, A a ridge mask for foam. */
 function detailTexture(): DataTexture {
   const N = 512;
@@ -316,15 +182,18 @@ export class Ocean {
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
 
-  /** `lite`: coarse grid, a single ripple layer and no sky reflection (Ultra Low). */
-  constructor(look: OceanLook, sunDir: Vector3, skyCube: CubeTexture | null = null, lite = false) {
+  /**
+   * `tier` 0 is the lite sea: coarse grid, fewer ripple layers and no sky reflection (Ultra Low and
+   * Low). `antiTile` false draws the sea as it was before the anti-tiling, for comparison.
+   */
+  constructor(look: OceanLook, sunDir: Vector3, skyCube: CubeTexture | null = null, tier: OceanTier = 2, antiTile = true) {
     detail ??= detailTexture();
+    const lite = tier === 0;
     if (lite) skyCube = null;
     const waves = WAVES.map((w) => new Vector4(Math.cos(w.dir), Math.sin(w.dir), (2 * Math.PI) / w.length, w.amp));
     this.material = new ShaderMaterial({
-      defines: lite ? { LITE: '' } : {},
       vertexShader,
-      fragmentShader,
+      fragmentShader: oceanFragment({ tier, antiTile }),
       uniforms: {
         uTime: { value: 0 },
         uWaves: { value: waves },
