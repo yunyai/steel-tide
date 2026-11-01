@@ -65,16 +65,20 @@ export function approachAngle(current: number, target: number, maxDelta: number)
   return wrapAngle(current + Math.sign(d) * maxDelta);
 }
 
+/** A seeded random stream; `state()` reads where it has got to (for the LAN fingerprint). */
+export type Rng = (() => number) & { state(): number };
+
 /** Mulberry32 seeded PRNG. */
-export function makeRng(seed: number): () => number {
+export function makeRng(seed: number): Rng {
   let s = seed >>> 0;
-  return () => {
+  const next = () => {
     s = (s + 0x6d2b79f5) >>> 0;
     let t = s;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  return Object.assign(next, { state: () => s });
 }
 
 /** Standard normal sample via Box-Muller. */

@@ -445,6 +445,7 @@ export class NavalBattle implements ActiveBattle {
         ];
         const ls = this.link?.lockstep;
         if (ls) lines.push(`LAN: ${ls.backlog} ticks buffered${ls.catchingUp ? ', catching up' : ''}`);
+        if (ls?.desyncNote) lines.push(ls.desyncNote);
         return lines;
       });
     }

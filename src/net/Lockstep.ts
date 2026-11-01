@@ -1,6 +1,7 @@
 import { SIM_DT } from '../config';
 import { clamp } from '../core/math';
-import { type ClientMsg, type Continuous, type Edge, HASH_EVERY, TURN_TICKS, type Turn } from './protocol';
+import { foldSections } from './hash';
+import { type ClientMsg, type Continuous, type Edge, HASH_EVERY, type Sections, TURN_TICKS, type Turn } from './protocol';
 
 // Deterministic lockstep over a LAN. Every peer runs the whole battle; the lobby server clocks
 // turns of TURN_TICKS sim steps and hands everyone the same orders for each. A captain's own
@@ -21,8 +22,17 @@ const HEARTBEAT_MS = 250;
 export interface LockstepSim {
   applyTick(turn: Turn, tick: number): void;
   hash(): number;
+  /** The fingerprint by part, so a desync can say which part of the battle drifted. */
+  sections?(): Sections;
+  /** A section's name as a captain would read it (a ship's section gets the ship's name). */
+  sectionName?(name: string): string;
   /** Draw poses `alpha` of the way from the last tick to the next. */
   interpolate(alpha: number): void;
+}
+
+/** One line on a desync for the perf panel: the checkpoint, then what drifted. */
+export function describeDesync(k: number, diff: string[], name: (section: string) => string): string {
+  return diff.length ? `desync k=${k}: ${diff.map(name).join(', ')}` : `desync k=${k}`;
 }
 
 /** Drives one LAN battle on this peer: buffers turns, plays them in step with the server, sends our orders. */
@@ -42,6 +52,8 @@ export class Lockstep {
   faults = 0;
   /** Called when a tick throws; the battle on this peer is no longer trustworthy. */
   onFault?: (error: unknown) => void;
+  /** What the last desync drifted on (for the perf panel), or null. */
+  desyncNote: string | null = null;
   private lastSent: Continuous | null = null;
   private lastSentAt = -Infinity;
 
@@ -111,7 +123,10 @@ export class Lockstep {
       this.queue = this.queue.slice(this.head);
       this.head = 0;
     }
-    if ((turn.k + 1) % HASH_EVERY === 0) this.send({ t: 'hash', k: turn.k, h: this.sim.hash() });
+    if ((turn.k + 1) % HASH_EVERY === 0) {
+      const s = this.sim.sections?.();
+      this.send(s ? { t: 'hash', k: turn.k, h: foldSections(s), s } : { t: 'hash', k: turn.k, h: this.sim.hash() });
+    }
   }
 
   /** Send the local captain's orders: edges at once, continuous orders when they change, and a heartbeat now and then. */

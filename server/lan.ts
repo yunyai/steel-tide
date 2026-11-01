@@ -1,4 +1,4 @@
-import { HASH_EVERY, SIM_PROTOCOL } from '../src/net/protocol';
+import { HASH_EVERY, MAX_DIFF, SIM_PROTOCOL, cleanSections, diffSections, type Sections } from '../src/net/protocol';
 import { validLoadout, copyLoadout, type ArchitectLoadout } from '../src/data/architectLoadout';
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
@@ -113,7 +113,7 @@ interface Battle {
   /** Last time any captain was connected. */
   lastManned: number;
   /** Turn hashes by turn: what each player reported, and the agreed one once decided. */
-  hashes: Map<number, { by: Map<number, number>; agreed: number | null; tied: boolean }>;
+  hashes: Map<number, { by: Map<number, number>; parts: Map<number, Sections>; agreed: number | null; tied: boolean }>;
   /** This Free play battle is ending: the host ended it, or it ran out of time. */
   ending: boolean;
 }
@@ -196,7 +196,7 @@ export class LobbyServer {
       case 'in':
         return this.input(s, m);
       case 'hash':
-        return this.hash(s, m.k, m.h);
+        return this.hash(s, m.k, m.h, m.s);
       case 'over':
         return this.over(s);
       case 'end':
@@ -530,7 +530,7 @@ export class LobbyServer {
     this.send(s, { t: 'log', config: b.config, you: b.players.indexOf(p), turns: b.turns });
   }
 
-  private hash(s: Session, k: unknown, h: unknown): void {
+  private hash(s: Session, k: unknown, h: unknown, parts?: unknown): void {
     const b = s.lobby?.battle;
     const p = this.playerOf(s);
     if (!b || !p) return;
@@ -540,12 +540,14 @@ export class LobbyServer {
     const idx = b.players.indexOf(p);
     let rec = b.hashes.get(k as number);
     if (!rec) {
-      rec = { by: new Map(), agreed: null, tied: false };
+      rec = { by: new Map(), parts: new Map(), agreed: null, tied: false };
       b.hashes.set(k as number, rec);
       // Keep the last few checkpoints only.
       for (const old of b.hashes.keys()) if (old < (k as number) - 20 * 60) b.hashes.delete(old);
     }
     rec.by.set(idx, h as number);
+    const sections = cleanSections(parts);
+    if (sections) rec.parts.set(idx, sections);
     if (rec.tied) return;
     if (rec.agreed === null) {
       const voters = b.players.filter((x) => x.present && x.session.peer && !x.ai).map((x) => b.players.indexOf(x));
@@ -557,19 +559,28 @@ export class LobbyServer {
       // A strict majority decides; without one nobody can tell who drifted, so everyone rebuilds.
       if (counts.get(best)! * 2 <= rec.by.size) {
         rec.tied = true;
-        for (const v of rec.by.keys()) this.desync(b.players[v], true);
+        for (const [v, hv] of rec.by) this.desync(b.players[v], k as number, this.drift(rec, v, (o) => o !== hv), true);
         return;
       }
       rec.agreed = best;
-      for (const [v, hv] of rec.by) if (hv !== best) this.desync(b.players[v]);
-    } else if (h !== rec.agreed) this.desync(p);
+      for (const [v, hv] of rec.by) if (hv !== best) this.desync(b.players[v], k as number, this.drift(rec, v, (o) => o === best));
+    } else if (h !== rec.agreed) this.desync(p, k as number, this.drift(rec, idx, (o) => o === rec.agreed));
   }
 
-  private desync(p: PlayerInput, tie = false): void {
+  /** Which sections player `v` differs in from the first other player whose hash passes `other`. */
+  private drift(rec: { by: Map<number, number>; parts: Map<number, Sections> }, v: number, other: (h: number) => boolean): string[] | undefined {
+    const mine = rec.parts.get(v);
+    const ref = [...rec.by].find(([o, h]) => o !== v && other(h) && rec.parts.has(o));
+    if (!mine || !ref) return undefined;
+    return diffSections(mine, rec.parts.get(ref[0])!).slice(0, MAX_DIFF);
+  }
+
+  private desync(p: PlayerInput, k: number, diff?: string[], tie = false): void {
     const now = Date.now();
     if (now - p.lastDesync < DESYNC_COOLDOWN) return;
     p.lastDesync = now;
-    this.send(p.session, tie ? { t: 'desync', tie } : { t: 'desync' });
+    if (diff) console.warn(`[lan] ${p.session.name} drifted at turn ${k}: ${diff.join(', ')}`);
+    this.send(p.session, { t: 'desync', k, ...(diff ? { diff } : {}), ...(tie ? { tie } : {}) });
   }
 
   private over(s: Session): void {

@@ -41,7 +41,7 @@ import { Convoy } from '../modes/Convoy';
 import { GameMap, MAP_BY_ID, MAPS } from '../world/GameMap';
 import { type BattleConfig, buildRoster, spawnOffset } from './BattleSetup';
 import { EventBus } from './Events';
-import { makeRng, segmentsCross, wrapAngle } from './math';
+import { makeRng, segmentsCross, wrapAngle, type Rng } from './math';
 import { Pickups } from './Pickups';
 import type { ShipSpec, SkillSpec, Team } from './types';
 
@@ -77,7 +77,7 @@ export interface CapState {
 }
 
 export class Game {
-  readonly rng: () => number;
+  readonly rng: Rng;
   readonly events = new EventBus();
   readonly map: GameMap;
   readonly battery: ArchitectBatterySystem;

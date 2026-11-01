@@ -129,7 +129,7 @@ export type ClientMsg =
   | { t: 'start' }
   | { t: 'loaded' }
   | { t: 'in'; c?: Continuous; e?: Edge }
-  | { t: 'hash'; k: number; h: number }
+  | { t: 'hash'; k: number; h: number; s?: Sections }
   | { t: 'over' }
   | { t: 'end' }
   | { t: 'resync' };
@@ -141,7 +141,7 @@ export type ServerMsg =
   | { t: 'start'; config: BattleConfig; you: number }
   | { t: 'turn'; turn: Turn }
   | { t: 'log'; config: BattleConfig; you: number; turns: Turn[] }
-  | { t: 'desync'; tie?: boolean }
+  | { t: 'desync'; tie?: boolean; k?: number; diff?: string[] }
   | { t: 'ended' }
   | { t: 'error'; text: string };
 
@@ -154,3 +154,23 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   titans: true,
   era: 'historic',
 };
+
+/** A battle fingerprint in named parts (`core`, `s<ship id>`, `shells`, …), see net/hash.ts. */
+export type Sections = [name: string, hash: number][];
+/** Most sections a peer may report, and most differing names a desync carries back. */
+export const MAX_SECTIONS = 200, MAX_DIFF = 8;
+
+/** Names of the sections that differ between two peers (or appear on only one side), in order. */
+export function diffSections(a: Sections, b: Sections): string[] {
+  const mine = new Map(a);
+  const theirs = new Map(b);
+  const names = new Set([...a.map(([n]) => n), ...b.map(([n]) => n)]);
+  return [...names].filter((n) => mine.get(n) !== theirs.get(n));
+}
+
+/** A section list as a peer sent it, or null when it is not one. */
+export function cleanSections(v: unknown): Sections | null {
+  if (!Array.isArray(v) || v.length > MAX_SECTIONS) return null;
+  for (const x of v) if (!Array.isArray(x) || x.length !== 2 || typeof x[0] !== 'string' || x[0].length > 24 || !Number.isInteger(x[1])) return null;
+  return v as Sections;
+}

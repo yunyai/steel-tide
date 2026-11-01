@@ -2,9 +2,9 @@ import { refitArchitect } from '../skills/misc/ArchitectRuntime';
 import { SIM_DT } from '../config';
 import type { Game } from '../core/Game';
 import type { ControlState, Ship } from '../ships/Ship';
-import { stateHash } from './hash';
+import { hashSections, stateHash } from './hash';
 import type { LockstepSim } from './Lockstep';
-import type { Continuous, Edge, Turn } from './protocol';
+import type { Continuous, Edge, Sections, Turn } from './protocol';
 
 // A naval battle as lockstep plays it: turns become orders on the captains' ships, and a
 // captain's controls become the orders sent for the next turns.
@@ -29,6 +29,16 @@ export class TurnApplier implements LockstepSim {
 
   hash(): number {
     return stateHash(this.game);
+  }
+
+  sections(): Sections {
+    return hashSections(this.game);
+  }
+
+  sectionName(name: string): string {
+    const id = /^s(\d+)$/.exec(name)?.[1];
+    const ship = id === undefined ? undefined : this.game.ships.find((s) => s.id === Number(id));
+    return ship ? `${name} ${ship.name}` : name;
   }
 
   interpolate(alpha: number): void {

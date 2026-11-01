@@ -302,3 +302,14 @@ describe('LAN roster', () => {
     expect(roster.find((r) => r.humanIndex === 0)?.name).toBe('P1');
   });
 });
+
+describe('desync reports', () => {
+  it("names a drifted ship's section after the ship", () => {
+    const g = new Game(lanConfig('annihilation'));
+    const a = new TurnApplier(g);
+    const s = g.ships[0];
+    expect(a.sectionName(`s${s.id}`)).toBe(`s${s.id} ${s.name}`);
+    expect(a.sectionName('shells')).toBe('shells');
+    expect(a.sectionName('s99999')).toBe('s99999');
+  });
+});

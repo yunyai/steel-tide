@@ -294,6 +294,31 @@ describe('LAN lobby server', () => {
     expect((await cs[1].next('log')).you).toBe(1);
   });
 
+  it('tells a drifting captain which parts of the battle drifted', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben', 'Cy');
+    await battle(cs);
+    await cs[0].next('turn', (m) => m.turn.k >= 59);
+    const good: [string, number][] = [['core', 1], ['s3', 2], ['s4', 3], ['shells', 4]];
+    const bad: [string, number][] = [['core', 1], ['s3', 9], ['s4', 3], ['shells', 8]];
+    cs[0].send({ t: 'hash', k: 59, h: 111, s: good });
+    cs[1].send({ t: 'hash', k: 59, h: 222, s: bad });
+    cs[2].send({ t: 'hash', k: 59, h: 111, s: good });
+    expect(await cs[1].next('desync')).toMatchObject({ k: 59, diff: ['s3', 'shells'] });
+  });
+
+  it('ignores malformed section lists', async () => {
+    await serve();
+    const cs = await room('Ana', 'Ben', 'Cy');
+    await battle(cs);
+    await cs[0].next('turn', (m) => m.turn.k >= 59);
+    cs[0].send({ t: 'hash', k: 59, h: 111, s: 'nope' });
+    cs[1].send({ t: 'hash', k: 59, h: 222, s: Array.from({ length: 500 }, (_, i) => [`x${i}`, i]) });
+    cs[2].send({ t: 'hash', k: 59, h: 111, s: [[1, 'a']] });
+    const d = await cs[1].next('desync');
+    expect(d.diff).toBeUndefined();
+  });
+
   it('with no strict majority every captain resyncs, not just the later ones', async () => {
     await serve();
     const cs = await room('Ana', 'Ben');

@@ -1,7 +1,7 @@
 import type { BattleConfig } from '../core/BattleSetup';
 import { Game } from '../core/Game';
 import { audio } from '../fx/Audio';
-import { Lockstep, type LockstepSim } from '../net/Lockstep';
+import { describeDesync, Lockstep, type LockstepSim } from '../net/Lockstep';
 import { TurnApplier } from '../net/navalTurns';
 import { NetClient } from '../net/NetClient';
 import { type ServerMsg, TURN_TICKS, type Turn } from '../net/protocol';
@@ -170,6 +170,8 @@ export class LanLink {
       console.error('A LAN battle tick failed; resyncing.', e);
       if (this.lan === nb) this.requestResync(nb);
     };
+    // A resync rebuilds the battle; the note on what drifted stays up for the perf panel.
+    if (resyncs > 0) nb.lockstep.desyncNote = this.lan?.lockstep.desyncNote ?? null;
     for (const t of turns ?? []) nb.lockstep.onTurn(t);
     this.lan = nb;
     if (!turns?.length) this.net?.send({ t: 'loaded' });
@@ -216,7 +218,14 @@ export class LanLink {
         return this.start(m.config, m.you, m.turns, same ? lan.resyncs : 0);
       }
       case 'desync':
-        if (lan) this.requestResync(lan);
+        if (!lan) return;
+        if (m.k !== undefined) {
+          const sim = lan.sim;
+          const note = describeDesync(m.k, m.diff ?? [], (n) => sim.sectionName?.(n) ?? n) + (m.tie ? ' (no majority)' : '');
+          lan.lockstep.desyncNote = note;
+          console.warn(`LAN ${note}`);
+        }
+        this.requestResync(lan);
         return;
       case 'ended':
         // Normally everyone saw the battle end and the report is up; otherwise the server called it.
