@@ -20,7 +20,7 @@ try {
       const capture = async screen => {
         const layout = await page.evaluate(() => {
           const issues = [];
-          for (const e of document.querySelectorAll('.era-tabs button,.class-tabs button,.kind-switch button,.fleet-modes button,.fleet-pool-choice')) {
+          for (const e of document.querySelectorAll('.era-tabs button,.class-tabs button,.kind-switch button,.fleet-modes button,.fleet-pool-choice,.fleet-chip,.ship-combo-trigger')) {
             if (!e.getClientRects().length) continue;
             const r = e.getBoundingClientRect();
             if (e.scrollWidth > e.clientWidth + 1) issues.push(`${e.textContent}: text overflow`);
@@ -39,6 +39,23 @@ try {
         check(!r.issues.length && !r.overflow, JSON.stringify(r));
       };
       const click = name => page.getByRole('button', { name, exact: true }).click();
+      // The focused control's whole ring must sit inside every ancestor that clips.
+      const ring = async label => {
+        const r = await page.evaluate(() => {
+          const e = document.activeElement, s = getComputedStyle(e);
+          const pad = parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth), b = e.getBoundingClientRect();
+          const clipped = [];
+          for (let p = e.parentElement; p; p = p.parentElement) {
+            const ps = getComputedStyle(p);
+            if (!/hidden|clip|auto|scroll/.test(ps.overflowX) && ps.clipPath === 'none') continue;
+            const pr = p.getBoundingClientRect();
+            if (b.left - pad < pr.left + parseFloat(ps.borderLeftWidth) - 0.5 || b.right + pad > pr.right - parseFloat(ps.borderRightWidth) + 0.5) clipped.push(p.className);
+          }
+          return { visible: e.matches(':focus-visible'), pad, clipped };
+        });
+        console.log(JSON.stringify({ ring: label, width, fallback, ...r }));
+        check(r.visible && !r.clipped.length, `${label} focus ring clipped: ${JSON.stringify(r)}`);
+      };
       await page.getByRole('button', { name: /^Hangar/ }).click();
       await click('Misc');
       await page.getByRole('button', { name: /^Stepper/ }).click();
@@ -53,8 +70,18 @@ try {
       await click('Free play');
       const enemy = page.getByRole('region', { name: 'Enemy AI', exact: true });
       await enemy.getByRole('button', { name: 'Random pool', exact: true }).click();
-      await enemy.getByRole('button', { name: 'Clear', exact: true }).click();
+      check(await enemy.getByRole('checkbox', { name: /Leviathan/ }).isChecked() === false, 'A new pool must leave titans out');
+      await enemy.getByRole('button', { name: 'Clear visible', exact: true }).click();
+      // Class chips filter the list; Select visible only adds what is shown.
+      await enemy.getByRole('button', { name: 'Submarines', exact: true }).click();
+      const subs = await enemy.locator('.fleet-pool-choice').count();
+      check(subs > 0 && await enemy.locator('.fleet-pool-choice .cls-badge').evaluateAll(b => b.every(x => x.textContent === 'SS')), 'The SS chip must show only submarines');
+      await enemy.getByRole('button', { name: 'Select visible', exact: true }).click();
+      check(await enemy.getByRole('checkbox', { checked: true }).count() === subs, 'Select visible must check every shown submarine');
+      await enemy.getByRole('button', { name: 'Clear visible', exact: true }).click();
+      await enemy.getByRole('button', { name: 'Submarines', exact: true }).click();
       await enemy.getByRole('searchbox').fill('queen');
+      await ring('pool search');
       await enemy.getByRole('checkbox', { name: /Queen Elizabeth/ }).check();
       await enemy.getByRole('searchbox').fill('gato');
       await enemy.getByRole('checkbox', { name: /Gato/ }).check();
@@ -64,7 +91,23 @@ try {
       await capture('solo-pool');
       await enemy.getByRole('button', { name: 'Assignments', exact: true }).click();
       check(await enemy.getByRole('button', { name: 'Balanced', exact: true }).getAttribute('aria-pressed') === 'true', 'Assignments must start with balanced automatic slots');
-      await enemy.getByLabel('Enemy AI AI slot 1', { exact: true }).selectOption('queenElizabeth');
+      // The ship combo: ArrowDown opens it, the list keys move, Escape closes back onto the button.
+      const trigger = enemy.getByRole('button', { name: /^Enemy AI AI slot 1:/ });
+      await trigger.focus();
+      await page.keyboard.press('ArrowDown');
+      const comboSearch = enemy.getByRole('searchbox', { name: 'Enemy AI AI slot 1 search', exact: true });
+      check(await comboSearch.evaluate(e => e === document.activeElement), 'Opening the combo must focus its search');
+      await page.keyboard.press('ArrowDown');
+      check(await comboSearch.getAttribute('aria-activedescendant') !== null, 'Arrow keys must mark an active ship');
+      await ring('combo search');
+      await capture('solo-combo');
+      await page.keyboard.press('Escape');
+      check(await trigger.evaluate(e => e === document.activeElement) && !(await comboSearch.isVisible()), 'Escape must close the combo onto its button');
+      await trigger.click();
+      await comboSearch.fill('queen');
+      await page.keyboard.press('Enter');
+      check((await trigger.getAttribute('aria-label')) === 'Enemy AI AI slot 1: Queen Elizabeth', 'Enter must choose the first match');
+      check(await trigger.evaluate(e => e === document.activeElement), 'Choosing must return focus to the slot');
       await enemy.evaluate(e => e.scrollIntoView({ block: 'start' }));
       await capture('solo-assign');
       if (width === 1280 && !fallback) {
@@ -96,14 +139,21 @@ try {
       check(await pool.getByRole('searchbox').inputValue() === 'gato', 'LAN checkbox updates must preserve search');
       check(await pool.getByRole('checkbox', { name: /Gato/ }).isChecked(), 'LAN checkbox must stay checked');
       check(await page.evaluate(() => document.activeElement?.getAttribute('type') === 'checkbox'), 'LAN checkbox must retain focus');
+      // An era change redraws the editors in place: the search and the focused checkbox stay.
+      await page.evaluate(() => window.steel.net.client.send({ t: 'settings', s: { era: 'historic' } }));
+      await page.waitForFunction(() => window.steel.net.client.lobby.settings.era === 'historic');
+      check(await pool.getByRole('searchbox').inputValue() === 'gato', 'An era change must keep the pool search');
+      check(await page.evaluate(() => document.activeElement?.getAttribute('type') === 'checkbox'), 'An era change must keep focus in the pool');
+      await page.evaluate(() => window.steel.net.client.send({ t: 'settings', s: { era: 'mixed' } }));
+      await page.waitForFunction(() => window.steel.net.client.lobby.settings.era === 'mixed');
       await pool.getByRole('searchbox').fill('');
       await pool.evaluate(e => e.scrollIntoView({ block: 'start' }));
       await capture('lan-pool');
-      const slot = page.getByLabel('Team A AI AI slot 8', { exact: true });
-      await slot.focus();
-      await slot.selectOption('queenElizabeth');
+      await page.getByRole('button', { name: /^Team A AI AI slot 8:/ }).click();
+      await page.getByRole('searchbox', { name: 'Team A AI AI slot 8 search', exact: true }).fill('queen');
+      await page.keyboard.press('Enter');
       await page.waitForFunction(() => window.steel.net.client.lobby.settings.aiSelection[0].slots[7] === 'queenElizabeth');
-      check(await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Team A AI AI slot 8'), 'LAN last assignment must retain focus');
+      check(await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Team A AI AI slot 8: Queen Elizabeth'), 'LAN last assignment must retain focus');
       await capture('lan-assign');
       await click('Leave lobby');
       await click('Back');

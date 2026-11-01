@@ -1,11 +1,11 @@
 import { cubeFirepower, cubeLoadout, tungstenCodex } from './TungstenCodex';
 import { CUBE } from '../skills/misc/TungstenModes';
 import { architectLoadoutEditor,savedArchitectLoadout,saveArchitectLoadout,type ArchitectEditor } from './ArchitectLoadout';
-import { fleetEditor } from './FleetEditor';
+import { FleetEditor, type FleetEditorProps } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, INPUT_DEVICES, type InputDeviceId, SHIFT_SURGE, SHIFT_TEMPOS, type ShiftTempo } from '../config';
-import { type BattleConfig, type BattleType, type DifficultyId, defaultAssist, type PlayerConfig } from '../core/BattleSetup';
-import type { BattleEra, Era, ShipClass, ShipSpec } from '../core/types';
+import { aiFleetSizes, type BattleConfig, type BattleType, type DifficultyId, defaultAssist, type PlayerConfig } from '../core/BattleSetup';
+import type { BattleEra, Era, ShipClass, ShipSpec, Team } from '../core/types';
 import { accentCss } from '../data/accents';
 import { ERAS, ERA_BLURB, ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
 import { CLASS_LABEL, LINE_ERAS, SHIPS, SHIP_BY_ID, shipsIn, shipsOf } from '../data/ships';
@@ -334,15 +334,19 @@ export class Menu {
         this.field('AI enemies', this.seg(counts(8), () => fa[1], (v) => { fa[1] = v; renderFleets(); }), 'None leaves the sea to you. A titan brings two extra enemy ships when there are any.'),
       );
     }
-    const fleetControls = h('div', { class: 'fleet-controls' });
+    // The editors live as long as this screen; each change updates them in place.
+    const fleetProps = (t: Team): FleetEditorProps => {
+      const sizes = aiFleetSizes({ players: d.players, teamSize: d.teamSize, ai: d.type === 'freeplay' ? this.freeAi : undefined });
+      return { era: d.era ?? 'historic', titans: true, value: d.aiSelection?.[t], count: sizes.ai[t], reinforcements: sizes.extras[t] };
+    };
+    const editors = ([0, 1] as const).map((t) => new FleetEditor(t === 0 ? 'Allied AI' : 'Enemy AI', fleetProps(t), (value) => {
+      d.aiSelection ??= [{ mode: 'auto' }, { mode: 'auto' }];
+      d.aiSelection[t] = value;
+    }));
+    const fleetControls = h('div', { class: 'fleet-controls' }, ...editors.map((e) => e.el));
     const renderFleets = () => {
-      fleetControls.replaceChildren();
-      if (kind !== 'battle') return;
-      const counts = d.type === 'freeplay' ? this.freeAi : [d.teamSize - 1, d.teamSize];
-      for (const t of [0, 1] as const) fleetControls.append(fleetEditor(t === 0 ? 'Allied AI' : 'Enemy AI', d.era ?? 'historic', true, d.aiSelection?.[t], counts[t], value => {
-        d.aiSelection ??= [{ mode: 'auto' }, { mode: 'auto' }];
-        d.aiSelection[t] = value;
-      }, t === 1 && counts[t] > 0 && SHIP_BY_ID[d.players[0].shipId].cls === 'TT' ? 2 : 0));
+      fleetControls.hidden = kind !== 'battle';
+      if (kind === 'battle') editors.forEach((e, t) => e.update(fleetProps(t as Team)));
     };
     const notes = () => {
       renderFleets();
@@ -367,7 +371,11 @@ export class Menu {
         ? 'No titans and no finish line: every wave is bigger than the last. Between waves you repair and pick one of three refits. How long can you hold?'
         : `Every wave scales up. Titans arrive on waves 5, 10 and 15; after wave ${RUSH_WAVES} the waves never stop. Between waves you repair and pick one of three refits.`;
     const runNote = h('p', { class: 'note' }, rushNote());
+    // The screen reads in three parts: what kind of battle, who sails in it, and how hard it is.
     const fields: HTMLElement[] = [];
+    const fleets: HTMLElement[] = [];
+    const rules: HTMLElement[] = [];
+    const group = (title: string, kids: HTMLElement[]) => h('section', { class: 'setup-group', 'aria-label': title }, h('h3', {}, title), ...kids);
     const tempoNote = h('p', { class: 'note' }, tempoBlurb(d.shiftTempo ?? 'staggered'));
     const tempo = this.field(
       'Titan Shift',
@@ -443,7 +451,7 @@ export class Menu {
       ),
     );
     if (kind === 'battle') {
-      fields.push(...shipCount, ...aiCount, fleetControls);
+      fleets.push(...shipCount, ...aiCount, fleetControls);
     } else {
       fields.push(
         this.field(
@@ -461,6 +469,8 @@ export class Menu {
           ),
           runNote,
         ),
+      );
+      fleets.push(
         this.field(
           'Escorts',
           this.seg(
@@ -475,7 +485,7 @@ export class Menu {
         ),
       );
     }
-    fields.push(
+    rules.push(
       this.field(
         'AI skill',
         this.seg<DifficultyId>((Object.keys(DIFFICULTIES) as DifficultyId[]).map((k) => ({ value: k, label: DIFFICULTIES[k].label })), () => d.difficulty, (v) => (d.difficulty = v)),
@@ -487,7 +497,7 @@ export class Menu {
       'div',
       { class: 'sheet panel setup naval-setup' },
       tabs,
-      h('div', { class: 'setup-body' }, ...fields),
+      h('div', { class: 'setup-body' }, group('Battle', fields), group('Fleets', fleets), group('Rules', rules)),
       h('div', { class: 'sheet-actions' }, this.act('Back', 'btn-quiet', () => this.showTitle()), next),
     );
     this.mount(el);

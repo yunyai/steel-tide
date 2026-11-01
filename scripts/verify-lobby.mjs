@@ -11,12 +11,13 @@ try {
   await page.waitForFunction(()=>window.steel.net.client?.lobby);
   await page.evaluate(()=>window.steel.net.client.send({t:'settings',s:{era:'mixed',type:'freeplay',shiftTempo:'long',ai:[2,2],aiSelection:[{mode:'assign',slots:['queenElizabeth','queenElizabeth']},{mode:'pool',pool:['fletcher']}]}}));
   await page.waitForFunction(()=>window.steel.net.client.lobby.settings.shiftTempo==='long');
-  const firstSlot=page.locator('.fleet-editor select[aria-label*="slot 1"]').first();
-  await firstSlot.focus();await firstSlot.selectOption('iowa');
+  // Slots use the searchable ship combo: open it, search, Enter picks the first match.
+  const pick=async(name,query)=>{await page.getByRole('button',{name:new RegExp(`^${name}:`)}).click();await page.getByRole('searchbox',{name:`${name} search`,exact:true}).fill(query);await page.keyboard.press('Enter');};
+  await pick('Team A AI AI slot 1','iowa');
   await page.waitForFunction(()=>window.steel.net.client.lobby.settings.aiSelection[0].slots[0]==='iowa');
-  const focusRestored=await page.evaluate(()=>document.activeElement instanceof HTMLSelectElement&&Boolean(document.activeElement.dataset.k));
-  if(!focusRestored)throw new Error('LAN select focus was lost on server refresh');
-  await firstSlot.selectOption('queenElizabeth');
+  const focusRestored=await page.evaluate(()=>document.activeElement?.classList.contains('ship-combo-trigger')&&Boolean(document.activeElement.dataset.k));
+  if(!focusRestored)throw new Error('LAN slot focus was lost on server refresh');
+  await pick('Team A AI AI slot 1','queen');
   await page.waitForFunction(()=>window.steel.net.client.lobby.settings.aiSelection[0].slots[0]==='queenElizabeth');
   await page.screenshot({path:`docs/verification/lobby-${width}.jpg`,quality:82});
   await page.getByRole('button',{name:'Start battle',exact:true}).click();

@@ -1,4 +1,4 @@
-import { fleetEditor } from './FleetEditor';
+import { FleetEditor } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, SHIFT_TEMPOS, type ShiftTempo } from '../config';
 import type { DifficultyId } from '../core/BattleSetup';
@@ -51,6 +51,8 @@ export class Lobby {
   private visible = false;
   /** Which screen was drawn last, so a refresh keeps focus where it was. */
   private view = '';
+  /** The host's fleet editors, kept across refreshes of one lobby so searches and filters stay. */
+  private fleets = new Map<string, FleetEditor>();
 
   constructor(
     private root: HTMLElement,
@@ -123,12 +125,8 @@ export class Lobby {
     const view = lobby ? `room-${lobby.id}` : 'list';
     const scrollers = () => Array.from(this.root.querySelectorAll<HTMLElement>('.lan-room-body, [data-scroll-key]'));
     const scroll = new Map(view === this.view ? scrollers().map(el => [el.dataset.scrollKey ?? 'room', { top: el.scrollTop, left: el.scrollLeft }]) : []);
-    const filters = Array.from(this.root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.fleet-pool-filters [data-k]')).map(el => ({ key: el.dataset.k!, value: el.value }));
+    if (view !== this.view) this.fleets.clear();
     this.root.replaceChildren(lobby ? this.room(lobby) : this.list());
-    for (const f of filters) {
-      const el = this.root.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-k="${CSS.escape(f.key)}"]`);
-      if (el) { el.value = f.value; el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input')); }
-    }
     scrollers().forEach(el => {
       const position = scroll.get(el.dataset.scrollKey ?? 'room');
       if (position) { el.scrollTop = position.top; el.scrollLeft = position.left; }
@@ -138,6 +136,24 @@ export class Lobby {
     this.view = view;
     if (el && menuOption !== undefined) el.dataset.menuOption = menuOption;
     el?.focus({ preventScroll: true });
+  }
+
+  private fleetEditor(l: LobbyState, t: Team, extra: number): HTMLElement {
+    const st = l.settings;
+    const props = { era: st.era, titans: st.titans, value: st.aiSelection?.[t], count: st.ai[t], reinforcements: extra };
+    const key = `${l.id}:${t}`;
+    let editor = this.fleets.get(key);
+    if (editor) editor.update(props);
+    else {
+      editor = new FleetEditor(`${TEAM_LABEL[t]} AI`, props, (value) => {
+        // The other fleet's selection as the server last confirmed it, not as this editor first saw it.
+        const aiSelection: NonNullable<LobbySettings['aiSelection']> = structuredClone(this.net.lobby?.settings.aiSelection ?? [{ mode: 'auto' }, { mode: 'auto' }]);
+        aiSelection[t] = value;
+        this.net.send({ t: 'settings', s: { aiSelection } });
+      });
+      this.fleets.set(key, editor);
+    }
+    return editor.el;
   }
 
   /** While the name box has focus, only the parts below it change (so typing is never interrupted). */
@@ -313,11 +329,7 @@ export class Lobby {
         if (extra > 0) row.append(h('span', {}, `+ ${extra} against titans`));
         col.append(row);
       } else col.append(h('p', { class: 'lan-ai' }, ai > 0 ? `+ ${ai} AI ${ai === 1 ? 'ship' : 'ships'}` : 'No AI ships'));
-      if (host && l.state === 'waiting') col.append(fleetEditor(`${TEAM_LABEL[t]} AI`, st.era, st.titans, st.aiSelection?.[t], st.ai[t], value => {
-        const aiSelection: NonNullable<LobbySettings['aiSelection']> = structuredClone(st.aiSelection ?? [{ mode: 'auto' }, { mode: 'auto' }]);
-        aiSelection[t] = value;
-        set({ aiSelection });
-      }, extra));
+      if (host && l.state === 'waiting') col.append(this.fleetEditor(l, t, extra));
       else if (st.aiSelection?.[t]) col.append(h('p', { class: 'note' }, `AI selection: ${st.aiSelection[t].mode}`));
       return col;
     };

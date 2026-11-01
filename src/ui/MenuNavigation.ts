@@ -38,7 +38,8 @@ export class MenuNavigation {
         input.consumePadPress(pad, 0);
       }
       if (input.padPressed(pad, 1)) {
-        const back = root.querySelector<HTMLButtonElement>('.arsenal-transfer:not([hidden]) [data-menu-back]') ?? Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(b => /^(Back|Resume|Cancel)/i.test(b.textContent?.trim() ?? ''));
+        // An open layer (the arsenal transfer, a ship combo) names its own way back.
+        const back = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-menu-back]')).find(b => b.getClientRects().length > 0) ?? Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(b => /^(Back|Resume|Cancel)/i.test(b.textContent?.trim() ?? ''));
         back?.click();
         input.consumePadPress(pad, 1);
       }

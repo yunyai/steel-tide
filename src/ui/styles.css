@@ -3845,7 +3845,7 @@ select {
 .hangar-foot { flex-wrap: wrap; }
 .hangar-bottom > .error:empty { display: none; }
 .error { color: var(--amber); }
-.fleet-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.fleet-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 0 28px; align-items: start; }
 .fleet-editor { min-width: 0; container-type: inline-size; border-top: 1px solid var(--edge); padding-top: 16px; margin-top: 16px; }
 .fleet-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
 .fleet-editor h3 { margin: 0; font-family: var(--display); font-size: 1.1rem; }
@@ -3859,22 +3859,49 @@ select {
 .fleet-pool-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .fleet-pool-toolbar .btn { padding: 6px 10px; font-size: 0.85rem; }
 .fleet-pool-count { flex: 1; min-width: 140px; margin: 0; color: var(--ice); font-size: 0.9rem; }
-.fleet-pool-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 0.6fr); gap: 8px; margin: 12px 0; }
+.fleet-pool-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin: 12px 0; }
 .fleet-pool-filters input { min-width: 0; width: 100%; border: 1px solid var(--edge); padding: 9px 10px; background: var(--abyss-2); color: var(--ice); font: inherit; }
 .fleet-pool-filters input::placeholder { color: var(--mute); }
-.fleet-pool, .fleet-slots { max-height: 280px; overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--cyan-dim) var(--abyss-2); padding-right: 6px; }
+.fleet-pool { max-height: 280px; overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--cyan-dim) var(--abyss-2); padding-inline: 6px; scroll-padding-block: 8px; }
 .fleet-pool { border-block: 1px solid var(--edge); }
-.fleet-pool-choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 12px; padding: 10px; cursor: pointer; }
+.fleet-pool-choice { display: grid; grid-template-columns: 18px auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 8px; cursor: pointer; }
 .fleet-pool-choice:hover { background: rgba(77, 232, 255, 0.08); }
 .fleet-pool-choice:has(input:checked) { background: rgba(77, 232, 255, 0.12); }
 .fleet-pool-choice input { width: 18px; height: 18px; margin: 0; accent-color: var(--cyan); cursor: pointer; }
-.fleet-pool-choice b, .fleet-pool-choice small { display: block; overflow-wrap: anywhere; }
-.fleet-pool-choice b { font-family: var(--display); font-size: 0.95rem; }
-.fleet-pool-choice small { margin-top: 3px; color: var(--mute); font-size: 0.8rem; }
-.fleet-slots { display: grid; gap: 10px; margin-bottom: 16px; }
-.fleet-slot { display: grid; grid-template-columns: 60px minmax(0, 1fr); align-items: center; gap: 12px; }
-.fleet-slot label { font-family: var(--display); color: var(--mute); font-size: 0.9rem; }
-.fleet-slot select { min-height: 40px; }
+.fleet-pool-choice b { min-width: 0; overflow-wrap: anywhere; font-family: var(--display); font-size: 0.92rem; }
+.fleet-pool-choice small { color: var(--mute); font-size: 0.78rem; white-space: nowrap; }
+.fleet-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.fleet-chip { min-width: 40px; padding: 7px 8px; border: 1px solid var(--edge); background: rgba(77, 232, 255, 0.06); color: var(--mute); font-family: var(--display); font-weight: 600; font-size: 0.8rem; }
+.fleet-chip:hover { border-color: var(--edge-hi); color: var(--ice); }
+.fleet-chip[aria-pressed='true'] { border-color: var(--cyan); background: var(--cyan); color: var(--abyss); }
+.fleet-slots { display: grid; gap: 8px; margin-bottom: 16px; padding-inline: 6px; }
+.fleet-slot { display: grid; grid-template-columns: 60px minmax(0, 1fr); align-items: start; gap: 12px; }
+.fleet-slot-label { padding-top: 13px; font-family: var(--display); color: var(--mute); font-size: 0.9rem; }
+/* Class code badge, shared by the ship combo and the pool rows. */
+.cls-badge { display: inline-grid; place-items: center; min-width: 3.2em; padding: 2px 4px; border: 1px solid var(--edge); background: rgba(77, 232, 255, 0.08); color: var(--ice); font-family: var(--display); font-weight: 700; font-size: 0.68rem; letter-spacing: 0.05em; }
+.ship-combo { min-width: 0; }
+.ship-combo-trigger { width: 100%; min-height: 44px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--edge); background: var(--abyss-2); color: var(--ice); font: inherit; text-align: left; }
+.ship-combo-trigger::after { content: '▾'; color: var(--mute); }
+.ship-combo.open .ship-combo-trigger::after { content: '▴'; }
+.ship-combo-trigger:hover, .ship-combo.open .ship-combo-trigger { border-color: var(--edge-hi); }
+.ship-combo-name { min-width: 0; }
+.ship-combo-name b, .ship-combo-name small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ship-combo-name b { font-family: var(--display); font-size: 0.95rem; }
+.ship-combo-name small { margin-top: 2px; color: var(--mute); font-size: 0.78rem; }
+.ship-combo-panel { display: grid; gap: 8px; margin-top: 6px; padding: 8px; border: 1px solid var(--edge-hi); background: var(--abyss-2); }
+.ship-combo-panel[hidden] { display: none; }
+.ship-combo-panel input { min-width: 0; width: 100%; border: 1px solid var(--edge); padding: 8px 10px; background: var(--abyss); color: var(--ice); font: inherit; }
+.ship-combo-panel input::placeholder { color: var(--mute); }
+.ship-combo-list { max-height: 260px; overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--cyan-dim) var(--abyss-2); padding: 0 4px 4px; scroll-padding-block: 30px 4px; }
+.ship-combo-group { position: sticky; top: 0; z-index: 1; padding: 8px 6px 4px; background: var(--abyss-2); color: var(--mute); font-family: var(--display); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.ship-combo-list [role='option'] { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 8px; border: 0; background: none; color: var(--ice); font: inherit; text-align: left; }
+.ship-combo-list [role='option'] b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--display); font-size: 0.9rem; }
+.ship-combo-list [role='option'] small { color: var(--mute); font-size: 0.75rem; }
+.ship-combo-list [role='option']:hover, .ship-combo-list [role='option'].active { background: rgba(77, 232, 255, 0.12); }
+.ship-combo-list [role='option'][aria-selected='true'] b { color: var(--cyan); }
+.ship-combo-list [role='option']:focus-visible { outline-offset: -2px; }
+.ship-combo-list .note { margin: 8px 6px; color: var(--mute); }
+.ship-combo-close { justify-self: end; padding: 6px 12px; font-size: 0.85rem; }
 .fleet-reinforcements { color: var(--amber); line-height: 1.4; font-size: 0.9rem; }
 .roster .kind-switch { margin: 0 16px 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .roster .kind-switch button { min-height: 40px; padding: 8px; font-size: 0.85rem; }
@@ -3917,7 +3944,14 @@ select {
 
 .setup, .lan.room { display: flex; flex-direction: column; height: min(900px, 92vh); overflow: hidden; }
 .setup > .tabs, .setup > .sheet-actions, .lan.room > .sheet-actions { flex: none; }
-.setup-body, .lan-room-body { flex: 1; overflow: auto; min-height: 0; padding-right: 8px; }
+/* Room for a whole focus ring on controls at the scrolling edge. */
+.setup-body, .lan-room-body { flex: 1; overflow: auto; min-height: 0; padding-inline: 6px 8px; scroll-padding-block: 12px; }
+.naval-setup { width: min(1180px, 94vw); }
+.setup-group + .setup-group { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--edge); }
+.setup-group > h3 { margin: 0 0 6px; color: var(--mute); font-family: var(--display); font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; }
+.setup-group > .fleet-controls > .fleet-editor { margin-top: 12px; }
+/* Cut-corner buttons clip anything drawn outside them, so their ring sits inside. */
+.seg button:focus-visible, .btn:focus-visible { outline-offset: -3px; }
 .audio-credits a { color: var(--cyan); text-underline-offset: 3px; }
 .audio-credits a:visited { color: var(--ice); }
 .audio-credits a:hover { color: var(--gold); }

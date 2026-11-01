@@ -93,12 +93,12 @@ const CAPTAINS = [
 /** Most human captains one fleet can hold. */
 export const MAX_HUMANS_PER_TEAM = 8;
 
-/** Builds mirrored team compositions; humans replace a slot of their ship's class. */
-export function buildRoster(config: BattleConfig, rng: () => number): RosterEntry[] {
-  const error = selectionError(config.aiSelection, config.era, config.titans !== false, config.ai);
-  if (error) throw new Error(error);
+/**
+ * Each fleet's AI ships: the set count or what the team size leaves after its captains, plus the
+ * extras that answer the other side's titans. The menus show these counts, so they come from here.
+ */
+export function aiFleetSizes(config: Pick<BattleConfig, 'players' | 'teamSize' | 'ai'>): { humansByTeam: [number[], number[]]; ai: [number, number]; extras: [number, number] } {
   const size = Math.max(1, Math.min(8, config.teamSize));
-  const out: RosterEntry[] = [];
   const humansByTeam: [number[], number[]] = [[], []];
   config.players.forEach((p, i) => {
     const list = humansByTeam[p.team === 1 ? 1 : 0];
@@ -106,20 +106,30 @@ export function buildRoster(config: BattleConfig, rng: () => number): RosterEntr
   });
   // Every titan a human brings is answered by two extra ships in the other fleet.
   const titans = (t: Team) => humansByTeam[t].filter((i) => SHIP_BY_ID[config.players[i].shipId]?.cls === 'TT').length;
-  const sizes: [number, number] = [0, 0];
+  const ai: [number, number] = [0, 0];
   const extras: [number, number] = [0, 0];
   for (const t of [0, 1] as Team[]) {
     const other: Team = t === 0 ? 1 : 0;
     if (config.ai) {
       // Set AI counts: a fleet with no AI ships has only its captains, titans or not.
-      const bots = Math.max(0, Math.min(8, Math.floor(config.ai[t] || 0)));
-      extras[t] = bots > 0 ? titans(other) * 2 : 0;
-      sizes[t] = humansByTeam[t].length + bots + extras[t];
+      ai[t] = Math.max(0, Math.min(8, Math.floor(config.ai[t] || 0)));
+      extras[t] = ai[t] > 0 ? titans(other) * 2 : 0;
     } else {
+      ai[t] = Math.max(size, humansByTeam[t].length) - humansByTeam[t].length;
       extras[t] = titans(other) * 2;
-      sizes[t] = Math.max(size, humansByTeam[t].length) + extras[t];
     }
   }
+  return { humansByTeam, ai, extras };
+}
+
+/** Builds mirrored team compositions; humans replace a slot of their ship's class. */
+export function buildRoster(config: BattleConfig, rng: () => number): RosterEntry[] {
+  const error = selectionError(config.aiSelection, config.era, config.titans !== false, config.ai);
+  if (error) throw new Error(error);
+  const out: RosterEntry[] = [];
+  const { humansByTeam, ai, extras } = aiFleetSizes(config);
+  const sizes: [number, number] = [0, 0];
+  for (const t of [0, 1] as Team[]) sizes[t] = humansByTeam[t].length + ai[t] + extras[t];
   const names = [...CAPTAINS];
   const takeName = () => names.splice(Math.floor(rng() * names.length), 1)[0] ?? 'Bot';
 
