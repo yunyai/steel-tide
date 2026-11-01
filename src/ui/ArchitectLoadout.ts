@@ -119,12 +119,13 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
   });
   const slotLabel=h('b',{},'Platform 1'),typeLabel=h('span'),lockNote=h('p',{class:'arsenal-note'});
   const passive=h('p',{class:'arsenal-passive'},h('b',{},'Passive'),h('span'));
+  const docked=h('p',{class:'arsenal-passive'},h('b',{},'Docked'),h('span'));
   const cards=[0,1].map(i=>{
     const name=h('b'),text=h('span',{class:'arsenal-skill-text'}),meta=h('span',{class:'arsenal-skill-meta'});
     const b=h('button',{type:'button',class:'arsenal-skill','data-arsenal-key':`skill-${i}`},h('span',{class:'arsenal-skill-head'},name,h('i',{'aria-hidden':'true'})),text,meta);
     b.onclick=()=>{const next=copyLoadout(state.accepted);next[slot]={...state.selection(slot),skill:i as 0|1};commit(next);};return {b,name,text,meta};
   });
-  detail.append(h('div',{class:'arsenal-detail-head'},slotLabel,typeLabel),types,passive,h('div',{class:'arsenal-choices'},...cards.map(c=>c.b)),lockNote);
+  detail.append(h('div',{class:'arsenal-detail-head'},slotLabel,typeLabel),types,passive,docked,h('div',{class:'arsenal-choices'},...cards.map(c=>c.b)),lockNote);
   const seconds=(v:number)=>`${Math.round(v*10)/10} s`;
   /** Recharge chips for the selected card. Vector timings follow the whole loadout: its specializations and every Resonance. */
   function skillMeta(type:ArchitectType,i:number):(string|HTMLElement)[]{
@@ -148,6 +149,7 @@ export function architectLoadoutEditor(value:ArchitectLoadout,onApply:ArchitectA
     types.setAttribute('aria-label',`Platform ${slot+1} type`);
     typeButtons.forEach((b,i)=>{b.setAttribute('aria-pressed',String(ARCHITECT_TYPES[i]===pick.type));b.disabled=!state.canEdit(slot);});
     passive.hidden=!a.passive;passive.style.setProperty('--type-color',hex(a.color));passive.lastElementChild!.textContent=a.passive??'';
+    docked.style.setProperty('--type-color',hex(a.color));docked.lastElementChild!.textContent=a.docked;
     cards.forEach(({b,name,text,meta},i)=>{
       const skill=a.skills[i];b.setAttribute('aria-pressed',String(pick.skill===i));b.disabled=!state.canEdit(slot);b.style.setProperty('--type-color',hex(a.color));
       name.textContent=skill.name;text.textContent=skill.description;meta.replaceChildren(...skillMeta(pick.type,i).map(c=>typeof c==='string'?h('span',{},c):c));

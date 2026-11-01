@@ -26,7 +26,7 @@ it('does not apply deployment bonuses to moving platforms or docked guns',()=>{
 });
 it('preserves reload percentage through recall and redeployment without resetting it',()=>{
   const {s,m,slot}=setup();m.refreshModifiers();preparePlatform(m);m.turrets[0].reload=1.5;
-  attachModule(s,slot);expect(s.turrets[0].reload).toBe(2);
+  attachModule(s,slot);expect(s.turrets[0].reload).toBe(3);
   const again=materialize(s,slot);slot.state='deployed';again.refreshModifiers();preparePlatform(again);
   expect(again.turrets[0].reload).toBe(1.5);
   slot.state='citadel';again.refreshModifiers();preparePlatform(again);expect(again.turrets[0].reload).toBe(.5);

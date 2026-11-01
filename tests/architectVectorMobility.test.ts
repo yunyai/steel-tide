@@ -5,6 +5,10 @@ import { activateConsumable } from '../src/ships/Consumables';
 import { clearArchitect, dashLift, materialize, refitArchitect, RESONANCE_TEMPO, setArchitectLoadout, updateArchitect, vectorTuning, VECTOR_THRUST } from '../src/skills/misc/ArchitectRuntime';
 import type { ArchitectSelection } from '../src/data/architectLoadout';
 import { stateHash } from '../src/net/hash';
+import { DOCKED } from '../src/skills/misc/ArchitectDocked';
+
+/** Thrust Vanes: a docked Vector recharges Hull Dash this much faster. */
+const VANES=1+DOCKED.vanes.dash;
 
 function arena(skill:0|1=0){
  const g=emptyGame('open',713,'freeplay');g.map.heightAt=()=>-100;
@@ -40,7 +44,7 @@ describe('independent Vector mobility',()=>{
   dash(s);g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(1);
   run(g,.55);s.control.aimX=3000;dash(s);run(g,.55);const second=s.vectorMobility.dashRecharge[1];
   expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(0);expect(s.vectorMobility.dashRecharge).toHaveLength(2);const x=s.pos.x;dash(s);g.step();expect(s.pos.x).toBe(x);
-  while(g.time<started+10-1e-8)g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(1);
+  while(g.time<started+10/VANES-1e-8)g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(1);
   // Both charges were recharging at once: the second is back well before a sequential 20 s.
   expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeCloseTo(second-g.time,4);expect(second-started).toBeLessThan(11.2);
   while(g.time<second-1e-8)g.step();expect(s.getVectorMobilityStatus()?.hullDash.charges).toBe(2);expect(s.vectorMobility.dashRecharge).toEqual([]);
@@ -55,8 +59,9 @@ describe('independent Vector mobility',()=>{
  it.each([0,1,5,10])('adds the uncapped thruster passive for %i living Vectors',n=>{
   const {s}=arena();const picks:ArchitectSelection[]=defaultLoadout().map((p,i)=>i<n?{type:'vector',skill:(i%2) as 0|1}:p.type==='vector'?{type:'storm',skill:0}:p);
   setArchitectLoadout(s,picks);s.refreshModifiers();const m=s.mods;
-  expect(m.speedMul).toBeCloseTo(1+VECTOR_THRUST.speed*n);expect(m.accelMul).toBeCloseTo(1+VECTOR_THRUST.accel*n);
-  expect(m.turnMul).toBeCloseTo(1+VECTOR_THRUST.turn*n);expect(m.rudderMul).toBeCloseTo(1+VECTOR_THRUST.rudder*n);expect(m.traverseMul).toBeCloseTo(1+VECTOR_THRUST.traverse*n);
+  // Every Vector here is docked, so Thrust Vanes adds its own speed and rudder on top.
+  expect(m.speedMul).toBeCloseTo((1+VECTOR_THRUST.speed*n)*(1+DOCKED.vanes.speed*n));expect(m.accelMul).toBeCloseTo(1+VECTOR_THRUST.accel*n);
+  expect(m.turnMul).toBeCloseTo(1+VECTOR_THRUST.turn*n);expect(m.rudderMul).toBeCloseTo((1+VECTOR_THRUST.rudder*n)*(1+DOCKED.vanes.rudder*n));expect(m.traverseMul).toBeCloseTo(1+VECTOR_THRUST.traverse*n);
   const t=vectorTuning(s),dashes=Math.ceil(n/2),mobiles=Math.floor(n/2);
   expect(t.dashCharges).toBe(2+Math.max(0,dashes-1));expect(t.dashDistance).toBe(dashes?1100+150*(dashes-1):800);
   expect(t.mobileDuration).toBe(mobiles?14+3*(mobiles-1):10);expect(t.escortSpeed).toBeCloseTo(1200*(1+.15*n));
@@ -64,11 +69,11 @@ describe('independent Vector mobility',()=>{
  });
  it('drops a destroyed Vector from the passive and clamps spare charges until it is rebuilt',()=>{
   const {g,s}=arena();const picks=defaultLoadout();picks[0]={type:'vector',skill:0};picks[1]={type:'vector',skill:0};setArchitectLoadout(s,picks);
-  expect(s.vectorMobility.dashCharges).toBe(3);s.refreshModifiers();expect(s.mods.speedMul).toBeCloseTo(1.12);
+  expect(s.vectorMobility.dashCharges).toBe(3);s.refreshModifiers();expect(s.mods.speedMul).toBeCloseTo(1.12*1.06);
   const lost=s.architect!.slots[1];lost.state='destroyed';lost.hp=0;lost.rebuild=60;g.step();
-  expect(s.mods.speedMul).toBeCloseTo(1.06);expect(s.vectorMobility.dashCharges).toBe(2);expect(s.vectorMobility.dashRecharge).toEqual([]);
+  expect(s.mods.speedMul).toBeCloseTo(1.06*1.03);expect(s.vectorMobility.dashCharges).toBe(2);expect(s.vectorMobility.dashRecharge).toEqual([]);
   lost.state='docked';lost.hp=5000;g.step();
-  expect(s.getVectorMobilityStatus()?.hullDash).toMatchObject({charges:2,maxCharges:3});expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeGreaterThan(9.9);
+  expect(s.getVectorMobilityStatus()?.hullDash).toMatchObject({charges:2,maxCharges:3});expect(s.getVectorMobilityStatus()?.hullDash.rechargeRemaining).toBeGreaterThan(10/VANES-.1);
  });
  it('rejects Mobile Battery without deployed platforms instead of spending the cooldown',()=>{
   const {g,s}=arena(1);expect(s.getVectorMobilityStatus()?.mobileBattery.blockedReason).toBe('No deployed platforms');
@@ -144,11 +149,11 @@ describe('independent Vector mobility',()=>{
   const {g,s,t}=arena(1);t.withdraw();const picks=defaultLoadout().map(p=>p.type==='resonance'?{type:'storm' as const,skill:0 as const}:p);
   picks[0]={type:'vector',skill:0};picks[1]={type:'vector',skill:1};picks[2]={type:'resonance',skill:0};picks[3]={type:'resonance',skill:1};setArchitectLoadout(s,picks);
   const tempo=1+RESONANCE_TEMPO*2,tuning=vectorTuning(s);
-  expect(tuning.dashRecharge).toBeCloseTo(10/tempo);expect(tuning.mobileCooldown).toBeCloseTo(14/tempo);
+  expect(tuning.dashRecharge).toBeCloseTo(10/tempo/VANES);expect(tuning.mobileCooldown).toBeCloseTo(14/tempo);
   escorts(s,0);const slot=s.architect!.slots[4],m=materialize(s,slot);slot.state='deployed';m.pos.set(1500,0,1500);
   const start=g.time;dash(s);mobile(s);g.step();
-  expect(s.vectorMobility.dashRecharge[0]-start).toBeCloseTo(10/tempo+1/60);expect(s.vectorMobility.mobileReadyAt-start).toBeCloseTo(14/tempo+1/60);
-  const lost=s.architect!.slots[2];lost.state='destroyed';lost.hp=0;expect(vectorTuning(s).dashRecharge).toBeCloseTo(10/(1+RESONANCE_TEMPO));
+  expect(s.vectorMobility.dashRecharge[0]-start).toBeCloseTo(10/tempo/VANES+1/60);expect(s.vectorMobility.mobileReadyAt-start).toBeCloseTo(14/tempo+1/60);
+  const lost=s.architect!.slots[2];lost.state='destroyed';lost.hp=0;expect(vectorTuning(s).dashRecharge).toBeCloseTo(10/(1+RESONANCE_TEMPO)/VANES);
  });
  it('keeps hull spans separated vertically while sweeping under a raised carrier',()=>{
   const {g,s}=arena(),slot=s.architect!.slots[0],block=materialize(s,slot);slot.state='deployed';block.pos.set(0,200,2000);

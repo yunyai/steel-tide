@@ -48,7 +48,8 @@ function shipHash(s: Game['ships'][number]): number {
   if(s.architectDrone){h=mix(h,s.architectDrone.owner.id);h=mix(h,s.architectDrone.slot);h=mix(h,s.expiresAt);}
   if (s.architect) {
     const a=s.architect;
-    for(const n of [a.capacitorReadyAt,a.drive?1:0])h=mix(h,n);
+    for(const n of [a.capacitorReadyAt,a.drive?1:0,a.flakReadyAt,a.kindling.length])h=mix(h,n);
+    for(const k of a.kindling){h=mix(h,k.target);h=mix(h,k.until);}
     if(a.drive)for(const n of [a.drive.dx,a.drive.dz,a.drive.elapsed,a.drive.distance,a.drive.moving?1:0,a.drive.from,a.drive.travelled,...a.drive.hit])h=mix(h,n);
     for (const n of [a.huntTarget,a.huntUntil,a.fullHp,a.moduleHp,a.healthReady?1:0,a.linkUntil,a.linkTick,a.clearing?1:0]) h=mix(h,n);
     for (const slot of a.slots) {
@@ -162,7 +163,7 @@ export function hashSections(g: Game): Sections {
 
   h = mix(SEED, g.shells.shells.length);
   for (const p of g.shells.shells) for (const n of [p.id, p.x, p.y, p.z]) h = mix(h, n);
-  for(const p of g.shells.shells)if(p.element)for(const n of [p.id,p.element.owner.id,p.element.slot,p.element.kind?ELEMENTS.indexOf(p.element.kind):-1,p.element.splash??0,p.x,p.y,p.z,p.vx,p.vy,p.vz,p.dmgMul,p.spec.damage])h=mix(h,n);
+  for(const p of g.shells.shells)if(p.element)for(const n of [p.id,p.element.owner.id,p.element.slot,p.element.kind?ELEMENTS.indexOf(p.element.kind):-1,p.element.docked?ARCHITECT_TYPES.indexOf(p.element.docked):-1,p.element.splash??0,p.x,p.y,p.z,p.vx,p.vy,p.vz,p.dmgMul,p.spec.damage])h=mix(h,n);
   out.push(['shells', h >>> 0]);
 
   h = mix(SEED, g.torps.torps.length);

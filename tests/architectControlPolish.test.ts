@@ -31,12 +31,12 @@ describe('Architect command and gun polish',()=>{
   expect(g.battery.launchSerial).toBe(serial);expect(g.battery.pending).toHaveLength(0);
  });
  it('uses docked and Hunt firing rates while preserving reload fractions',()=>{
-  const {g,s,t}=arena();fire(s);expect(s.turrets[0].reload).toBe(4);
+  const {g,s,t}=arena();fire(s);expect(s.turrets[0].reload).toBe(6);
   s.turrets[0].reload=2;s.control.aimX=t.pos.x;s.control.aimZ=t.pos.z;expect(s.activateSkill(1)).toBe(true);
-  expect(s.turrets[0].reload).toBeCloseTo(1.6);fire(s);expect(s.turrets[0].reload).toBeCloseTo(3.2);
+  expect(s.turrets[0].reload).toBeCloseTo(1.6);fire(s);expect(s.turrets[0].reload).toBeCloseTo(4.8);
   const slot=s.architect!.slots[0],m=materialize(s,slot);slot.state='deployed';m.refreshModifiers();preparePlatform(m);
-  expect(m.turrets[0].reload).toBeCloseTo(2.4);attachModule(s,slot);expect(s.turrets[0].reload).toBeCloseTo(3.2);
-  s.architect!.huntUntil=g.time;updateArchitect(s,0);expect(s.turrets[0].reload).toBeCloseTo(4);
+  expect(m.turrets[0].reload).toBeCloseTo(2.4);attachModule(s,slot);expect(s.turrets[0].reload).toBeCloseTo(4.8);
+  s.architect!.huntUntil=g.time;updateArchitect(s,0);expect(s.turrets[0].reload).toBeCloseTo(6);
  });
  it('applies multiplicative capped docking protection only to living docked slots',()=>{
   const {s,t}=arena();s.mods.damageTakenMul=.5;expect(s.takeDamage(10000,t)).toBeCloseTo(4250);

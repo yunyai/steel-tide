@@ -63,7 +63,8 @@ it('shows selected Vector specialization as a manual action independent of Searc
  expect(architectModuleSkillPresentation(s,0)).toMatchObject({name:'Hull Dash',phase:'ready',label:expect.stringMatching(/manual Hull Dash.*2\/2/)});
  s.vectorMobility.dashCharges=0;s.vectorMobility.dashRecharge=[g.time+9,g.time+9];
  expect(architectModuleSkillPresentation(s,0)).toMatchObject({eta:9,phase:'recharging',label:expect.stringMatching(/9.0s/)});
- expect(architectModuleSkillPresentation(s,0).progress).toBeCloseTo(.1);
+ // The docked Vector's Thrust Vanes recharge the dash in 10/1.1 s.
+ expect(architectModuleSkillPresentation(s,0).progress).toBeCloseTo(1-9*1.1/10);
  s.vectorMobility.dashCharges=1;s.mods.rooted=true;
  expect(architectModuleSkillPresentation(s,0)).toMatchObject({phase:'disabled',label:expect.stringMatching(/Rooted/i)});
 });

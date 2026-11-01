@@ -1,5 +1,6 @@
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
+import { dockedShot, dockedType } from '../skills/misc/ArchitectDocked';
 import { newArchitectState, clearArchitect, updateArchitect, huntedTarget, preparePlatform, syncArchitectSlot, architectDockingStatus, architectGunReloadScale, recordArchitectGunCycle, activateArchitectHullDash, activateArchitectMobileBattery, applyArsenalPassives, getVectorMobilityStatus, updateVectorMobilityTimers, architectDashDamageReduction, type VectorMobilityState, type ArchitectState, type ArchitectPlatform } from '../skills/misc/ArchitectRuntime';
 import { bulwarkTaken } from '../skills/misc/ArchitectSupport';
 import { torpedoSectors, type TorpedoSolution, type TorpedoReadiness } from '../weapons/TorpedoAim';
@@ -1391,14 +1392,17 @@ export class Ship {
     const disp = main.dispersion * this.mods.dispersionMul * (buff?.dispersionMul ?? 1) * smoke * this.evasionAt(c.aimX, c.aimZ);
     const sigmaH = (disp * (0.25 + (0.75 * dist) / main.range)) / 2;
     const sigmaV = sigmaH * 0.6;
-    const dmgMul = this.mods.damageMul * (this.stepper && this.stepper.broadUntil > this.game.time ? 2 : 1) * (ammo === 'AP' ? this.mods.apDamageMul : 1) * (buff?.damageMul ?? 1);
+    // A docked Architect gun lends its shells its type's docked passive.
+    const docked = this.architect ? dockedType(this, index) : null;
+    const shot = dockedShot(docked);
+    const dmgMul = this.mods.damageMul * (this.stepper && this.stepper.broadUntil > this.game.time ? 2 : 1) * (ammo === 'AP' ? this.mods.apDamageMul : 1) * (buff?.damageMul ?? 1) * shot.damage;
     for (let b = 0; b < t.spec.barrels; b++) {
       const lateral = truncGaussian(g.rng) * sigmaH;
       const along = truncGaussian(g.rng) * sigmaV;
       const d = clamp(dist + along, 50, table.maxRange);
       const tx = tp.x + Math.sin(brg) * d + Math.cos(brg) * lateral;
       const tz = tp.z - Math.cos(brg) * d + Math.sin(brg) * lateral;
-      g.shells.fire(this, {
+      const fired = g.shells.fire(this, {
         ammo,
         spec: shell,
         table,
@@ -1412,14 +1416,15 @@ export class Ship {
         guaranteedFire: this.mods.guaranteedFire || !!buff?.guaranteedFire,
         railgun: this.mods.railgun || !!buff?.railgun,
         cluster: buff?.cluster ? buff.skill : undefined,
-        flat: this.mods.flatShots || main.flat || 0,
+        flat: (this.mods.flatShots || main.flat || 0) * shot.pace,
         onHit: buff?.onHit,
-        element:this.architect?{owner:this,slot:this.turrets.indexOf(t)}:undefined,
+        element:this.architect?{owner:this,slot:index,...(docked?{docked}:{})}:undefined,
         look: main.look,
       });
+      fired.maxDist *= shot.reach;
     }
     t.reload = this.mods.reloadOverride > 0 ? this.mods.reloadOverride : main.reload * this.mods.reloadMul;
-    if(this.architect){t.reload*=architectGunReloadScale(this,this.architect.slots[index].state);if(!force)recordArchitectGunCycle(this,index);}
+    if(this.architect){t.reload*=architectGunReloadScale(this,this.architect.slots[index].state,this.architect.slots[index]);if(!force)recordArchitectGunCycle(this,index);}
     t.recoil = 0.6;
     this.stats.shotsFired += t.spec.barrels;
     g.events.emit('gunFired', { ship: this, x: tp.x, y: muzzleY, z: tp.z, bearing: brg, caliber: shell.caliber, secondary: false, look: main.look });

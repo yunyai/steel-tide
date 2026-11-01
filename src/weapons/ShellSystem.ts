@@ -1,4 +1,5 @@
 import { elementalShellHit } from '../skills/misc/ArchitectElements';
+import { dockedHit, dockedHitMul } from '../skills/misc/ArchitectDocked';
 import { absorbCube, cubeIntercept } from '../skills/misc/TungstenRuntime';
 import { MAP_HALF, SHELL_TIME_SCALE, SIM_DT, WALL_HEIGHT } from '../config';
 import type { Game } from '../core/Game';
@@ -47,7 +48,7 @@ export interface Shell {
   /** Called on each hull it hits. */
   onHit: ((target: Ship, x: number, z: number) => void) | null;
   /** How the round looks in flight. */
-  element?: {owner:Ship;slot:number;splash?:number;kind?:import('../data/architectLoadout').ArchitectElement};
+  element?: {owner:Ship;slot:number;splash?:number;kind?:import('../data/architectLoadout').ArchitectElement;docked?:import('../data/architectLoadout').ArchitectType};
   look: GunLook;
 }
 
@@ -70,7 +71,7 @@ export interface FireOptions {
   /** Fly flat at this multiple of muzzle velocity (railgun mode is 3, with piercing). */
   flat?: number;
   onHit?: (target: Ship, x: number, z: number) => void;
-  element?: {owner:Ship;slot:number;splash?:number;kind?:import('../data/architectLoadout').ArchitectElement};
+  element?: {owner:Ship;slot:number;splash?:number;kind?:import('../data/architectLoadout').ArchitectElement;docked?:import('../data/architectLoadout').ArchitectType};
   look?: GunLook;
 }
 
@@ -344,7 +345,7 @@ export class ShellSystem {
     const res = this.resolve(s, ship, geo, g.rng);
     let damage = 0;
     if (res.factor > 0) {
-      const raw = s.spec.damage * res.factor * s.dmgMul * (s.ammo === 'AP' ? ship.mods.apTakenMul : 1) * s.owner.critMul(ship);
+      const raw = s.spec.damage * res.factor * s.dmgMul * (s.ammo === 'AP' ? ship.mods.apTakenMul : 1) * s.owner.critMul(ship) * (s.element?.docked ? dockedHitMul(s.element.docked, ship) : 1);
       damage = ship.takeDamage(res.outcome === 'citadel' ? raw : ship.zoneDamage(res.zone, raw), s.owner, s.skill ?? null);
       // A citadel hit that sinks the ship sets off its magazines.
       if (!ship.alive && res.outcome === 'citadel' && !s.secondary) ship.detonate(s.owner);
@@ -353,6 +354,7 @@ export class ShellSystem {
     const attacker = s.owner;
     attacker.stats.hits++;
     if(s.element&&damage>0)elementalShellHit(s.element.owner,s.element.slot,ship,s.element.splash,s.spec.damage,{x:wx,y:wy,z:wz},s.element.kind);
+    if(s.element?.docked&&damage>0)dockedHit(s.element.owner,s.element.docked,ship,damage);
     if (s.onHit && ship.alive) s.onHit(ship, wx, wz);
     if (res.outcome === 'citadel') attacker.stats.citadels++;
     // Fires from HE, module damage from penetrations.

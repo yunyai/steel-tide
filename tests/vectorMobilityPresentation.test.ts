@@ -19,7 +19,8 @@ it('presents both actions ready from one Vector independently of Search cooldown
 it('shows a remaining charge as usable while another recharges', () => {
   const { s } = arena(); expect(activateArchitectHullDash(s)).toBe(true); s.architect!.drive = null;
   const p = vectorMobilityPresentation(s.getVectorMobilityStatus()!);
-  expect(p.dash).toMatchObject({ ready: true, count: '1/2', detail: 'Ready · +1 in 10.0s' });
+  // The docked Vector's Thrust Vanes recharge the dash in 10/1.1 s.
+  expect(p.dash).toMatchObject({ ready: true, count: '1/2', detail: 'Ready · +1 in 9.1s' });
   expect(p.mobile.ready).toBe(true);
 });
 it('presents active Mobile Battery duration and its activation cooldown separately', () => {
@@ -29,7 +30,7 @@ it('presents active Mobile Battery duration and its activation cooldown separate
 it('keeps movement blockers visible while recharge progresses', () => {
   const { s } = arena(); activateArchitectHullDash(s); s.architect!.drive = null; s.mods.rooted = true;
   const p = vectorMobilityPresentation(s.getVectorMobilityStatus()!);
-  expect(p.dash).toMatchObject({ ready: false, tone: 'blocked', count: '1/2', detail: 'Rooted · +1 in 10.0s' });
+  expect(p.dash).toMatchObject({ ready: false, tone: 'blocked', count: '1/2', detail: 'Rooted · +1 in 9.1s' });
   expect(p.mobile.detail).toBe('Rooted');
 });
 it('greys both actions out with the soonest rebuild while every Vector is destroyed', () => {

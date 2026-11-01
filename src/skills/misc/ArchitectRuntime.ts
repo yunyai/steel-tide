@@ -13,6 +13,7 @@ import { hurt } from '../kit';
 import { safeStep, type Landing } from './StepperRuntime';
 import { updateArchitectUltimate, endArchitectUltimate, type ArchitectUltimate } from './ArchitectUltimates';
 import { BATTERY_FOLD_TIME } from './ArchitectBatteryPose';
+import { applyDockedPassives, harmonicTempo, updateDockedPassives, vanesDashTempo } from './ArchitectDocked';
 
 export type ModuleMode = 'docked'|'launching'|'deployed'|'moving'|'returning'|'destroyed'|'assembling'|'citadel';
 export interface ModuleSlot {
@@ -30,6 +31,8 @@ export interface ArchitectState {
   clearing:boolean;
   drive:{dx:number;dz:number;elapsed:number;distance:number;moving:boolean;from:number;travelled:number;hit:number[]}|null;
   capacitorReadyAt:number;
+  /** Kindling burns from docked Furnace hits, one per target; and when docked Swarm flak may fire again. */
+  kindling:{target:number;until:number}[];flakReadyAt:number;
 }
 export interface ArchitectPlatform { owner:Ship; index:number }
 /** One Mobile Battery escort: each platform keeps its own orbit radius, altitude, tilt and pace around Architect. */
@@ -38,7 +41,7 @@ export const MODULE_HP=MODULE_COMBAT_HP;
 const smooth=(x:number)=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t);};
 export function newArchitectState(_rng:()=>number=()=>.5,loadout?:ArchitectLoadout):ArchitectState {
   const selections=copyLoadout(loadout);
-  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:2/3,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null,capacitorCycles:0,capacitorCharged:false,follow:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false,drive:null,capacitorReadyAt:0};
+  return {huntTarget:-1,huntUntil:0,elements:newElementState(),fullHp:ARCHITECT_FULL_HP,moduleHp:MODULE_COMBAT_HP,healthReady:false,healthTransfer:false,slots:Array.from({length:10},(_,index)=>({type:selections[index].type,skill:selections[index].skill,element:ARCHETYPES[selections[index].type].element,skillTimer:0,castGap:0,opening:false,boostUntil:0,reactionUntil:0,aboard:true,index,state:'docked',hp:MODULE_HP,reload:0,reloadScale:1,disabled:0,rebuild:0,dockedFor:0,entity:null,path:null,capacitorCycles:0,capacitorCharged:false,follow:null})),links:[],linkUntil:0,linkTick:0,ultimate:null,clearing:false,drive:null,capacitorReadyAt:0,kindling:[],flakReadyAt:0};
 }
 /** Per living docked platform: damage reduction (capped) and hull repair per second as a share of full hull. */
 const DOCK_DR=.015,DOCK_DR_CAP=.15,DOCK_REGEN=.0003;
@@ -72,6 +75,7 @@ export function applyArsenalPassives(s:Ship,m:Mods):void{
   const n=livingVectors(s).length,r=living(s,'resonance').length;
   if(n){m.speedMul*=1+VECTOR_THRUST.speed*n;m.accelMul*=1+VECTOR_THRUST.accel*n;m.turnMul*=1+VECTOR_THRUST.turn*n;m.rudderMul*=1+VECTOR_THRUST.rudder*n;m.traverseMul*=1+VECTOR_THRUST.traverse*n;}
   if(r)m.reloadMul/=1+RESONANCE_TEMPO*r;
+  applyDockedPassives(s,m);
 }
 /** Dash specializations add reach and charges; Mobile Battery specializations add time and shorten the recharge. */
 export function vectorTuning(s:Ship){
@@ -80,7 +84,7 @@ export function vectorTuning(s:Ship){
   const tempo=1+RESONANCE_TEMPO*living(s,'resonance').length;
   let cooldown=MOBILE_COOLDOWN;for(let i=0;i<extraMobile;i++)cooldown*=.85;
   const extra=Math.max(0,count-1);
-  return {count,dashSpecs,mobileSpecs,dashDistance:dashSpecs?1100+150*extraDash:800,dashCharges:2+extraDash,dashRecharge:DASH_RECHARGE/tempo,mobileDuration:mobileSpecs?14+3*extraMobile:10,mobileCooldown:cooldown/tempo,
+  return {count,dashSpecs,mobileSpecs,dashDistance:dashSpecs?1100+150*extraDash:800,dashCharges:2+extraDash,dashRecharge:DASH_RECHARGE/tempo/vanesDashTempo(s),mobileDuration:mobileSpecs?14+3*extraMobile:10,mobileCooldown:cooldown/tempo,
     pathDamage:15000+3000*extra,landDamage:25000+5000*extra,landRadius:450+50*extra,escortSpeed:HOVER_SPEED*(1+VECTOR_THRUST.escort*count)};
 }
 const dashSpec=(s:Ship):SkillSpec=>({...s.skills[1].spec,id:'architectHullDash',name:'Hull Dash',short:'HULL DASH',accent:ARCHETYPES.vector.color,ult:false});
@@ -335,7 +339,7 @@ export function moveModule(s:Ship,a:ModuleSlot,p:{x:number;y?:number;z:number;he
   disableDocked(s,a);
 }
 export function attachModule(s:Ship,a:ModuleSlot):void {
-  setModuleReloadScale(s,a,architectGunReloadScale(s,'docked'));
+  setModuleReloadScale(s,a,architectGunReloadScale(s,'docked',a));
   const m=a.entity;
   if(m){a.hp=m.hp;a.reload=Math.max(0,m.turrets[0].reload);a.disabled=Math.max(0,m.turrets[0].disabled);m.withdraw(true);}
   returnArchitectHealth(s,a);
@@ -407,8 +411,9 @@ function setModuleReloadScale(s:Ship,slot:ModuleSlot,scale:number):void {
   if(turret)turret.reload=slot.reload;
   slot.reloadScale=scale;
 }
-export function architectGunReloadScale(s:Ship,state:ModuleMode):number {
-  const base=state==='docked'?2/3:state==='citadel'?1/6:s.architect?.ultimate?.kind==='killbox'&&state==='deployed'?.25:state==='deployed'?.5:1;
+/** Docked guns reload at the hull's own rate, quickened only by docked Resonance (Harmonic) when `slot` is given. */
+export function architectGunReloadScale(s:Ship,state:ModuleMode,slot?:ModuleSlot):number {
+  const base=state==='docked'?(slot?1/harmonicTempo(s,slot.type):1):state==='citadel'?1/6:s.architect?.ultimate?.kind==='killbox'&&state==='deployed'?.25:state==='deployed'?.5:1;
   return base/(s.architect!.huntUntil>s.game.time?1.25:1);
 }
 export function commandedBurst(s:Ship,_spec:SkillSpec):boolean {
@@ -418,7 +423,7 @@ export function commandedBurst(s:Ship,_spec:SkillSpec):boolean {
  const target=aimed??candidates.find(t=>t.id===s.control.targetId);
  if(!target)return s.failSkill('Hunt: aim at a tracked enemy within 6 km');
  s.architect!.huntTarget=target.id;s.architect!.huntUntil=s.game.time+10;
- for(const slot of s.architect!.slots)setModuleReloadScale(s,slot,architectGunReloadScale(s,slot.state));return true;
+ for(const slot of s.architect!.slots)setModuleReloadScale(s,slot,architectGunReloadScale(s,slot.state,slot));return true;
 }
 export function huntedTarget(s:Ship):Ship|null {
  const a=s.architect;if(!a||a.huntUntil<=s.game.time)return null;
@@ -476,12 +481,12 @@ export function updateArchitect(s:Ship,dt:number):void {
   for(const slot of a.slots){
     const t=s.turrets[slot.index];
     if(slot.state==='docked'){
-      setModuleReloadScale(s,slot,architectGunReloadScale(s,'docked'));
+      setModuleReloadScale(s,slot,architectGunReloadScale(s,'docked',slot));
       slot.reload=Math.max(0,t.reload);slot.disabled=Math.max(0,t.disabled);slot.dockedFor+=dt;
       if(slot.hp>0&&slot.dockedFor>2){const time=Math.min(dt,slot.dockedFor-2);repairBudget+=Math.max(0,Math.min(a.moduleHp*hullRatio-slot.hp,a.moduleHp*.2*time))/PLATFORM_HEALTH_RATIO+a.fullHp*DOCK_REGEN*time;}
     }else if(slot.state==='destroyed'){
       slot.rebuild-=dt;disableDocked(s,slot);
-      if(slot.rebuild<=1e-8){slot.state='docked';slot.reloadScale=architectGunReloadScale(s,'docked');slot.rebuild=0;rebuildArchitectHealth(s,slot);slot.reload=0;slot.disabled=0;slot.dockedFor=0;t.disabled=0;t.reload=0;}
+      if(slot.rebuild<=1e-8){slot.state='docked';slot.reloadScale=architectGunReloadScale(s,'docked',slot);slot.rebuild=0;rebuildArchitectHealth(s,slot);slot.reload=0;slot.disabled=0;slot.dockedFor=0;t.disabled=0;t.reload=0;}
     }else{
       disableDocked(s,slot);
       if(slot.entity?.alive){slot.hp=slot.entity.hp;slot.reload=Math.max(0,slot.entity.turrets[0].reload);slot.disabled=Math.max(0,slot.entity.turrets[0].disabled);}
@@ -489,6 +494,7 @@ export function updateArchitect(s:Ship,dt:number):void {
     }
   }
   if(repairBudget>0)s.heal(repairBudget*s.mods.regenMul);
+  updateDockedPassives(s,dt);
   updateArchitectUltimate(s,dt);
   updateElements(s,dt);
   updateCapacitors(s);
@@ -514,7 +520,7 @@ export function preparePlatform(m:Ship):void {
   if(!s.alive||!a||a.clearing||s.game.over||!slot||slot.entity!==m){m.withdraw();return;}
   m.mods.regenMul=0;m.mods.knockImmune=true;m.pushX=m.pushZ=0;m.speed=0;m.throttle=2;
   m.mods.damageMul*=s.mods.damageMul;m.mods.apDamageMul*=s.mods.apDamageMul;m.mods.reloadMul*=s.mods.reloadMul;
-  setModuleReloadScale(s,slot,architectGunReloadScale(s,slot.state));
+  setModuleReloadScale(s,slot,architectGunReloadScale(s,slot.state,slot));
   if(slot.state==='deployed'||slot.state==='citadel'){
     m.mods.damageMul*=3;m.mods.reloadMul*=slot.reloadScale/(slot.state!=='citadel'&&a.ultimate?.kind!=='killbox'&&moduleLinked(s,slot)?1.25:1);if(a.ultimate?.kind==='killbox')m.mods.damageMul*=1.5;
   }
