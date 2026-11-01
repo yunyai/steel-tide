@@ -6,6 +6,7 @@ import { Game } from '../src/core/Game';
 import { stateHash } from '../src/net/hash';
 import { TurnApplier } from '../src/net/navalTurns';
 import { randomShip } from '../src/core/FleetSelection';
+import { SHIPS } from '../src/data/ships';
 
 const config = (): BattleConfig => ({ mode: 'solo', type: 'annihilation', mapId: 'open', teamSize: 1, ai: [2, 3], era: 'historic', difficulty: 'normal', seed: 27, players: [{ shipId: 'leviathan', device: 'mouse' }] });
 
@@ -79,5 +80,31 @@ describe('fleet selection', () => {
     navalRules.applySettings(st, { aiSelection: [{ mode: 'pool', pool: ['iowa'] }, { mode: 'auto' }] });
     navalRules.applySettings(st, { era: 'anime' });
     expect(navalRules.startError(st, [{ pick: 'luffy', team: 0, name: 'P' }])).toMatch(/pool/i);
+  });
+});
+
+describe('ships that answer a titan', () => {
+  const titans = SHIPS.filter((s) => s.cls === 'TT' && !s.hidden).map((s) => s.id);
+
+  it.each(['annihilation', 'freeplay', 'domination'] as const)('are never titans, even from a pool full of them (%s)', (type) => {
+    for (let seed = 1; seed <= 25; seed++) {
+      const c: BattleConfig = { ...config(), type, era: 'mixed', seed, ai: [2, 2], players: [{ shipId: 'leviathan', device: 'mouse', team: 1 }] };
+      c.aiSelection = [{ mode: 'pool', pool: titans }, { mode: 'auto' }];
+      const bots = buildRoster(c, makeRng(seed)).filter((r) => r.team === 0);
+      expect(bots).toHaveLength(4);
+      // The pool still fills the regular slots; the two extras use automatic selection.
+      expect(bots.slice(0, 2).every((r) => r.spec.cls === 'TT')).toBe(true);
+      expect(bots.slice(2).map((r) => r.spec.cls)).not.toContain('TT');
+    }
+  });
+
+  it('are never titans when the fleet size comes from the team size', () => {
+    for (let seed = 1; seed <= 25; seed++) {
+      const c: BattleConfig = { ...config(), era: 'mixed', seed, ai: undefined, teamSize: 2, players: [{ shipId: 'leviathan', device: 'mouse', team: 1 }] };
+      c.aiSelection = [{ mode: 'pool', pool: titans }, { mode: 'auto' }];
+      const bots = buildRoster(c, makeRng(seed)).filter((r) => r.team === 0);
+      expect(bots).toHaveLength(4);
+      expect(bots.slice(2).map((r) => r.spec.cls)).not.toContain('TT');
+    }
   });
 });

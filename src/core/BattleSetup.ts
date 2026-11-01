@@ -1,4 +1,4 @@
-import { selectedAI, selectionError, type TeamAISelection } from './FleetSelection';
+import { extraAI, selectedAI, selectionError, type TeamAISelection } from './FleetSelection';
 import type { InputDeviceId, ShiftTempo } from '../config';
 import { SHIPS, SHIP_BY_ID, shipsIn } from '../data/ships';
 import { pick } from './math';
@@ -107,13 +107,18 @@ export function buildRoster(config: BattleConfig, rng: () => number): RosterEntr
   // Every titan a human brings is answered by two extra ships in the other fleet.
   const titans = (t: Team) => humansByTeam[t].filter((i) => SHIP_BY_ID[config.players[i].shipId]?.cls === 'TT').length;
   const sizes: [number, number] = [0, 0];
+  const extras: [number, number] = [0, 0];
   for (const t of [0, 1] as Team[]) {
     const other: Team = t === 0 ? 1 : 0;
     if (config.ai) {
       // Set AI counts: a fleet with no AI ships has only its captains, titans or not.
       const bots = Math.max(0, Math.min(8, Math.floor(config.ai[t] || 0)));
-      sizes[t] = humansByTeam[t].length + bots + (bots > 0 ? titans(other) * 2 : 0);
-    } else sizes[t] = Math.max(size, humansByTeam[t].length) + titans(other) * 2;
+      extras[t] = bots > 0 ? titans(other) * 2 : 0;
+      sizes[t] = humansByTeam[t].length + bots + extras[t];
+    } else {
+      extras[t] = titans(other) * 2;
+      sizes[t] = Math.max(size, humansByTeam[t].length) + extras[t];
+    }
   }
   const names = [...CAPTAINS];
   const takeName = () => names.splice(Math.floor(rng() * names.length), 1)[0] ?? 'Bot';
@@ -129,10 +134,13 @@ export function buildRoster(config: BattleConfig, rng: () => number): RosterEntr
       slots[idx] = { team, spec, humanIndex: hi, name: config.players[hi].name ?? `P${hi + 1}` };
     }
     let botIndex = 0;
+    // The last bots are the extras answering the other fleet's titans, and are never titans themselves.
+    const firstExtra = slots.filter((s) => !s).length - extras[team];
     groups.forEach((g, i) => {
       if (slots[i]) return;
       const index = botIndex++;
-      const chosen = selectedAI(config.aiSelection?.[team], index, config.era ?? 'historic', config.titans !== false, rng, () => randomOf(g, rng, config.era));
+      const automatic = () => randomOf(g, rng, config.era);
+      const chosen = index >= firstExtra ? extraAI(config.aiSelection?.[team], config.era ?? 'historic', rng, automatic) : selectedAI(config.aiSelection?.[team], index, config.era ?? 'historic', config.titans !== false, rng, automatic);
       const id = config.resolvedAI?.[team][index];
       const spec = id && Object.hasOwn(SHIP_BY_ID, id) ? SHIP_BY_ID[id] : chosen;
       slots[i] = { team, spec, humanIndex: -1, name: takeName() };

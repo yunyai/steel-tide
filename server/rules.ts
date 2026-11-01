@@ -42,7 +42,7 @@ export interface BattleRules {
   hostEnds(st: LobbySettings): boolean;
 }
 
-const SHIP_ID = /^[a-z0-9_-]{1,32}$/;
+const SHIP_ID = /^[A-Za-z0-9_-]{1,32}$/;
 
 const isTeam = (v: unknown): v is Team => v === 0 || v === 1;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);

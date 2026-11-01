@@ -186,6 +186,15 @@ describe('LAN lobby server', () => {
     await ana.next('lobby', (m) => m.lobby!.members[1].ready);
   });
 
+  it('keeps a pick of a ship whose id is in camelCase', async () => {
+    await serve();
+    const [ana, ben] = await room('Ana', 'Ben');
+    ana.send({ t: 'settings', s: { era: 'modern' } });
+    await ben.next('lobby', (m) => m.lobby!.settings.era === 'modern');
+    ben.send({ t: 'me', shipId: 'queenElizabeth' });
+    await ana.next('lobby', (m) => m.lobby!.members[1].shipId === 'queenElizabeth');
+  });
+
   it('keeps the era a lobby is fought in, and captains to its ships', async () => {
     await serve();
     const browser = await client('Watcher');

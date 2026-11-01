@@ -7,6 +7,8 @@ import type { PickupKind } from '../core/Pickups';
 import type { ShipSpec, Team } from '../core/types';
 import { SHIP_BY_ID, bossesOf } from '../data/ships';
 import type { Ship } from '../ships/Ship';
+import { copyLoadout } from '../data/architectLoadout';
+import { setArchitectLoadout } from '../skills/misc/ArchitectRuntime';
 
 // Boss Rush: the player holds the middle of the map against escalating waves, with a titan
 // every fifth wave. Between waves: a repair, then one of three stacking refit upgrades.
@@ -190,6 +192,7 @@ export class BossRush {
     const spot = this.centre();
     const player = g.addShip(spec, 0, 'P1', spot.x, spot.z, Math.PI / 2);
     player.humanIndex = cfg ? 0 : -1;
+    setArchitectLoadout(player, copyLoadout(cfg?.architectLoadout));
     player.throttle = 4;
     g.fleet.push(player);
     if (player.humanIndex < 0) g.ai.set(player, new AIController(player, g));

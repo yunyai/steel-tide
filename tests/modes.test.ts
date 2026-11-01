@@ -265,3 +265,17 @@ describe('eras', () => {
     }
   });
 });
+
+describe('the Architect in Boss Rush and Survival', () => {
+  for (const type of ['bossrush', 'survival'] as const) {
+    it(`keeps the captain's own turret loadout in ${type}`, () => {
+      const architectLoadout = Array.from({ length: 10 }, (_, i) => ({ type: i % 2 ? ('storm' as const) : ('cryo' as const), skill: (i % 2) as 0 | 1 }));
+      const base = emptyGame().config;
+      const g = new Game({ ...base, type, escorts: 0, seed: 11, players: [{ ...base.players[0], shipId: 'architect', architectLoadout }] });
+      const me = g.rush!.player!;
+      expect(me.spec.id).toBe('architect');
+      expect(me.architectLoadout).toEqual(architectLoadout);
+      expect(me.architect!.slots.map((t) => t.type)).toEqual(architectLoadout.map((p) => p.type));
+    });
+  }
+});

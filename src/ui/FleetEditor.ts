@@ -117,7 +117,7 @@ export function fleetEditor(label: string, era: BattleEra, titans: boolean, valu
   modes.setAttribute('aria-label', `${label} ship selection`);
   root.append(h('div', { class: 'fleet-heading' }, h('h3', {}, label),
     h('span', { class: 'fleet-count' }, `${count} AI ${count === 1 ? 'ship' : 'ships'}${reinforcements ? ` + ${reinforcements} reinforcements` : ''}`)), modes, body);
-  if (reinforcements) root.append(h('p', { class: 'note fleet-reinforcements' }, `${reinforcements} extra ships are added against the opposing titan. They use automatic selection; assignments are not repeated.`));
+  if (reinforcements) root.append(h('p', { class: 'note fleet-reinforcements' }, `${reinforcements} extra ships are added against the opposing titan. They are never titans: they come from this fleet's pool, or automatic selection; assignments are not repeated.`));
   render();
   return root;
 }

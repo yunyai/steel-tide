@@ -43,6 +43,13 @@ export function selectionError(selection: TeamAISelection | undefined, era: Batt
   return null;
 }
 
+/** A ship answering the other fleet's titan: from this fleet's pool without its titans, else automatic. */
+export function extraAI(selection: AISelection | undefined, era: BattleEra, rng: () => number, automatic: () => ShipSpec): ShipSpec {
+  const allowed = new Set(eligibleShips(era, false).map(s => s.id));
+  const pool = selection?.pool?.filter(id => allowed.has(id));
+  return pool?.length ? SHIP_BY_ID[pool[Math.floor(rng() * pool.length)]] : automatic();
+}
+
 export function selectedAI(selection: AISelection | undefined, index: number, era: BattleEra, titans: boolean, rng: () => number, automatic: () => ShipSpec): ShipSpec {
   if (!selection || selection.mode === 'auto') return automatic();
   const allowed = new Set(eligibleShips(era, titans).map(s => s.id));
