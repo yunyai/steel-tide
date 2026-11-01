@@ -5,10 +5,16 @@ import { originAllowed } from './origin';
 // server through a captain's browser; it is not authentication.
 
 describe('lobby socket origins', () => {
-  it('lets in a request with no Origin (not a browser page) and the page the server served', () => {
+  it('lets in a request with no Origin (not a browser page) and the page the server served on a local name', () => {
     expect(originAllowed(undefined, '192.168.1.5:5173')).toBe(true);
-    expect(originAllowed('http://game.example:5173', 'game.example:5173')).toBe(true);
-    expect(originAllowed('https://game.example', 'game.example')).toBe(true);
+    expect(originAllowed('http://192.168.1.5:5173', '192.168.1.5:5173')).toBe(true);
+    expect(originAllowed('http://studio:5173', 'studio:5173')).toBe(true);
+    expect(originAllowed('http://tide.local:5173', 'tide.local:5173')).toBe(true);
+  });
+
+  it('refuses a public name even when the Host header matches it (DNS rebinding)', () => {
+    expect(originAllowed('http://game.example:5173', 'game.example:5173')).toBe(false);
+    expect(originAllowed('https://evil.example', 'evil.example')).toBe(false);
   });
 
   it('lets in loopback, private and link-local addresses', () => {

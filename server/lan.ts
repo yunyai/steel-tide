@@ -711,11 +711,19 @@ export function lanUrls(server: NetServer): string[] {
 /** A socket holding more than this unsent is not keeping up (or not reading): it is dropped. */
 const MAX_BUFFERED = 8 * 1024 * 1024;
 
-/** Send `m` on `ws`, or drop a socket whose backlog has grown past MAX_BUFFERED. */
+/**
+ * Bytes of the last turn log sent on each socket. A long battle's log can outgrow MAX_BUFFERED on
+ * its own; it may sit in the backlog on top of the limit while the captain takes it in.
+ */
+const logSlack = new WeakMap<object, number>();
+
+/** Send `m` on `ws`, or drop a socket whose backlog has grown past MAX_BUFFERED (plus its last log). */
 export function deliver(ws: Pick<WebSocket, 'readyState' | 'OPEN' | 'bufferedAmount' | 'send' | 'terminate'>, m: ServerMsg): void {
   if (ws.readyState !== ws.OPEN) return;
-  if (ws.bufferedAmount > MAX_BUFFERED) return ws.terminate();
-  ws.send(JSON.stringify(m));
+  if (ws.bufferedAmount > MAX_BUFFERED + (logSlack.get(ws) ?? 0)) return ws.terminate();
+  const data = JSON.stringify(m);
+  if (m.t === 'log') logSlack.set(ws, Buffer.byteLength(data));
+  ws.send(data);
 }
 
 /** Serve LAN lobbies on `/lan` of an existing HTTP server, leaving its other upgrades (Vite's HMR) alone. */
@@ -743,7 +751,12 @@ export function attachLan(server: NetServer, opts: LanOptions = {}): LobbyServer
         } catch {
           return;
         }
-        lobby.receive(peer, msg);
+        // One bad message must not take the server, and every battle on it, down.
+        try {
+          lobby.receive(peer, msg);
+        } catch (e) {
+          console.error('LAN: a message could not be handled', e);
+        }
       });
       ws.on('close', () => lobby.disconnect(peer));
       ws.on('error', () => ws.terminate());

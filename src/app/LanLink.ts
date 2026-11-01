@@ -5,6 +5,7 @@ import { describeDesync, HIDDEN_BUDGET_MS, Lockstep, type LockstepSim, REPLAY_BU
 import { TurnApplier } from '../net/navalTurns';
 import { NetClient } from '../net/NetClient';
 import { type ServerMsg, TURN_TICKS, type Turn } from '../net/protocol';
+import { ResyncAsk } from '../net/ResyncAsk';
 import { Lobby } from '../ui/Lobby';
 import type { ActiveBattle, BattleLink } from './ActiveBattle';
 import { NavalBattle } from './NavalBattle';
@@ -28,8 +29,8 @@ interface LanBattle {
   replaying: boolean;
   /** Resyncs requested in this battle; past MAX_RESYNCS we stop and play on. */
   resyncs: number;
-  /** A resync was asked for and its log has not arrived yet. */
-  awaitingLog: boolean;
+  /** The resync asked for, while its log has not arrived yet. */
+  resync: ResyncAsk;
   sentOver: boolean;
   /** Seconds the turn buffer has been empty. */
   starved: number;
@@ -160,7 +161,7 @@ export class LanLink {
     this.shell.closeBattle();
     this.shell.menu.hide();
     this.lobby?.hide();
-    const nb: LanBattle = { config, you, ...buildLanBattle(this.shell, config, you), lockstep: null!, view: null, replaying: false, resyncs, awaitingLog: false, sentOver: false, starved: 0 };
+    const nb: LanBattle = { config, you, ...buildLanBattle(this.shell, config, you), lockstep: null!, view: null, replaying: false, resyncs, resync: new ResyncAsk(), sentOver: false, starved: 0 };
     // Checkpoints passed while replaying were settled long ago; reporting them again only adds noise.
     nb.lockstep = new Lockstep(nb.sim, (m) => {
       if (m.t === 'hash' && nb.replaying) return;
@@ -183,9 +184,9 @@ export class LanLink {
 
   /** Ask the server for the whole log and rebuild this battle from it, a few times at most. */
   private requestResync(lan: LanBattle): void {
-    if (lan.awaitingLog || lan.resyncs >= MAX_RESYNCS) return;
+    if (lan.resync.pending || lan.resyncs >= MAX_RESYNCS) return;
     lan.resyncs++;
-    lan.awaitingLog = true;
+    lan.resync.ask(performance.now());
     this.net?.send({ t: 'resync' });
     this.updateBanner();
   }
@@ -211,14 +212,17 @@ export class LanLink {
         lan.lockstep.onTurn(m.turn, performance.now());
         // A hidden tab gets no frames: play each turn as it comes, so it keeps hashing in step.
         if (document.hidden) lan.lockstep.fastForward(HIDDEN_BUDGET_MS);
+        // The server ignores a resync asked too soon after the last: still no log, so ask again.
+        if (lan.resync.retry(performance.now())) this.net?.send({ t: 'resync' });
         return;
       case 'log': {
         const same = lan && lan.config.seed === m.config.seed && lan.you === m.you;
         // Back after a dropped connection with the battle still intact: just take the turns we missed.
-        if (same && !lan.awaitingLog) {
+        if (same && !lan.resync.pending) {
           for (const t of m.turns) lan.lockstep.onTurn(t);
           return;
         }
+        lan?.resync.answered();
         return this.start(m.config, m.you, m.turns, same ? lan.resyncs : 0);
       }
       case 'desync':
@@ -265,7 +269,7 @@ export class LanLink {
       const pct = Math.floor((100 * done) / Math.max(1, done + nb.lockstep.backlog / TURN_TICKS));
       return this.setBanner(`${nb.resyncs ? 'Getting back in step with the other captains' : 'Rejoining the battle'}: ${pct}%`, 'screen');
     }
-    if (nb.awaitingLog) return this.setBanner('Getting back in step with the other captains…');
+    if (nb.resync.pending) return this.setBanner('Getting back in step with the other captains…');
     if (!nb.lockstep.started) {
       const l = net.lobby;
       const total = nb.config.players.length;

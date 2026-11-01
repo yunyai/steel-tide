@@ -1,3 +1,5 @@
+import { RESYNC_EVERY_MS } from '../src/net/protocol';
+
 // How fast one socket may send each kind of message: token buckets, refilled continuously. A
 // browser playing normally never meets these; a stuck loop or a flood does.
 
@@ -6,7 +8,7 @@ const RATES: Record<string, [rate: number, burst: number]> = {
   in: [240, 240],
   hash: [4, 8],
   lobby: [10, 10],
-  resync: [0.2, 1],
+  resync: [1000 / RESYNC_EVERY_MS, 1],
   sandbox: [10, 10],
   ping: [2, 2],
   other: [10, 10],
@@ -21,7 +23,8 @@ export class RateLimiter {
 
   /** Spend one message of type `t`; false when the socket is over its budget for it. */
   allow(t: string): boolean {
-    const kind = KIND[t] ?? 'other';
+    // Own keys only: a message named "constructor" or "__proto__" is just another unknown kind.
+    const kind = Object.hasOwn(KIND, t) ? KIND[t] : 'other';
     const [rate, burst] = RATES[kind];
     const now = this.now();
     let b = this.buckets.get(kind);

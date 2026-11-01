@@ -153,8 +153,8 @@ export function waveScale(n: number, k: RushKnobs): WaveScale {
   const boss = isBossWave(n, k);
   if (n <= RUSH_WAVES) return { hp: Math.min(HP_CAP, hp), dmg: Math.min(DMG_CAP, dmg), ships: tableSlots(n, k).length + k.extraShips, titans: boss ? 1 : 0, elite: 0, affixes: 0 };
   const e = n - RUSH_WAVES;
-  hp = Math.min(HP_CAP, hp * (1 + 0.03 * r) ** e);
-  dmg = Math.min(DMG_CAP, dmg * (1 + 0.015 * r) ** e);
+  hp = Math.min(HP_CAP, hp * Math.pow(1 + 0.03 * r, e));
+  dmg = Math.min(DMG_CAP, dmg * Math.pow(1 + 0.015 * r, e));
   return {
     hp,
     dmg,

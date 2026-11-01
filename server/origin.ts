@@ -1,5 +1,5 @@
-// Which pages may open the lobby socket: the page this server served, and pages on loopback or
-// the local network. A page on the internet could otherwise drive the lobby through a captain's
+// Which pages may open the lobby socket: pages on loopback or the local network, and the page this
+// server served under a bare intranet name. A page on the internet could otherwise drive the lobby through a captain's
 // browser. This keeps the server LAN-only; it is not authentication.
 
 const LOCAL_SUFFIXES = ['.local', '.lan', '.home.arpa'];
@@ -32,11 +32,14 @@ export function originAllowed(origin: string | undefined, host: string | undefin
     return false;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
-  if (host && url.host === host.toLowerCase()) return true;
   const h = url.hostname.toLowerCase();
   if (h === 'localhost') return true;
   if (h.startsWith('[')) return localIpv6(h.slice(1, -1));
   const v4 = ipv4(h);
   if (v4) return localIpv4(v4);
-  return LOCAL_SUFFIXES.some((s) => h.endsWith(s) && h.length > s.length);
+  if (LOCAL_SUFFIXES.some((s) => h.endsWith(s) && h.length > s.length)) return true;
+  // A bare intranet name (no dots) only for the page this server served under it. A public name
+  // never passes on matching the Host header alone: after a DNS rebind, an internet page's Origin
+  // and Host both carry its own name.
+  return !h.includes('.') && !!host && url.host === host.toLowerCase();
 }

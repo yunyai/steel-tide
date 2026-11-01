@@ -67,7 +67,7 @@ try {
   const finalLedgers = await Promise.all(pages.map(page => page.evaluate(() => window.vectorLanReview.checkpoints)));
   const matchingTicks = compare(finalLedgers[0], finalLedgers[1]);
   await host.screenshot({ path: `${out}/two-peer-after-actions-1280.jpg`, quality: 88 });
-  await host.evaluate(() => { window.beforeVectorReplay = window.steel.net.lan; window.steel.net.lan.awaitingLog = true; window.steel.net.client.send({ t: 'resync' }); });
+  await host.evaluate(() => { window.beforeVectorReplay = window.steel.net.lan; window.steel.net.lan.resync.ask(performance.now()); window.steel.net.client.send({ t: 'resync' }); });
   await host.waitForFunction(() => window.steel.net.lan !== window.beforeVectorReplay && !window.steel.net.lan.replaying && window.steel.net.lan.view);
   const replay = await host.evaluate(() => {
     const s = window.steel.battle.pcs[0].ship;

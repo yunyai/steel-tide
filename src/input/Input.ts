@@ -23,6 +23,8 @@ export class Input {
   onLockChange: ((locked: boolean) => void) | null = null;
   /** Swallow browser defaults for game keys (on during battle only, so menus stay keyboard-usable). */
   capture = false;
+  /** Keys swallowed even with capture off: a paused battle's own shortcuts (the Sandbox F-keys). */
+  claimed: ReadonlySet<string> = new Set();
   private bound = boundKeys();
 
   constructor(private canvas: HTMLElement) {
@@ -31,7 +33,7 @@ export class Input {
       if (e.repeat) return;
       this.down.add(e.code);
       this.pressedNow.add(e.code);
-      if (this.capture && this.isGameKey(e.code)) e.preventDefault();
+      if ((this.capture && this.isGameKey(e.code)) || this.claimed.has(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.down.delete(e.code));
     window.addEventListener('blur', () => {

@@ -487,6 +487,18 @@ describe('LAN liveness and limits', () => {
     expect(names).not.toContain('n49');
   });
 
+  it('shrugs off messages named after Object members instead of crashing', async () => {
+    await serve();
+    const a = await client('Prober');
+    for (const t of ['constructor', 'toString', '__proto__', 'valueOf', 'hasOwnProperty']) a.send({ t } as never);
+    a.send({ t: 'ping' });
+    await a.next('pong');
+    // And the server still takes new captains.
+    const b = await client('Late');
+    b.send({ t: 'ping' });
+    await b.next('pong');
+  });
+
   it('refuses a page from outside the local network, and lets a LAN page in', async () => {
     await serve();
     const ws = new WebSocket(`ws://127.0.0.1:${port}/lan`, { origin: 'https://evil.example' });
@@ -638,6 +650,34 @@ describe('LobbyServer without sockets', () => {
     ws.bufferedAmount = 9 * 1024 * 1024;
     deliver(ws as never, { t: 'pong' });
     expect(sent).toHaveLength(1);
+    expect(dropped).toBe(true);
+  });
+
+  it('lets a long battle’s turn log drain without counting it as a socket that stopped reading', () => {
+    const sent: string[] = [];
+    let dropped = false;
+    // bufferedAmount grows with every send and the client drains nothing yet.
+    const ws = {
+      readyState: 1,
+      OPEN: 1 as const,
+      bufferedAmount: 0,
+      send(d: string) {
+        sent.push(d);
+        this.bufferedAmount += Buffer.byteLength(d);
+      },
+      terminate: () => void (dropped = true),
+    };
+    // An hour of busy turns: about 9 MB of log, sent in one message to a captain rejoining.
+    const turns = Array.from({ length: 30_000 }, (_, i) => ({ k: i, i: [['x'.repeat(280)]] }));
+    deliver(ws as never, { t: 'log', config: {}, you: 0, turns } as never);
+    expect(ws.bufferedAmount).toBeGreaterThan(8 * 1024 * 1024);
+    // The next turns go out while that log is still on its way.
+    for (let i = 0; i < 30; i++) deliver(ws as never, { t: 'pong' });
+    expect(dropped).toBe(false);
+    expect(sent).toHaveLength(31);
+    // A socket that then sits on another 8 MB is still dropped.
+    ws.bufferedAmount += 8 * 1024 * 1024 + 1;
+    deliver(ws as never, { t: 'pong' });
     expect(dropped).toBe(true);
   });
 

@@ -216,6 +216,8 @@ export class NavalBattle implements ActiveBattle {
     this.off.push(() => canvas.removeEventListener('click', click));
 
     input.capture = true;
+    // The Sandbox F-keys work paused too (F6 closes the sheet it opened); the browser never gets them.
+    if (this.sandboxHud) input.claimed = new Set(['F6', 'F7', 'F8']);
     input.onLockChange = (locked) => {
       if (!locked && shell.battle === this && !this.ended && !this.paused && this.usesMouse) this.setPaused(true);
     };
@@ -246,6 +248,7 @@ export class NavalBattle implements ActiveBattle {
     overlayLayer.style.pointerEvents = 'none';
     renderer.detach();
     input.capture = false;
+    input.claimed = new Set();
     input.onLockChange = null;
     input.releaseLock();
     audio.engine(0);

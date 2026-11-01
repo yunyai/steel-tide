@@ -25,6 +25,10 @@ export const LINK_PING_MS = 5000;
 export const LINK_SILENCE_MS = 10000;
 /** Turns keep coming this long after the first captain reports the battle over. */
 export const END_GRACE_MS = 30000;
+/** The server takes one resync request per socket this often, and ignores the rest. */
+export const RESYNC_EVERY_MS = 5000;
+/** A browser whose resync log has not come this long after asking asks again (past RESYNC_EVERY_MS). */
+export const RESYNC_RETRY_MS = 6000;
 export const NAME_MAX = 24;
 export const LOBBY_NAME_MAX = 32;
 export const MAX_PER_TEAM = 8;

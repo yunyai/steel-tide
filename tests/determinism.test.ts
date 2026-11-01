@@ -12,13 +12,60 @@ const SKIP = new Set(['core/detMath.ts', 'core/installDetMath.ts']);
 
 const sources = import.meta.glob<string>('../src/**/*.ts', { query: '?raw', import: 'default', eager: true });
 
-/** Source without comments and string contents, so only code is checked. */
+/**
+ * Source without comments and string contents, so only code is checked. A template literal keeps
+ * its `${…}` parts, which are code (nested templates included); its text goes.
+ */
 function code(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/.*$/gm, '')
-    .replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, "''")
-    .replace(/`(?:[^`\\$]|\\.|\$(?!\{))*`/g, '``');
+  const out: string[] = [];
+  let i = 0;
+  /** Code up to the end, or (in a template's `${`) up to its closing brace. */
+  const scanCode = (inTemplate: boolean): void => {
+    let depth = 0;
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '/' && src[i + 1] === '/') {
+        while (i < src.length && src[i] !== '\n') i++;
+      } else if (c === '/' && src[i + 1] === '*') {
+        const end = src.indexOf('*/', i + 2);
+        i = end < 0 ? src.length : end + 2;
+      } else if (c === "'" || c === '"') {
+        i++;
+        while (i < src.length && src[i] !== c && src[i] !== '\n') i += src[i] === '\\' ? 2 : 1;
+        i++;
+        out.push("''");
+      } else if (c === '`') {
+        i++;
+        out.push('`');
+        scanTemplate();
+        out.push('`');
+      } else {
+        if (c === '{') depth++;
+        if (c === '}' && depth-- === 0 && inTemplate) {
+          i++;
+          return;
+        }
+        out.push(c);
+        i++;
+      }
+    }
+  };
+  /** A template's text, after its opening backtick, up to and past its closing one. */
+  const scanTemplate = (): void => {
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '\\') i += 2;
+      else if (c === '`') return void i++;
+      else if (c === '$' && src[i + 1] === '{') {
+        i += 2;
+        out.push('${');
+        scanCode(true);
+        out.push('}');
+      } else i++;
+    }
+  };
+  scanCode(false);
+  return out.join('');
 }
 
 const files = Object.entries(sources)
@@ -26,6 +73,13 @@ const files = Object.entries(sources)
   .filter((f) => (SIM_DIRS.some((d) => f.path.startsWith(`${d}/`)) || SIM_FILES.includes(f.path)) && !SKIP.has(f.path));
 
 describe('simulation determinism guard', () => {
+  it('strips strings and comments but keeps the code between and inside template literals', () => {
+    expect(code('const a = `x${b}y`; const c = d ** e; const f = `${g}`;')).toContain('d ** e');
+    expect(code('const a = `a${`b${c ** d}`}`;')).toContain('c ** d');
+    expect(code('const a = `${ {k: 1}.k }`; x ** y;')).toContain('x ** y');
+    expect(code("const s = '**'; // **\n/* ** */ const t = `**`;")).not.toContain('**');
+  });
+
   it('scans the simulation sources', () => {
     expect(files.length).toBeGreaterThan(30);
   });

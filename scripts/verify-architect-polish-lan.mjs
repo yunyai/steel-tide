@@ -23,7 +23,7 @@ try{
  await editor.getByRole('button',{name:'Balanced',exact:true}).click();await host.waitForFunction(()=>document.querySelector('.arsenal-result')?.textContent.includes('0 pending · 2 locked'));
  const accepted=await host.evaluate(()=>({loadout:window.steel.battle.pcs[0].ship.architectLoadout,result:document.querySelector('.arsenal-result').textContent,failure:window.steel.battle.pcs[0].ship.skillFailure}));if(accepted.failure)throw Error(accepted.failure);
  await host.screenshot({path:`${out}/pending-refit-confirmed.jpg`,quality:88});
- await host.evaluate(()=>{window.beforeReplay=window.steel.net.lan;window.steel.net.lan.awaitingLog=true;window.steel.net.client.send({t:'resync'});});
+ await host.evaluate(()=>{window.beforeReplay=window.steel.net.lan;window.steel.net.lan.resync.ask(performance.now());window.steel.net.client.send({t:'resync'});});
  await host.waitForFunction(()=>window.steel.net.lan!==window.beforeReplay&&!window.steel.net.lan.replaying&&window.steel.net.lan.view);
  const replay=await host.evaluate(()=>({loadout:window.steel.battle.pcs[0].ship.architectLoadout,turns:window.steel.net.lan.lockstep.played}));if(JSON.stringify(replay.loadout)!==JSON.stringify(accepted.loadout))throw Error('Refits lost on replay');
  await host.evaluate(()=>{window.lanReview={checkpoints:{}};const sim=window.steel.net.lan.sim,apply=sim.applyTick.bind(sim);sim.applyTick=(turn,tick)=>{apply(turn,tick);window.lanReview.checkpoints[turn.k*2+tick]=sim.hash();};});
