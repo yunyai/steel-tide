@@ -85,6 +85,16 @@ export function rushKnobs(d?: RushDifficulty): RushKnobs {
   return out;
 }
 
+/** A difficulty as a peer sent it: a preset, or Custom with every knob clamped; null when it is neither. */
+export function cleanRush(v: unknown): RushDifficulty | null {
+  if (!v || typeof v !== 'object') return null;
+  const d = v as { preset?: unknown; custom?: unknown };
+  if (isPreset(d.preset)) return { preset: d.preset };
+  if (d.preset !== 'custom') return null;
+  const custom = (d.custom && typeof d.custom === 'object' ? d.custom : {}) as Partial<RushKnobs>;
+  return { preset: 'custom', custom: rushKnobs({ preset: 'custom', custom }) };
+}
+
 /** The name a run's record is kept under: the preset, or every Custom knob. */
 export function rushRecordKey(d?: RushDifficulty): string {
   if (!d || d.preset !== 'custom') return isPreset(d?.preset) ? d.preset : 'normal';

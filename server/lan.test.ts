@@ -714,3 +714,89 @@ it('refuses protocol 2 peers before joining the delayed-flight simulation',()=>{
 it('refuses protocol 3 peers before joining the Vector and docked-capacitor simulation',()=>{
  const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',protocol:3,name:'Old Architect'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
 });
+
+describe('co-op Boss Rush lobbies', () => {
+  const rushSettings = () => {
+    const st = navalRules.defaults();
+    navalRules.applySettings(st, { type: 'bossrush' });
+    return st;
+  };
+
+  it('takes Boss Rush and Survival with a clean difficulty and escort count', () => {
+    const st = navalRules.defaults();
+    navalRules.applySettings(st, { type: 'bossrush', rush: { preset: 'hard' }, escorts: 0 });
+    expect(st).toMatchObject({ type: 'bossrush', rush: { preset: 'hard' }, escorts: 0 });
+    navalRules.applySettings(st, { rush: { preset: 'nope' }, escorts: 3 });
+    expect(st).toMatchObject({ rush: { preset: 'hard' }, escorts: 0 });
+    navalRules.applySettings(st, { type: 'survival', rush: { preset: 'custom', custom: { extraShips: 99, hpPct: 'x', bossEvery: 3.4, junk: 1 } }, escorts: 2 });
+    expect(st.type).toBe('survival');
+    expect(st.escorts).toBe(2);
+    expect(st.rush).toEqual({ preset: 'custom', custom: { bossEvery: 3, extraShips: 4, hpPct: 100, dmgPct: 100, rampPct: 100, maxTitans: 2, stagger: 8 } });
+  });
+
+  it('builds a rush from its captains alone, with the difficulty and escorts, and refuses a ninth', () => {
+    const st = rushSettings();
+    navalRules.applySettings(st, { rush: { preset: 'brutal' }, escorts: 0 });
+    const captains = ['Ana', 'Ben'].map((name) => ({ pick: 'iowa', team: 0 as const, name }));
+    expect(navalRules.startError(st, captains)).toBeNull();
+    const config = navalRules.config(st, captains, 7);
+    expect(config).toMatchObject({ mode: 'lan', type: 'bossrush', rush: { preset: 'brutal' }, escorts: 0, seed: 7 });
+    expect(config.players.map((p) => [p.name, p.team])).toEqual([['Ana', 0], ['Ben', 0]]);
+    expect(config.ai).toBeUndefined();
+    expect(config.resolvedAI).toBeUndefined();
+    const nine = Array.from({ length: 9 }, (_, i) => ({ pick: 'iowa', team: 0 as const, name: `C${i}` }));
+    expect(navalRules.startError(st, nine)).toBe('Boss Rush takes up to 8 captains');
+    expect(navalRules.startError(st, [])).toBe('Boss Rush needs a captain');
+    expect(navalRules.hostEnds(st)).toBe(true);
+  });
+
+  it('passes rush card picks in a rush only, as a whole card number', () => {
+    const st = rushSettings();
+    expect(navalRules.cleanEdge({ rc: 2 }, st)).toEqual({ rc: 2 });
+    expect(navalRules.cleanEdge({ rc: 0, tu: 1 }, st)).toEqual({ rc: 0, tu: 1 });
+    for (const rc of [3, -1, 1.5, '1']) expect(navalRules.cleanEdge({ rc }, st)).toBeNull();
+    expect(navalRules.cleanEdge({ rc: 1 }, navalRules.defaults())).toBeNull();
+  });
+
+  it('keeps every captain of a rush lobby on the one fleet', async () => {
+    await serve();
+    const [ana, ben] = await room('Ana', 'Ben');
+    expect(ana.lobby!.members.map((m) => m.team)).toEqual([0, 1]);
+    ana.send({ t: 'settings', s: { type: 'bossrush' } });
+    await ben.next('lobby', (m) => m.lobby!.settings.type === 'bossrush');
+    expect(ben.lobby!.members.map((m) => m.team)).toEqual([0, 0]);
+    ben.send({ t: 'me', team: 1 });
+    const cal = await client('Cal');
+    cal.send({ t: 'join', lobby: ana.lobby!.id });
+    await ana.next('lobby', (m) => m.lobby!.members.length === 3);
+    await wait(50);
+    expect(ana.lobby!.members.map((m) => m.team)).toEqual([0, 0, 0]);
+  });
+
+  it('is full at eight captains, and will not start a rush with more', async () => {
+    await serve();
+    const cs = await room(...Array.from({ length: 9 }, (_, i) => `C${i}`));
+    cs[0].send({ t: 'settings', s: { type: 'survival' } });
+    await cs[1].next('lobby', (m) => m.lobby!.settings.type === 'survival');
+    for (const c of cs.slice(1)) c.send({ t: 'me', ready: true });
+    await cs[0].next('lobby', (m) => m.lobby!.members.filter((x) => x.ready).length === 8);
+    cs[0].send({ t: 'start' });
+    expect((await cs[0].next('error')).text).toBe('Survival takes up to 8 captains');
+    const late = await client('Late');
+    late.send({ t: 'join', lobby: cs[0].lobby!.id });
+    expect((await late.next('error')).text).toBe('That lobby is full.');
+  });
+
+  it('lets the host end a co-op run, and ends it for everyone at the time limit', async () => {
+    await serve({ ...FAST, maxBattleMs: 300, rules: navalRules });
+    const cs = await room('Ana', 'Ben');
+    cs[0].send({ t: 'settings', s: { type: 'bossrush' } });
+    await cs[1].next('lobby', (m) => m.lobby!.settings.type === 'bossrush');
+    const [start] = await battle(cs);
+    expect(start.config).toMatchObject({ type: 'bossrush', escorts: 2 });
+    cs[1].send({ t: 'in', e: { rc: 1 } });
+    const ended = await cs[1].next('turn', (m) => !!m.turn.ev?.some((e) => 'end' in e), 3000);
+    expect(ended.turn.ev).toEqual([{ end: 2 }]);
+    expect(cs[0].turns().flatMap((t) => (t.e ?? []).map(([p, , e]) => [p, e]))).toEqual([[1, { rc: 1 }]]);
+  });
+});

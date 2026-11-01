@@ -13,6 +13,8 @@ export type BattleType = 'domination' | 'annihilation' | 'convoy' | 'freeplay' |
 
 /** Free play and Sandbox: no result, sunk ships come back, captains change ship, the host ends it. */
 export const openPlay = (type: BattleType): boolean => type === 'freeplay' || type === 'sandbox';
+/** Boss Rush and Survival: every captain on one fleet against the waves. */
+export const rushPlay = (type: BattleType): type is 'bossrush' | 'survival' => type === 'bossrush' || type === 'survival';
 /** Convoy: your team guards the cargo ships, or hunts them. */
 export type ConvoySide = 'escort' | 'raid';
 export type DifficultyId = 'easy' | 'normal' | 'hard';

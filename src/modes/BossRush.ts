@@ -639,6 +639,15 @@ export class BossRush {
     this.game.finish(this.cleared ? 0 : 1, this.cleared ? `Survived ${this.wave} waves` : `Fell on wave ${this.wave}`);
   }
 
+  /** The host ended the run (or it ran out of LAN time): it is scored as it stands. */
+  endRun(): void {
+    if (this.game.over) return;
+    // Waves beaten: the one being fought does not count yet.
+    const held = Math.max(0, this.wave - (this.phase === 'fight' ? 1 : 0));
+    if (this.survival) return this.game.finish(1, `Held out for ${held} wave${held === 1 ? '' : 's'}`);
+    this.game.finish(this.cleared ? 0 : 1, `Run ended on wave ${Math.max(1, this.wave)}`);
+  }
+
   /** Score with every captain's damage share included (for the live HUD). */
   get total(): number {
     return this.score + Math.round(this.captains.reduce((n, c) => n + c.ship.stats.damage, 0) / 10);

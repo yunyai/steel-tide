@@ -2828,6 +2828,18 @@ select {
   color: var(--mute);
 }
 
+/* Co-op: this captain has picked; the offer waits on the others. */
+.intermission .waiting {
+  padding: 18px 28px;
+  font-family: var(--display);
+  font-size: 1.2rem;
+  letter-spacing: 0.04em;
+  color: #e6f2fa;
+  border: 1px solid rgba(77, 232, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(4, 10, 18, 0.6);
+}
+
 /* ------------------------------------------------------------- keyframes */
 @keyframes blink {
   50% {
@@ -3300,6 +3312,11 @@ select {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
   align-content: start;
+}
+
+/* A co-op run has one fleet of captains. */
+.lan-teams:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .lan-team {

@@ -7,6 +7,7 @@ import type { TeamAISelection } from '../core/FleetSelection';
 import type { ShiftTempo } from '../config';
 import type { BattleConfig, BattleType, DifficultyId } from '../core/BattleSetup';
 import type { Era, Team } from '../core/types';
+import type { RushDifficulty } from '../modes/RushDifficulty';
 
 /** Sim steps per lockstep turn, and the server's turn period (30 turns a second at 60 Hz). */
 export const TURN_TICKS = 2;
@@ -61,6 +62,8 @@ export interface Edge {
   /** Free play: the ship to sail from the next respawn, and leave the fight now to change into it. */
   sp?: string;
   rd?: 1;
+  /** Boss Rush and Survival: the refit card (0..2) the captain picks at the intermission. */
+  rc?: number;
 }
 
 /** Sandbox cheats the host switches on for every captain. */
@@ -101,7 +104,7 @@ export interface Turn {
 }
 
 export interface LobbySettings {
-  type: Exclude<BattleType, 'bossrush' | 'survival'>;
+  type: BattleType;
   mapId: string;
   /** AI ships in each fleet, besides its captains (0..MAX_AI). */
   ai: [number, number];
@@ -113,6 +116,10 @@ export interface LobbySettings {
   titans: boolean;
   /** Whose ships everyone sails: a set of eras in roster order, at least one with line ships. */
   eras: Era[];
+  /** Boss Rush and Survival: the difficulty (Normal when unset). */
+  rush?: RushDifficulty;
+  /** Boss Rush and Survival: AI escorts sailing with the first captain. */
+  escorts: 0 | 2;
 }
 
 export interface Member {
@@ -190,6 +197,7 @@ export const DEFAULT_SETTINGS: LobbySettings = {
   escortTeam: 0,
   titans: true,
   eras: ['historic'],
+  escorts: 2,
 };
 
 /** A battle fingerprint in named parts (`core`, `s<ship id>`, `shells`, …), see net/hash.ts. */

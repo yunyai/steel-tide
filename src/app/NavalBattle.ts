@@ -16,6 +16,7 @@ import type { Viewport } from '../render/Renderer';
 import { emptyControl, type Ship } from '../ships/Ship';
 import { h } from '../ui/dom';
 import { HUD } from '../ui/HUD';
+import type { SendCard } from '../ui/Intermission';
 import { PerfPanel } from '../ui/PerfPanel';
 import { SandboxHud } from '../ui/SandboxHud';
 import { buildSandboxPanel } from '../ui/SandboxPanel';
@@ -85,6 +86,8 @@ export class NavalBattle implements ActiveBattle {
   private slow = 0;
   /** Boss Rush: this run set a new best score for the ship. */
   private newBest = false;
+  /** LAN co-op run: a refit card travels as an order every peer applies on the same turn. */
+  private readonly sendCard: SendCard | null;
 
   /** `local` is the LAN captain's ship; solo battles show their first captain. */
   constructor(
@@ -95,6 +98,7 @@ export class NavalBattle implements ActiveBattle {
     local: Ship | undefined = game.humans()[0],
   ) {
     const { menu, menuLayer, renderer, hudLayer, input, canvas } = shell;
+    this.sendCard = link ? (i) => link.lockstep.sendEdge({ rc: i }) : null;
     audio.beginBattle();
     this.batteryAudio=new ArchitectBatteryAudio(game,audio,impulse=>this.scene.effects.onShake?.(impulse));
     menu.hide();
@@ -114,7 +118,7 @@ export class NavalBattle implements ActiveBattle {
     this.viewports = this.pcs.map(captainView);
     for (const pc of this.pcs) this.scene.aiming.set(pc.camera, pc);
     this.huds = this.pcs.map((pc) => {
-      const h = new HUD(game, pc, input);
+      const h = new HUD(game, pc, input, this.sendCard);
       hudLayer.append(h.root);
       return h;
     });
@@ -152,7 +156,8 @@ export class NavalBattle implements ActiveBattle {
         this.reportIn = 3.5;
         const rush = game.rush;
         const me = this.mine;
-        if (rush && me) this.newBest = saveBest(me.base.id, rush.wave, rush.total, rush.survival, this.config.rush);
+        // A co-op run's team score is not comparable with the solo records.
+        if (rush && me && !link) this.newBest = saveBest(me.base.id, rush.wave, rush.total, rush.survival, this.config.rush);
         const win = g.winner !== -1 && g.winner === me?.team;
         audio.ui(win || openPlay(config.type) ? 'victory' : 'defeat');
         link?.over();
@@ -189,7 +194,7 @@ export class NavalBattle implements ActiveBattle {
         const i = this.pcs.findIndex((p) => p.ship === ship);
         if (i < 0) return;
         this.huds[i].dispose();
-        this.huds[i] = new HUD(this.game, this.pcs[i], this.shell.input);
+        this.huds[i] = new HUD(this.game, this.pcs[i], this.shell.input, this.sendCard);
         this.shell.hudLayer.append(this.huds[i].root);
         if (on) {
           this.slow = SLOW_HOLD + SLOW_EASE + 0.3;
@@ -265,7 +270,7 @@ export class NavalBattle implements ActiveBattle {
     this.pcs[i] = pc;
     this.viewports[i] = captainView(pc);
     this.huds[i].dispose();
-    this.huds[i] = new HUD(this.game, pc, this.shell.input);
+    this.huds[i] = new HUD(this.game, pc, this.shell.input, this.sendCard);
     this.shell.hudLayer.append(this.huds[i].root);
     const locals = this.pcs.map((p) => p.ship);
     this.scene.effects.locals = locals;

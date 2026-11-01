@@ -31,7 +31,7 @@ import { solve } from '../weapons/Ballistics';
 import { Feedback } from './Feedback';
 import { hullHealthDisplay } from './HullHealth';
 import { classIcon, consumableIcon, glyph, skillIcon } from './Icons';
-import { Intermission } from './Intermission';
+import { Intermission, type SendCard } from './Intermission';
 import { Minimap } from './Minimap';
 import { captainName } from './names';
 import { palette } from './palette';
@@ -195,6 +195,8 @@ export class HUD {
     private game: Game,
     private pc: PlayerController,
     private input: Input,
+    /** LAN: how this captain's refit card travels to every peer (solo picks apply at once). */
+    sendCard: SendCard | null = null,
   ) {
     this.team = pc.ship.team;
     this.root = el('div', 'hud');
@@ -455,7 +457,7 @@ export class HUD {
     this.fb = new Feedback(game, pc, r, (x, y, z) => this.project(x, y, z), (t, s, c) => this.banner(t, s, c), (t, s, c) => this.callout(t, s, c));
 
     if (rush) {
-      this.intermission = new Intermission(rush, input, pc.padIndex, () => audio.ui('click'));
+      this.intermission = new Intermission(rush, Math.max(0, rush.captains.findIndex((c) => c.ship === me)), input, pc.padIndex, sendCard, () => audio.ui('click'));
       r.append(this.intermission.root);
     }
 
@@ -742,8 +744,10 @@ export class HUD {
       const back = g.respawnIn(me);
       // Free play: the ship you come back in, and where to change it (never opened for you).
       const free = openPlay(g.config.type);
-      const title = back >= 0 ? `Back in ${Math.ceil(back)}…${free ? ` as ${(me.nextSpec ?? me.spec).name}` : ''}` : 'Ship lost';
-      let sp = pc.focus !== me && pc.focus.alive ? `Watching ${captainName(pc.focus)}. Fire to switch ship.` : back >= 0 ? 'A fresh hull is fitting out.' : 'Your crew abandons ship.';
+      // Co-op Boss Rush: a sunk captain sails again once the wave is beaten.
+      const coop = !g.over && !!g.rush && g.rush.captains.length > 1 && !!g.rush.captainOf(me);
+      const title = back >= 0 ? `Back in ${Math.ceil(back)}…${free ? ` as ${(me.nextSpec ?? me.spec).name}` : ''}` : coop ? 'Back when the wave is beaten' : 'Ship lost';
+      let sp = pc.focus !== me && pc.focus.alive ? `Watching ${captainName(pc.focus)}. Fire to switch ship.` : back >= 0 ? 'A fresh hull is fitting out.' : coop ? 'Your shipmates fight on.' : 'Your crew abandons ship.';
       if (free && back >= 0) sp += ` ${pc.padIndex >= 0 ? 'Start' : 'Esc'}: change ship.`;
       if (e.dead.dataset.k !== title + sp) {
         e.dead.dataset.k = title + sp;

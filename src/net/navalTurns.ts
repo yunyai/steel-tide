@@ -55,7 +55,8 @@ export class TurnApplier implements LockstepSim {
         for (const ev of turn.ev) {
           if ('end' in ev) {
             const name = g.sandbox ? 'the sandbox' : 'free play';
-            if (!g.over) g.finish(-1, ev.end === 2 ? `${name[0].toUpperCase()}${name.slice(1)} reached its one-hour limit` : `The host ended ${name}`);
+            if (g.rush) g.rush.endRun();
+            else if (!g.over) g.finish(-1, ev.end === 2 ? `${name[0].toUpperCase()}${name.slice(1)} reached its one-hour limit` : `The host ended ${name}`);
             continue;
           }
           if ('sb' in ev) {
@@ -89,6 +90,8 @@ export class TurnApplier implements LockstepSim {
         if (e.sp !== undefined) g.pickShip(s, e.sp);
         if (e.rd) g.redeploy(s);
         if(e.ar)refitArchitect(s,e.ar.index,e.ar.pick);
+        // A captain's refit card: the sunk choose too, they sail again at the clear.
+        if (e.rc !== undefined) g.rush?.choose(e.rc, p);
         if (!s.autopilot) applyEdge(s.control, e);
       }
     }

@@ -280,6 +280,81 @@ describe('lockstep determinism', () => {
   });
 });
 
+describe('co-op Boss Rush over lockstep', () => {
+  const rushConfig = (type: 'bossrush' | 'survival'): BattleConfig => ({
+    mode: 'lan',
+    type,
+    mapId: 'strait',
+    teamSize: 1,
+    difficulty: 'normal',
+    seed: 21,
+    escorts: 2,
+    rush: { preset: 'hard' },
+    players: [
+      { shipId: 'yamato', device: 'mouse', team: 0, name: 'Ana' },
+      { shipId: 'architect', device: 'mouse', team: 0, name: 'Ben' },
+    ],
+  });
+  /** Wave 1 sails after the 4 s warm-up; the test sinks it here, the same way on every peer. */
+  const SINK = 150;
+
+  function rushTurns(seconds: number): Turn[] {
+    const rng = makeRng(9);
+    const turns: Turn[] = [];
+    for (let k = 0; k < (seconds * 60) / TURN_TICKS; k++) {
+      const t: Turn = { k };
+      if (k % 6 === 0) t.p = [0, 1].map((p): [number, Continuous] => [p, [Math.round((rng() * 2 - 1) * 2) / 2, (rng() - 0.5) * 8000, (rng() - 0.5) * 8000, rng() < 0.7 ? 1 : 0, -1]]);
+      if (k % 45 === 7) t.e = [[k % 2, 1, { sk: k % 2 }]];
+      turns.push(t);
+    }
+    // Each captain picks their own card: Ana the second, Ben the third.
+    turns[SINK + 15].e = [...(turns[SINK + 15].e ?? []), [0, 0, { rc: 1 }]];
+    turns[SINK + 30].e = [...(turns[SINK + 30].e ?? []), [1, 1, { rc: 2 }]];
+    return turns;
+  }
+
+  function playRush(config: BattleConfig, turns: Turn[]): { hashes: number[]; g: Game; offers: string[][] } {
+    const g = new Game(config);
+    const a = new TurnApplier(g);
+    const hashes: number[] = [];
+    let offers: string[][] = [];
+    for (const t of turns) {
+      if (t.k === SINK) {
+        for (const s of g.ships.filter((x) => x.alive && x.team === 1 && !x.isSummon)) s.sink(a.ship(0)!);
+        g.rush!.queue.length = 0;
+      }
+      for (let i = 0; i < TURN_TICKS; i++) a.applyTick(t, i);
+      if (t.k === SINK + 1) offers = g.rush!.captains.map((c) => c.offer.map((u) => u.id));
+      if ((t.k + 1) % 30 === 0) hashes.push(stateHash(g));
+    }
+    return { hashes, g, offers };
+  }
+
+  for (const type of ['bossrush', 'survival'] as const) {
+    it(`two peers of a two-captain ${type} stay identical through each captain's card and the next wave`, () => {
+      const config = rushConfig(type);
+      const turns = rushTurns(20);
+      const a = playRush(config, turns);
+      const b = playRush(structuredClone(config), JSON.parse(JSON.stringify(turns)) as Turn[]);
+      expect(b.hashes).toEqual(a.hashes);
+      expect(new Set(a.hashes).size).toBeGreaterThan(15);
+      const r = a.g.rush!;
+      expect(r.wave).toBe(2);
+      expect(r.captains.map((c) => c.taken)).toEqual([[a.offers[0][1]], [a.offers[1][2]]]);
+    }, 120000);
+  }
+
+  it('ends a co-op run when the host does, on every peer alike', () => {
+    for (const [type, reason] of [['bossrush', 'Run ended on wave 2'], ['survival', 'Held out for 1 wave']] as const) {
+      const turns = rushTurns(14);
+      turns[400].ev = [{ end: 1 }];
+      const { g } = playRush(rushConfig(type), turns);
+      expect(g.over).toBe(true);
+      expect(g.reason).toBe(reason);
+    }
+  }, 120000);
+});
+
 describe('LAN roster', () => {
   it('puts captains in their own fleets, grows a fleet to fit them, and answers titans on the other side', () => {
     const config = lanConfig('annihilation');

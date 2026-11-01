@@ -1,6 +1,7 @@
 import { validSelection, copyLoadout, type ArchitectLoadout } from '../src/data/architectLoadout';
 import { cleanAISelection, selectionError } from '../src/core/FleetSelection';
-import { buildRoster, openPlay } from '../src/core/BattleSetup';
+import { buildRoster, openPlay, rushPlay } from '../src/core/BattleSetup';
+import { cleanRush } from '../src/modes/RushDifficulty';
 import { makeRng, wrapAngle } from '../src/core/math';
 import { MAP_HALF } from '../src/config';
 import type { BattleConfig } from '../src/core/BattleSetup';
@@ -8,7 +9,7 @@ import type { Team } from '../src/core/types';
 import { eraOf } from '../src/data/factions';
 import { normalizeEras } from '../src/data/eras';
 import { SHIP_BY_ID, shipsIn } from '../src/data/ships';
-import { type Continuous, DEFAULT_SETTINGS, DUMMY_MODES, type DummyMode, type Edge, type LobbySettings, MAX_AI, MAX_DUMMIES, SANDBOX_CHEATS, type SandboxCheat, type SandboxCmd } from '../src/net/protocol';
+import { type Continuous, DEFAULT_SETTINGS, DUMMY_MODES, type DummyMode, type Edge, type LobbySettings, MAX_AI, MAX_DUMMIES, MAX_PER_TEAM, SANDBOX_CHEATS, type SandboxCheat, type SandboxCmd } from '../src/net/protocol';
 import { MAPS } from '../src/world/GameMap';
 
 // What a kind of battle decides on the LAN server: its settings, what captains may sail, which
@@ -40,8 +41,10 @@ export interface BattleRules {
   startError(st: LobbySettings, captains: Captain[]): string | null;
   /** The config every peer builds the battle from. */
   config(st: LobbySettings, captains: Captain[], seed: number): BattleConfig;
-  /** The host ends battles of these settings (Free play, Sandbox); others end by themselves. */
+  /** The host ends battles of these settings (Free play, Sandbox, a co-op run); others end by themselves. */
   hostEnds(st: LobbySettings): boolean;
+  /** Every captain sails on team 0 (Boss Rush, Survival): no team picks, and room for one fleet. */
+  oneFleet(st: LobbySettings): boolean;
   /** The host's sandbox command with only its valid fields, clamped to the map, or null. */
   cleanSandbox(v: unknown): SandboxCmd | null;
 }
@@ -69,7 +72,7 @@ export const navalRules: BattleRules = {
   defaults: () => ({ ...DEFAULT_SETTINGS, ai: [...DEFAULT_SETTINGS.ai], eras: [...DEFAULT_SETTINGS.eras] }),
 
   applySettings(st, o) {
-    if (o.type === 'domination' || o.type === 'annihilation' || o.type === 'convoy' || o.type === 'freeplay' || o.type === 'sandbox') st.type = o.type;
+    if (o.type === 'domination' || o.type === 'annihilation' || o.type === 'convoy' || o.type === 'freeplay' || o.type === 'sandbox' || o.type === 'bossrush' || o.type === 'survival') st.type = o.type;
     if (typeof o.mapId === 'string' && MAPS.some((m) => m.id === o.mapId)) st.mapId = o.mapId;
     if (Array.isArray(o.ai) && o.ai.length === 2 && o.ai.every((n) => smallInt(n, MAX_AI))) st.ai = [o.ai[0], o.ai[1]];
     if (o.difficulty === 'easy' || o.difficulty === 'normal' || o.difficulty === 'hard') st.difficulty = o.difficulty;
@@ -80,6 +83,9 @@ export const navalRules: BattleRules = {
     const eras = normalizeEras(o.eras ?? (o as { era?: unknown }).era);
     if (eras) st.eras = eras;
     if (o.shiftTempo === 'burst' || o.shiftTempo === 'staggered' || o.shiftTempo === 'long') st.shiftTempo = o.shiftTempo;
+    const rush = cleanRush(o.rush);
+    if (rush) st.rush = rush;
+    if (o.escorts === 0 || o.escorts === 2) st.escorts = o.escorts;
     const selection = cleanAISelection(o.aiSelection ?? st.aiSelection, st.eras, st.titans);
     if (selection) st.aiSelection = selection;
   },
@@ -97,7 +103,7 @@ export const navalRules: BattleRules = {
     return c;
   },
 
-  /** Edge orders as the battle allows them: Free play and Sandbox add the ship picker's. */
+  /** Edge orders as the battle allows them: Free play and Sandbox add the ship picker's, a co-op run the refit card. */
   cleanEdge(v, st) {
     if (!v || typeof v !== 'object') return null;
     const o = v as Record<string, unknown>;
@@ -107,6 +113,7 @@ export const navalRules: BattleRules = {
       if (o.rd === 1) e.rd = 1;
       const ar=o.ar as Edge['ar'];if(ar&&smallInt(ar.index,9)&&validSelection(ar.pick))e.ar={index:ar.index,pick:{...ar.pick}};
     }
+    if (rushPlay(st.type) && smallInt(o.rc, 2)) e.rc = o.rc;
     if (o.tu === 1) e.tu = 1;
     if (o.td === 1) e.td = 1;
     if (smallInt(o.sl, 8)) e.sl = o.sl;
@@ -124,6 +131,12 @@ export const navalRules: BattleRules = {
   startError(st, captains) {
     // A sandbox has no fleets to fill: its captains sail alone until they spawn dummies.
     if (st.type === 'sandbox') return null;
+    // A co-op run is its captains against the waves: one fleet of them.
+    if (rushPlay(st.type)) {
+      const mode = st.type === 'survival' ? 'Survival' : 'Boss Rush';
+      if (!captains.length) return `${mode} needs a captain`;
+      return captains.length > MAX_PER_TEAM ? `${mode} takes up to ${MAX_PER_TEAM} captains` : null;
+    }
     const error = selectionError(st.aiSelection, st.eras, st.titans, st.ai);
     if (error) return error;
     // Every other battle is decided by one fleet running out of ships (or never meeting one).
@@ -133,6 +146,21 @@ export const navalRules: BattleRules = {
   },
 
   config(st, captains, seed) {
+    if (rushPlay(st.type)) {
+      return {
+        mode: 'lan',
+        type: st.type,
+        mapId: st.mapId,
+        teamSize: 1,
+        difficulty: st.difficulty,
+        seed,
+        rush: st.rush ? structuredClone(st.rush) : undefined,
+        escorts: st.escorts,
+        shiftTempo: st.shiftTempo,
+        eras: [...st.eras],
+        players: captains.map((c) => ({ shipId: c.pick, architectLoadout: copyLoadout(c.architectLoadout), device: 'mouse', team: 0, name: c.name })),
+      };
+    }
     const sandbox = st.type === 'sandbox';
     const config: BattleConfig = {
       mode: 'lan',
@@ -155,7 +183,9 @@ export const navalRules: BattleRules = {
     return config;
   },
 
-  hostEnds: (st) => openPlay(st.type),
+  hostEnds: (st) => openPlay(st.type) || rushPlay(st.type),
+
+  oneFleet: (st) => rushPlay(st.type),
 
   cleanSandbox(v) {
     if (!v || typeof v !== 'object') return null;

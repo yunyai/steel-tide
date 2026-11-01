@@ -370,14 +370,14 @@ export class LobbyServer {
     const l = typeof lobbyId === 'string' ? this.lobbies.get(lobbyId) : undefined;
     if (!l) return this.send(s, { t: 'error', text: 'That lobby has closed.' });
     if (s.lobby === l) return this.pushLobby(l);
-    if (l.members.length >= MAX_PER_TEAM * 2) return this.send(s, { t: 'error', text: 'That lobby is full.' });
+    if (l.members.length >= MAX_PER_TEAM * (this.rules.oneFleet(l.settings) ? 1 : 2)) return this.send(s, { t: 'error', text: 'That lobby is full.' });
     this.leave(s);
     this.addMember(l, s);
   }
 
   private addMember(l: Lobby, s: Session): void {
     const count = (t: Team) => l.members.filter((m) => m.team === t).length;
-    const team: Team = count(0) <= count(1) ? 0 : 1;
+    const team: Team = this.rules.oneFleet(l.settings) || count(0) <= count(1) ? 0 : 1;
     l.members.push({ session: s, team, shipId: this.rules.defaultPick(l.settings), ready: false, player: -1 });
     s.lobby = l;
     this.pushLobby(l);
@@ -417,6 +417,7 @@ export class LobbyServer {
     for (const m of l.members) {
       m.ready = false;
       if (!this.rules.pickAllowed(m.shipId, st)) m.shipId = this.rules.defaultPick(st);
+      if (this.rules.oneFleet(st)) m.team = 0;
     }
     this.pushLobby(l);
   }
@@ -427,7 +428,7 @@ export class LobbyServer {
     if (!l || !mem) return;
     if (!l.battle) {
       if(m.architectLoadout!==undefined){if(!validLoadout(m.architectLoadout))return this.send(s,{t:'error',text:'Invalid Architect loadout'});mem.architectLoadout=copyLoadout(m.architectLoadout);mem.ready=false;}
-      if (isTeam(m.team) && m.team !== mem.team) {
+      if (isTeam(m.team) && m.team !== mem.team && !this.rules.oneFleet(l.settings)) {
         if (l.members.filter((x) => x.team === m.team).length >= MAX_PER_TEAM) return this.send(s, { t: 'error', text: 'That fleet is full.' });
         mem.team = m.team;
       }

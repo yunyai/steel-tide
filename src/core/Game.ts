@@ -41,7 +41,7 @@ import { BossRush } from '../modes/BossRush';
 import { Convoy } from '../modes/Convoy';
 import { Sandbox, SANDBOX_RESPAWN } from '../modes/Sandbox';
 import { GameMap, MAP_BY_ID, MAPS } from '../world/GameMap';
-import { type BattleConfig, buildRoster, openPlay, spawnOffset } from './BattleSetup';
+import { type BattleConfig, buildRoster, openPlay, rushPlay, spawnOffset } from './BattleSetup';
 import { EventBus, type HitKind } from './Events';
 import { makeRng, segmentsCross, wrapAngle, type Rng } from './math';
 import { Pickups } from './Pickups';
@@ -146,7 +146,7 @@ export class Game {
       this.score = [DOMINATION_START_SCORE, DOMINATION_START_SCORE];
       this.caps = this.map.preset.caps.map((c) => ({ ...c, owner: -1, capturer: -1, progress: 0, contested: false }));
     }
-    if (config.type === 'bossrush' || config.type === 'survival') {
+    if (rushPlay(config.type)) {
       this.rush = new BossRush(this, config.type === 'survival');
       this.rush.start();
     } else {

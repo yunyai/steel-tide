@@ -1,17 +1,19 @@
 import { FleetEditor } from './FleetEditor';
 import { randomShip, selectionError } from '../core/FleetSelection';
 import { DIFFICULTIES, SHIFT_TEMPOS, type ShiftTempo } from '../config';
-import { openPlay, type DifficultyId } from '../core/BattleSetup';
+import { openPlay, rushPlay, type DifficultyId } from '../core/BattleSetup';
 import type { Era, ShipSpec, Team } from '../core/types';
 import { erasLabel } from '../data/eras';
 import { ERAS } from '../data/factions';
 import { CLASS_LABEL, SHIP_BY_ID, titansOf } from '../data/ships';
 import type { NetClient } from '../net/NetClient';
 import { type LobbySettings, type LobbyState, MAX_AI, MAX_PER_TEAM, type Member, NAME_MAX, type ServerMsg } from '../net/protocol';
+import { RUSH_PRESET_LABEL } from '../modes/RushDifficulty';
 import { MAPS } from '../world/GameMap';
 import { field, h, seg } from './dom';
 import { eraSeg } from './EraPicker';
 import { classIcon, glyph } from './Icons';
+import { rushDifficultyControl, rushDifficultyNote } from './RushDifficultyControl';
 
 // The LAN screens: the lobby list on this server, and the room of the lobby you are in.
 // Everything a player typed (captain and lobby names) goes in through textContent only.
@@ -25,10 +27,15 @@ export interface LobbyHooks {
   chooseShip(shipId: string, titans: boolean, eras: readonly Era[]): void;
 }
 
-const TYPE_LABEL: Record<LobbySettings['type'], string> = { domination: 'Domination', annihilation: 'Annihilation', convoy: 'Convoy', freeplay: 'Free play', sandbox: 'Sandbox' };
+const TYPE_LABEL: Record<LobbySettings['type'], string> = { domination: 'Domination', annihilation: 'Annihilation', convoy: 'Convoy', freeplay: 'Free play', sandbox: 'Sandbox', bossrush: 'Boss Rush', survival: 'Survival' };
+const LOBBY_TYPES: LobbySettings['type'][] = ['domination', 'annihilation', 'convoy', 'freeplay', 'sandbox', 'bossrush', 'survival'];
 const FREEPLAY_NOTE = 'No score and no clock. Sunk ships come back after 8 s; change ship from the battle menu (Esc). The host ends it.';
 const SANDBOX_NOTE = 'Captains only, any ship of any era. The host spawns dummies and switches cheats on (F6, or Sandbox tools in the battle menu); everyone gets a damage meter (F7). The host ends it.';
-const typeNote = (t: LobbySettings['type']) => (t === 'freeplay' ? FREEPLAY_NOTE : t === 'sandbox' ? SANDBOX_NOTE : undefined);
+const COOP_NOTE = 'Every captain past the first adds two ships and a quarter more hull to each wave. A sunk captain sails again when the wave is beaten; the run ends when every captain is down, or when the host ends it. Each captain picks their own refit between waves.';
+const RUSH_NOTE = `All captains on one fleet against escalating waves, with titans on the boss waves. ${COOP_NOTE}`;
+const SURVIVAL_NOTE = `All captains on one fleet against endless waves without titans. ${COOP_NOTE}`;
+const typeNote = (t: LobbySettings['type']) => (t === 'freeplay' ? FREEPLAY_NOTE : t === 'sandbox' ? SANDBOX_NOTE : t === 'bossrush' ? RUSH_NOTE : t === 'survival' ? SURVIVAL_NOTE : undefined);
+const ESCORTS_LABEL = { 0: 'Alone', 2: 'Two AI escorts' } as const;
 const TEAM_LABEL = ['Team A', 'Team B'];
 
 /** Fleet sizes as the battle will build them (see buildRoster): captains, the host's AI ships, and two more AI ships per enemy titan (only in a fleet that has AI). */
@@ -206,7 +213,7 @@ export class Lobby {
       'div',
       { class: 'sheet panel lan' },
       h('h2', {}, 'LAN battle'),
-      h('p', { class: 'lede' }, 'Sail with friends on the same network. Pick sides for a fleet battle, or put everyone on one team against the AI. The host sets how many AI ships sail with each team, from none to eight.'),
+      h('p', { class: 'lede' }, 'Sail with friends on the same network. Pick sides for a fleet battle, put everyone on one team against the AI, or hold out together in Boss Rush and Survival. The host sets how many AI ships sail with each team, from none to eight.'),
       field('Captain name', name, 'Shown on your ship to the other captains.'),
       h('div', { class: 'lan-dynamic' }, ...this.dynamicList()),
       h('div', { class: 'sheet-actions' }, this.act('Back', 'btn-quiet', () => this.hooks.back()), create),
@@ -269,17 +276,22 @@ export class Lobby {
 
     const settings = h('div', { class: 'lan-settings' });
     const sandbox = st.type === 'sandbox';
+    const rush = rushPlay(st.type);
     const mapName = MAPS.find((m) => m.id === st.mapId)?.name ?? st.mapId;
     if (host) {
       const sg = <T extends string | number>(opts: { value: T; label: string }[], get: () => T, put: (v: T) => void) => seg(opts, get, put, () => this.hooks.click(), `lobby-setting-${opts[0].label}`);
       settings.append(
         field(
           'Battle type',
-          sg<LobbySettings['type']>((['domination', 'annihilation', 'convoy', 'freeplay', 'sandbox'] as const).map((v) => ({ value: v, label: TYPE_LABEL[v] })), () => st.type, (v) => set({ type: v })),
+          sg<LobbySettings['type']>(LOBBY_TYPES.map((v) => ({ value: v, label: TYPE_LABEL[v] })), () => st.type, (v) => set({ type: v })),
           typeNote(st.type),
         ),
       );
       if (st.type === 'convoy') settings.append(field('Transports sail with', sg<Team>([0, 1].map((t) => ({ value: t as Team, label: TEAM_LABEL[t] })), () => st.escortTeam, (v) => set({ escortTeam: v }))));
+      if (rush) {
+        const { fields } = rushDifficultyControl({ get: () => st.rush, set: (d) => set({ rush: d ?? { preset: 'normal' } }), survival: () => st.type === 'survival', click: () => this.hooks.click(), key: 'lobby-rush' });
+        settings.append(...fields, field('Escorts', sg<0 | 2>([0, 2].map((v) => ({ value: v as 0 | 2, label: ESCORTS_LABEL[v as 0 | 2] })), () => st.escorts, (v) => set({ escorts: v })), 'A cruiser and a destroyer that follow the first captain.'));
+      }
       settings.append(
         field('Map', sg(MAPS.map((m) => ({ value: m.id, label: m.name })), () => st.mapId, (v) => set({ mapId: v }))),
         field('AI skill', sg<DifficultyId>((Object.keys(DIFFICULTIES) as DifficultyId[]).map((k) => ({ value: k, label: DIFFICULTIES[k].label })), () => st.difficulty, (v) => set({ difficulty: v }))),
@@ -294,6 +306,12 @@ export class Lobby {
     } else {
       const facts: [string, string][] = [
         ['Battle type', TYPE_LABEL[st.type] + (st.type === 'convoy' ? `, transports with ${TEAM_LABEL[st.escortTeam]}` : '')],
+        ...(rush
+          ? [
+              ['Difficulty', RUSH_PRESET_LABEL[st.rush?.preset ?? 'normal']],
+              ['Escorts', ESCORTS_LABEL[st.escorts]],
+            ] as [string, string][]
+          : []),
         ['Map', mapName],
         ['AI skill', DIFFICULTIES[st.difficulty].label],
         ...(titansOf(st.eras).length && !sandbox ? [['Titans', st.titans ? 'Allowed' : 'Not allowed'] as [string, string]] : []),
@@ -303,12 +321,15 @@ export class Lobby {
       settings.append(h('dl', { class: 'lan-facts' }, ...facts.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])));
       const note = typeNote(st.type);
       if (note) settings.append(h('p', { class: 'note' }, note));
+      if (rush) settings.append(h('p', { class: 'note' }, rushDifficultyNote(st.rush, st.type === 'survival')));
     }
 
-    const poolError = sandbox ? null : selectionError(st.aiSelection, st.eras, st.titans, st.ai);
+    const poolError = sandbox || rush ? null : selectionError(st.aiSelection, st.eras, st.titans, st.ai);
     if (poolError) settings.append(h('p', { class: 'note error', role: 'alert' }, poolError));
     const sizes = fleetSizes(l);
     const myTeam = me?.team ?? 0;
+    // A co-op run: every captain on the one fleet, against the waves.
+    const captains = () => h('section', { class: 'lan-team ally', 'aria-label': 'Captains' }, h('header', {}, h('h3', {}, 'Captains')), ...l.members.map((m) => this.memberRow(l, m, me)));
     const column = (t: Team) => {
       const members = l.members.filter((m) => m.team === t);
       const col = h('section', { class: `lan-team ${t === myTeam ? 'ally' : 'foe'}`, 'aria-label': TEAM_LABEL[t] });
@@ -350,8 +371,11 @@ export class Lobby {
         const waiting = l.members.filter((m) => m.id !== me.id && m.connected && !m.ready);
         const start = this.act('Start battle', 'btn-primary', () => n.send({ t: 'start' }));
         start.dataset.focus = '';
-        const empty = openPlay(st.type) ? -1 : sizes.findIndex((n) => n === 0);
-        if (waiting.length) {
+        const empty = openPlay(st.type) || rush ? -1 : sizes.findIndex((n) => n === 0);
+        if (rush && l.members.length > MAX_PER_TEAM) {
+          start.disabled = true;
+          notes.push(h('p', { class: 'lan-status' }, `${TYPE_LABEL[st.type]} takes up to ${MAX_PER_TEAM} captains.`));
+        } else if (waiting.length) {
           start.disabled = true;
           const names = waiting.map((m) => m.name);
           notes.push(h('p', { class: 'lan-status' }, `Waiting for ${names.length > 2 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(' and ')} to get ready.`));
@@ -385,7 +409,7 @@ export class Lobby {
       sub,
       ...(status ? [status] : []),
       h('div', { class: 'lan-room-body' },
-        h('div', { class: 'lan-room' }, settings, h('div', { class: 'lan-teams' }, column(0), column(1))),
+        h('div', { class: 'lan-room' }, settings, h('div', { class: 'lan-teams' }, ...(rush ? [captains()] : [column(0), column(1)]))),
         ...notes,
         ...(err ? [err] : []),
       ),

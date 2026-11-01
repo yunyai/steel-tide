@@ -146,12 +146,12 @@ export function buildReport(game: Game, humans: Ship[], newBest: boolean, action
   }
   if (rush) {
     const row = el('div', 'personal');
-    const score = el('div', 'hi', 'Run score');
+    const score = el('div', 'hi', rush.captains.length > 1 ? 'Team score' : 'Run score');
     const b = el('b', 'num');
     score.prepend(b);
     countUp(b, rush.total, (n) => Math.round(n).toLocaleString());
     const refits = el('div', '', 'Refits taken');
-    refits.prepend(el('b', 'num', String(rush.taken.length)));
+    refits.prepend(el('b', 'num', String((rush.captainOf(me ?? null) ?? rush.captains[0])?.taken.length ?? 0)));
     row.append(score, refits);
     sheet.append(row);
   }
