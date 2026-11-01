@@ -17,6 +17,9 @@ import { AFFIXES, AFFIX_LABEL, MAX_ALIVE, RUSH_WAVES, isBossWave, isTitanSlot, r
 // every fifth wave (every `bossEvery` on other difficulties, see RushDifficulty). Between waves: a
 // repair, then one of three stacking refit upgrades. Survival is the same fight without titans and
 // without an end: how many waves can you last?
+//
+// Co-op (a LAN lobby): every captain sails on the one fleet and picks their own card. A captain who
+// sinks sails again when the wave is beaten; the run ends only when no captain is afloat.
 
 export { RUSH_WAVES };
 /** Seconds of the intermission card choice before one is picked automatically. */
@@ -29,8 +32,16 @@ const COMBO_WINDOW = 6;
 const BOSS_ULT_CHARGE = 0.7;
 /** Ultimate charge rate of the ships of a wave, which also arrive with their meters empty. */
 const WAVE_ULT_CHARGE = 0.5;
-/** Skill cooldowns of the ships of a wave: they all hunt the one player, so they pace themselves. */
+/** Skill cooldowns of the ships of a wave: they all hunt the captains, so they pace themselves. */
 const WAVE_COOLDOWN = 1.6;
+/** Co-op: each captain past the first brings this many more ships to every wave... */
+const COOP_SHIPS = 2;
+/** ...and this much more hull on every enemy, titans included. */
+const COOP_HP = 0.25;
+/** Co-op: metres between captains on the starting line. */
+const CAPTAIN_GAP = 350;
+/** A captain sunk in a wave comes back at its clear with this much of their hull. */
+const REVIVE_HP = 0.5;
 /** Fisher–Yates in place, drawing from the battle's rng. */
 function shuffle<T>(a: T[], rng: () => number): T[] {
   for (let k = a.length - 1; k > 0; k--) {
@@ -75,8 +86,22 @@ export interface Upgrade {
   id: string;
   name: string;
   description: string;
-  /** Applied once per pick; picks stack. */
+  /** Applied once per pick to the captain's ship (or their share of the run); picks stack. */
   apply(ship: Ship, rush: BossRush): void;
+}
+
+/** One captain's share of the run: their own card choice and the refits that live off the ship. */
+export interface Captain {
+  ship: Ship;
+  /** Cards on offer this intermission (empty once they have chosen). */
+  offer: Upgrade[];
+  /** Chose this intermission: the offer stays up until every captain has. */
+  chosen: boolean;
+  /** Ids of every upgrade taken, in order. */
+  taken: string[];
+  chainBlast: number;
+  waveShield: number;
+  dropBonus: number;
 }
 
 /** A permanent buff (refits never wear off and survive a cleanse). */
@@ -131,24 +156,27 @@ export const UPGRADES: Upgrade[] = [
     id: 'chain',
     name: 'Chain reaction',
     description: 'Ships you sink explode for 20k around them.',
-    apply(_s, r) {
-      r.chainBlast += 20000;
+    apply(s, r) {
+      const c = r.captainOf(s);
+      if (c) c.chainBlast += 20000;
     },
   },
   {
     id: 'waveShield',
     name: 'Wave barrier',
     description: 'Each wave starts with a shield of 15% max HP.',
-    apply(_s, r) {
-      r.waveShield += 0.15;
+    apply(s, r) {
+      const c = r.captainOf(s);
+      if (c) c.waveShield += 0.15;
     },
   },
   {
     id: 'drops',
     name: 'Scavenger',
     description: 'Wrecks drop supply crates 20% more often.',
-    apply(_s, r) {
-      r.dropBonus += 0.2;
+    apply(s, r) {
+      const c = r.captainOf(s);
+      if (c) c.dropBonus += 0.2;
     },
   },
   {
@@ -171,28 +199,23 @@ export class BossRush {
   phase: RushPhase = 'warmup';
   /** Seconds left in the warm-up countdown or the card choice. */
   timer = WARMUP;
-  /** Upgrades on offer during the intermission. */
-  offer: Upgrade[] = [];
-  /** Ids of every upgrade taken, in order. */
-  taken: string[] = [];
+  /** Every captain, in player order (one in a solo run). */
+  captains: Captain[] = [];
   /** The titan of the current wave (alive or not), for the boss bar. */
   boss: Ship | null = null;
   /** The order the battle's titans arrive in, settled at the first boss wave. */
   private titanOrder: ShipSpec[] | null = null;
   /** Several eras: how many titans the round-robin order has dealt. */
-  private titansSent = 0;
-  player: Ship | null = null;
+  titansSent = 0;
+  /** Which captain the next enemy to sail hunts, in turn. */
+  huntTurn = 0;
   /** Wave 15 is behind us: the run is a win whatever happens next. */
   cleared = false;
   score = 0;
   combo = 0;
-  /** Sim time of the player's last kill (the combo window runs from it). */
+  /** Sim time of the captains' last kill (the combo window runs from it). */
   lastKillTime = -1e9;
   enemiesLeft = 0;
-  // Stacking refit effects that live on the director rather than the ship.
-  chainBlast = 0;
-  waveShield = 0;
-  dropBonus = 0;
   /** The difficulty's knobs (Normal when the battle sets none). */
   readonly knobs: RushKnobs;
   /** Ships of the current wave held back while MAX_ALIVE enemies are afloat. */
@@ -211,19 +234,48 @@ export class BossRush {
     this.scale = waveScale(1, this.knobs);
   }
 
-  /** Spawn the player (and escorts) in open water at the centre. */
+  /** The first captain's ship (the solo player). */
+  get player(): Ship | null {
+    return this.captains[0]?.ship ?? null;
+  }
+
+  /** The captain sailing `ship`, if any. */
+  captainOf(ship: Ship | null): Captain | undefined {
+    return ship ? this.captains.find((c) => c.ship === ship) : undefined;
+  }
+
+  /** Solo: the player's cards on offer. */
+  get offer(): Upgrade[] {
+    return this.captains[0]?.offer ?? [];
+  }
+
+  /** Solo: the player's upgrades taken, in order. */
+  get taken(): string[] {
+    return this.captains[0]?.taken ?? [];
+  }
+
+  /** The team's Scavenger picks together. */
+  get dropBonus(): number {
+    return this.captains.reduce((n, c) => n + c.dropBonus, 0);
+  }
+
+  /** Spawn the captains (and escorts) in open water at the centre, side by side. */
   start(): void {
     const g = this.game;
-    const cfg = g.config.players[0];
-    const spec = SHIP_BY_ID[cfg?.shipId ?? 'yamato'] ?? SHIP_BY_ID.yamato;
     const spot = this.centre();
-    const player = g.addShip(spec, 0, 'P1', spot.x, spot.z, Math.PI / 2);
-    player.humanIndex = cfg ? 0 : -1;
-    setArchitectLoadout(player, copyLoadout(cfg?.architectLoadout));
-    player.throttle = 4;
-    g.fleet.push(player);
-    if (player.humanIndex < 0) g.ai.set(player, new AIController(player, g));
-    this.player = player;
+    const players = g.config.players.length ? g.config.players : [undefined];
+    players.forEach((cfg, i) => {
+      const spec = SHIP_BY_ID[cfg?.shipId ?? 'yamato'] ?? SHIP_BY_ID.yamato;
+      const at = players.length > 1 ? findOpenWater(g.map, spot.x, spot.z + (i - (players.length - 1) / 2) * CAPTAIN_GAP) : spot;
+      const ship = g.addShip(spec, 0, cfg?.name ?? `P${i + 1}`, at.x, at.z, Math.PI / 2);
+      ship.humanIndex = cfg ? i : -1;
+      setArchitectLoadout(ship, copyLoadout(cfg?.architectLoadout));
+      ship.throttle = 4;
+      g.fleet.push(ship);
+      if (ship.humanIndex < 0) g.ai.set(ship, new AIController(ship, g));
+      this.captains.push({ ship, offer: [], chosen: false, taken: [], chainBlast: 0, waveShield: 0, dropBonus: 0 });
+    });
+    const player = this.player!;
     const escorts = g.config.escorts ?? 2;
     const groups: Group[] = ['cruiser', 'DD'];
     for (let i = 0; i < escorts; i++) {
@@ -301,7 +353,28 @@ export class BossRush {
     const k = this.knobs;
     const sc = waveScale(n, k);
     const boss = !this.survival && isBossWave(n, k);
-    return { wave: n, ships: n <= RUSH_WAVES ? tableSlots(n, k, boss).length + k.extraShips : sc.ships, titans: boss ? sc.titans : 0, elites: sc.elite > 0 };
+    return { wave: n, ships: (n <= RUSH_WAVES ? tableSlots(n, k, boss).length + k.extraShips : sc.ships) + this.coopShips, titans: boss ? sc.titans : 0, elites: sc.elite > 0 };
+  }
+
+  /** Co-op: the extra ships every wave brings for the captains past the first. */
+  private get coopShips(): number {
+    return COOP_SHIPS * (this.captains.length - 1);
+  }
+
+  /** Captains still afloat, in player order. */
+  private afloat(): Ship[] {
+    return this.captains.filter((c) => c.ship.alive).map((c) => c.ship);
+  }
+
+  /** The captain still afloat nearest (x, z), or the first captain when none is. */
+  private nearestCaptain(x: number, z: number): Ship {
+    let best = this.player!;
+    let d = Infinity;
+    for (const s of this.afloat()) {
+      const k = Math.hypot(s.pos.x - x, s.pos.z - z);
+      if (k < d) [best, d] = [s, k];
+    }
+    return best;
   }
 
   /**
@@ -314,7 +387,7 @@ export class BossRush {
     const boss = !this.survival && isBossWave(n, k);
     if (n <= RUSH_WAVES) {
       const out = tableSlots(n, k, boss);
-      for (let i = 0; i < k.extraShips; i++) out.push(pick(POOL, rng));
+      for (let i = 0; i < k.extraShips + this.coopShips; i++) out.push(pick(POOL, rng));
       return out;
     }
     const sc = waveScale(n, k);
@@ -323,14 +396,20 @@ export class BossRush {
       const first = Math.floor(rng() * bossesOf(configEras(this.game.config)).length);
       for (let t = 0; t < sc.titans; t++) out.push(`titan:${first + t}`);
     }
-    while (out.length < sc.ships) out.push(pick(POOL, rng));
+    while (out.length < sc.ships + this.coopShips) out.push(pick(POOL, rng));
     return out;
   }
 
-  /** Enemies arrive from the side of the map away from the player, out of sight. */
+  /** Enemies arrive from the side of the map away from the captains, out of sight. */
   private awayAngle(): number {
-    const p = this.player!;
-    return Math.atan2(-p.pos.z, -p.pos.x) + (this.game.rng() - 0.5) * Math.PI * 0.8;
+    const ships = this.afloat().length ? this.afloat() : [this.player!];
+    let x = 0;
+    let z = 0;
+    for (const s of ships) {
+      x += s.pos.x / ships.length;
+      z += s.pos.z / ships.length;
+    }
+    return Math.atan2(-z, -x) + (this.game.rng() - 0.5) * Math.PI * 0.8;
   }
 
   /** `n` affixes, all different, for an elite. */
@@ -344,7 +423,6 @@ export class BossRush {
   private spawnWave(): void {
     const g = this.game;
     this.wave++;
-    const player = this.player!;
     const away = this.awayAngle();
     const slots = this.composition(this.wave);
     this.scale = waveScale(this.wave, this.knobs);
@@ -354,7 +432,7 @@ export class BossRush {
     this.reinforce = this.knobs.stagger;
     this.spawnGroup(slots.slice(0, MAX_ALIVE), away);
     this.enemiesLeft = slots.length;
-    if (this.waveShield > 0 && player.alive) player.addShield(player.maxHp * this.waveShield, 30);
+    for (const { ship, waveShield } of this.captains) if (waveShield > 0 && ship.alive) ship.addShield(ship.maxHp * waveShield, 30);
     this.phase = 'fight';
     g.events.emit('wave', { wave: this.wave, boss: this.boss });
   }
@@ -369,14 +447,17 @@ export class BossRush {
 
   private spawnGroup(slots: Slot[], away: number): void {
     const g = this.game;
-    const player = this.player!;
-    const { hp: hpMul, dmg: dmgMul, elite, affixes } = this.scale;
+    const { dmg: dmgMul, elite, affixes } = this.scale;
+    const hpMul = this.scale.hp * (1 + COOP_HP * (this.captains.length - 1));
+    const afloat = this.afloat();
     slots.forEach((slot, i) => {
       const spec: ShipSpec = isTitanSlot(slot) ? this.titan(Number(slot.slice(6))) : randomOf(slot, g.rng, configEras(g.config));
       const a = away + (i - (slots.length - 1) / 2) * 0.12;
       const r = MAP_HALF * 0.82;
       const pos = findOpenWater(this.game.map, Math.cos(a) * r, Math.sin(a) * r);
-      const heading = bearingTo(pos.x, pos.z, player.pos.x, player.pos.z);
+      // The captains share the hunters out in turn.
+      const prey = afloat.length ? afloat[this.huntTurn++ % afloat.length] : this.player!;
+      const heading = bearingTo(pos.x, pos.z, prey.pos.x, prey.pos.z);
       const titan = spec.cls === 'TT';
       // Late endless waves sail elites: a line ship with one or two affixes in its name.
       const traits = !titan && elite > 0 && g.rng() < elite ? this.affixes(affixes) : [];
@@ -413,13 +494,13 @@ export class BossRush {
       if (traits.includes('warded')) s.addShield(s.maxHp * WARD, Infinity);
       g.fleet.push(s);
       const ai = new AIController(s, g);
-      ai.hunt = player;
+      ai.hunt = prey;
       g.ai.set(s, ai);
       if (titan && !this.boss) this.boss = s;
     });
   }
 
-  /** Three different upgrades for the intermission. */
+  /** Three different upgrades for one captain's intermission. */
   private roll(): Upgrade[] {
     const pool = [...UPGRADES];
     const out: Upgrade[] = [];
@@ -427,38 +508,63 @@ export class BossRush {
     return out;
   }
 
-  /** Take card `i` of the current offer. */
-  choose(i: number): boolean {
+  /** Captain `captain` takes card `i` of their offer; the next wave warms up once every captain has. */
+  choose(i: number, captain = 0): boolean {
     if (this.phase !== 'offer') return false;
-    const u = this.offer[i];
-    if (!u || !this.player) return false;
-    u.apply(this.player, this);
-    this.taken.push(u.id);
-    this.offer = [];
-    this.phase = 'warmup';
-    this.timer = WARMUP;
+    const c = this.captains[captain];
+    const u = c?.offer[i];
+    if (!u || c.chosen) return false;
+    u.apply(c.ship, this);
+    c.taken.push(u.id);
+    c.offer = [];
+    c.chosen = true;
     this.game.events.emit('upgrade', { id: u.id });
+    if (this.captains.every((k) => k.chosen)) {
+      this.phase = 'warmup';
+      this.timer = WARMUP;
+    }
     return true;
   }
 
   private waveCleared(): void {
     const g = this.game;
-    const p = this.player!;
     this.score += 5000 * this.wave;
     if (this.wave === RUSH_WAVES && !this.survival) this.cleared = true;
     g.events.emit('waveClear', { wave: this.wave, cleared: this.cleared && this.wave === RUSH_WAVES });
     // Refit between waves: patch the hull, a spare repair kit, some ultimate charge.
     for (const s of g.ships) {
-      if (!s.alive || s.team !== p.team) continue;
+      if (!s.alive || s.team !== 0) continue;
       s.heal(s.maxHp * 0.35);
       s.extinguish();
     }
-    const kit = p.consumables[0];
-    if (kit) kit.charges = Math.min(kit.spec.charges, kit.charges + 1);
-    p.boostUlts(0.25);
-    this.offer = this.roll();
+    for (const c of this.captains) if (!c.ship.alive) this.revive(c.ship);
+    for (const { ship } of this.captains) {
+      const kit = ship.consumables[0];
+      if (kit) kit.charges = Math.min(kit.spec.charges, kit.charges + 1);
+      ship.boostUlts(0.25);
+    }
+    for (const c of this.captains) {
+      c.offer = this.roll();
+      c.chosen = false;
+    }
     this.phase = 'offer';
     this.timer = OFFER_TIME;
+  }
+
+  /**
+   * A captain sunk in the wave sails again beside a shipmate at half strength. Refits stay with the
+   * hull; the repair kits (an Extra repair kit among them) are carried over the respawn's fresh set.
+   */
+  private revive(ship: Ship): void {
+    const kits = ship.consumables.map((k) => ({ spec: k.spec, charges: k.charges }));
+    const by = this.afloat()[0];
+    const at = by ? findOpenWater(this.game.map, by.pos.x, by.pos.z + CAPTAIN_GAP) : this.centre();
+    this.game.revive(ship, at.x, at.z, REVIVE_HP);
+    ship.consumables.forEach((k, i) => {
+      if (!kits[i]) return;
+      k.spec = kits[i].spec;
+      k.charges = kits[i].charges;
+    });
   }
 
   update(dt: number): void {
@@ -473,19 +579,37 @@ export class BossRush {
       }
       // The boss bar follows the wave's next titan when the first one sinks.
       if (this.boss && !this.boss.alive) this.boss = afloat.find((s) => s.spec.cls === 'TT') ?? this.boss;
+      this.retarget();
       if (this.enemiesLeft === 0) this.waveCleared();
       return;
     }
     this.timer -= dt;
+    // A captain under the AI (a dropped LAN peer) never stalls the others: card one, at once.
+    if (this.phase === 'offer') this.pickFor((c) => g.ai.has(c.ship));
     if (this.timer > 0) return;
-    if (this.phase === 'offer') this.choose(0);
+    if (this.phase === 'offer') this.pickFor(() => true);
     else this.spawnWave();
+  }
+
+  /** Card one for every captain still choosing that `who` names. */
+  private pickFor(who: (c: Captain) => boolean): void {
+    this.captains.forEach((c, i) => {
+      if (!c.chosen && who(c)) this.choose(0, i);
+    });
+  }
+
+  /** Hunters whose captain sank turn on the nearest one still afloat. */
+  private retarget(): void {
+    if (this.captains.every((c) => c.ship.alive)) return;
+    for (const [s, ai] of this.game.ai) {
+      if (s.team !== 1 || !ai.hunt || ai.hunt.alive || !this.captainOf(ai.hunt)) continue;
+      ai.hunt = this.nearestCaptain(s.pos.x, s.pos.z);
+    }
   }
 
   onSunk(ship: Ship, killer: Ship | null): void {
     const g = this.game;
     if (ship.team !== 1 || ship.isSummon) return;
-    const p = this.player;
     // Wrecks may leave a crate; a titan leaves three.
     const drops = ship.spec.cls === 'TT' ? 3 : g.rng() < 0.35 + this.dropBonus ? 1 : 0;
     const kinds: PickupKind[] = ['repair', 'overcharge', 'reset', 'fury'];
@@ -493,30 +617,31 @@ export class BossRush {
       const a = (i / Math.max(1, drops)) * Math.PI * 2;
       g.pickups.spawn(i === 0 && ship.spec.cls === 'TT' ? 'repair' : pick(kinds, g.rng), ship.pos.x + Math.cos(a) * 120, ship.pos.z + Math.sin(a) * 120);
     }
-    if (!p || killer !== p) return;
+    // Score, combo and Chain reaction follow the kill credit of any captain.
+    const c = this.captainOf(killer);
+    if (!c) return;
     // Kills in quick succession build a combo multiplier.
     this.combo = g.time - this.lastKillTime < COMBO_WINDOW ? this.combo + 1 : 1;
     this.lastKillTime = g.time;
     const mul = 1 + 0.5 * (Math.min(this.combo, 7) - 1);
     this.score += Math.round(1000 * this.wave * mul);
     if (ship.spec.cls === 'TT') this.score += 25000 * Math.ceil(this.wave / 5);
-    if (this.chainBlast > 0) {
-      g.strikes.spawn(p, { kind: 'mortar', skill: null, x: ship.pos.x, z: ship.pos.z, radius: 260, delay: 0.2, damage: this.chainBlast, fire: 0.5 });
+    if (c.chainBlast > 0) {
+      g.strikes.spawn(c.ship, { kind: 'mortar', skill: null, x: ship.pos.x, z: ship.pos.z, radius: 260, delay: 0.2, damage: c.chainBlast, fire: 0.5 });
     }
   }
 
-  /** The run ends when the player sinks: a win if wave 15 was cleared (Survival is always a last stand). */
+  /** The run ends when no captain is afloat: a win if wave 15 was cleared (Survival is always a last stand). */
   checkVictory(): void {
-    const p = this.player;
-    if (!p || p.alive) return;
+    if (!this.captains.length || this.captains.some((c) => c.ship.alive)) return;
     const held = Math.max(0, this.wave - 1);
     if (this.survival) return this.game.finish(1, `Held out for ${held} wave${held === 1 ? '' : 's'}`);
     this.game.finish(this.cleared ? 0 : 1, this.cleared ? `Survived ${this.wave} waves` : `Fell on wave ${this.wave}`);
   }
 
-  /** Score with the damage share included (for the live HUD). */
+  /** Score with every captain's damage share included (for the live HUD). */
   get total(): number {
-    return this.score + Math.round((this.player?.stats.damage ?? 0) / 10);
+    return this.score + Math.round(this.captains.reduce((n, c) => n + c.ship.stats.damage, 0) / 10);
   }
 }
 
