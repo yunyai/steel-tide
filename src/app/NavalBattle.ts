@@ -152,7 +152,7 @@ export class NavalBattle implements ActiveBattle {
         this.reportIn = 3.5;
         const rush = game.rush;
         const me = this.mine;
-        if (rush && me) this.newBest = saveBest(me.base.id, rush.wave, rush.total, rush.survival);
+        if (rush && me) this.newBest = saveBest(me.base.id, rush.wave, rush.total, rush.survival, this.config.rush);
         const win = g.winner !== -1 && g.winner === me?.team;
         audio.ui(win || openPlay(config.type) ? 'victory' : 'defeat');
         link?.over();

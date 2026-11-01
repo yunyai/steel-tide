@@ -1,5 +1,5 @@
 import type { Input } from '../input/Input';
-import type { BossRush } from '../modes/BossRush';
+import { RUSH_WAVES, type BossRush } from '../modes/BossRush';
 
 // Boss Rush refit choice between waves: three cards, picked with 1/2/3, a gamepad face
 // button or a click. Falls back to the first card when the clock runs out (the director
@@ -28,10 +28,18 @@ export class Intermission {
   private build(): void {
     const r = this.rush;
     const h = document.createElement('h3');
-    h.textContent = r.cleared && r.wave === 15 ? 'All 15 waves cleared' : `Wave ${r.wave} cleared`;
+    h.textContent = r.cleared && r.wave === RUSH_WAVES ? `All ${RUSH_WAVES} waves cleared` : `Wave ${r.wave} cleared`;
     const sub = document.createElement('div');
     sub.className = 'sub';
     sub.textContent = r.cleared ? 'Endless waves from here. Hull patched 35%, one repair kit restocked.' : 'Hull patched 35%, one repair kit restocked. Choose a refit.';
+    // What the next wave brings, so the refit can answer it.
+    const n = r.next;
+    const ahead = document.createElement('div');
+    ahead.className = 'next';
+    const parts = [`${n.ships} ship${n.ships === 1 ? '' : 's'}`];
+    if (n.titans) parts.push(n.titans === 1 ? 'a titan' : `${n.titans} titans`);
+    if (n.elites) parts.push('elites');
+    ahead.textContent = `Next: wave ${n.wave}, ${parts.join(', ')}`;
     const row = document.createElement('div');
     row.className = 'cards';
     r.offer.forEach((u, i) => {
@@ -54,7 +62,7 @@ export class Intermission {
       b.onclick = () => this.pick(i);
       row.append(b);
     });
-    this.root.replaceChildren(h, sub, row, this.count);
+    this.root.replaceChildren(h, sub, ahead, row, this.count);
   }
 
   private pick(i: number): void {

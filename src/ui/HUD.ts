@@ -530,6 +530,10 @@ export class HUD {
           audio.ui('horn');
         }
       }),
+      ev.view('reinforcements', (w) => {
+        this.callout('Reinforcements', `${w.count} more ship${w.count === 1 ? '' : 's'} inbound${w.left ? `, ${w.left} still to come` : ''}`, '#ff8a4d');
+        audio.ui('horn');
+      }),
       ev.view('convoy', (c) => {
         const ours = c.ship.team === this.team;
         if (c.kind === 'arrived') this.callout('Transport in port', ours ? `${c.ship.name} made it through` : `${c.ship.name} slipped past you`, ours ? palette().good : palette().enemy);

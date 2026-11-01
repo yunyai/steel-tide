@@ -82,6 +82,8 @@ export interface GameEventMap {
   /** Boss Rush: a wave arrives (`boss` is its titan), is cleared, or a refit is taken. */
   wave: { wave: number; boss: Ship | null };
   waveClear: { wave: number; cleared: boolean };
+  /** Boss Rush: held-back ships of a big wave sail in (`left` still wait). */
+  reinforcements: { wave: number; count: number; left: number };
   upgrade: { id: string };
   pickupSpawn: { pickup: Pickup };
   pickupTaken: { pickup: Pickup; ship: Ship };

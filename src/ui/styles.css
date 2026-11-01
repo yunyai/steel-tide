@@ -2755,6 +2755,14 @@ select {
   color: #c6d8e6;
 }
 
+.intermission .next {
+  margin-top: -12px;
+  font-family: var(--display);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+}
+
 .cards {
   display: flex;
   gap: 16px;
@@ -3414,6 +3422,39 @@ select {
   padding: 0;
   font-size: 1.05rem;
   line-height: 1;
+}
+
+/* A [−] value [+] number control (Boss Rush Custom difficulty). */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepper .num {
+  min-width: 4.2em;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 1.05rem;
+  color: var(--ice);
+}
+
+.stepper .step {
+  width: 2em;
+  height: 2em;
+  padding: 0;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.rush-knobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 4px 16px;
+}
+
+.rush-knobs[hidden] {
+  display: none;
 }
 
 .report tr.friend td:first-child {

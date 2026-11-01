@@ -12,12 +12,13 @@ import { ERAS, ERA_LABEL, FACTIONS, eraOf } from '../data/factions';
 import { CLASS_LABEL, SHIPS, SHIP_BY_ID, shipsIn, shipsOf } from '../data/ships';
 import { keyName, layoutFor } from '../input/Keybinds';
 import { RUSH_WAVES, loadBest } from '../modes/BossRush';
+import { RUSH_KNOBS, RUSH_PRESET_IDS, RUSH_PRESET_LABEL, describeKnobs, rushKnobs, type RushKnobs, type RushPreset } from '../modes/RushDifficulty';
 import { consumableLabel } from '../ships/Consumables';
 import type { GroundConfig } from '../ground/sim/setup';
 import type { VehicleSpec } from '../ground/sim/types';
 import { VEHICLES } from '../ground/sim/data';
 import { MAPS } from '../world/GameMap';
-import { field, h, html, seg } from './dom';
+import { field, h, html, seg, stepper } from './dom';
 import { eraSeg, erasBlurb } from './EraPicker';
 import { type GarageFlow, GroundMenu, kindSwitch } from './GroundMenu';
 import { classIcon, glyph, skillIcon, vehicleClassIcon } from './Icons';
@@ -151,6 +152,8 @@ export class Menu {
   private freeAi: [number, number] = [3, 4];
   /** Boss Rush or its endless variant, remembered between visits. */
   private rushType: 'bossrush' | 'survival' = 'bossrush';
+  /** Boss Rush Custom difficulty, seeded from the preset it was opened from and kept between visits. */
+  private rushCustom: RushKnobs | null = null;
   private tab: Tab = 'BB';
   /** The era tab open in the hangar. */
   private era: Era = 'historic';
@@ -366,11 +369,64 @@ export class Menu {
     let fleetsGroup: HTMLElement | null = null;
     let eraField: HTMLElement | null = null;
     notes();
-    const rushNote = () =>
-      this.rushType === 'survival'
-        ? 'No titans and no finish line: every wave is bigger than the last. Between waves you repair and pick one of three refits. How long can you hold?'
-        : `Every wave scales up. Titans arrive on waves 5, 10 and 15; after wave ${RUSH_WAVES} the waves never stop. Between waves you repair and pick one of three refits.`;
+    const rushNote = () => {
+      if (this.rushType === 'survival') return 'No titans and no finish line: every wave is bigger than the last. Between waves you repair and pick one of three refits. How long can you hold?';
+      const every = rushKnobs(d.rush).bossEvery;
+      const waves: number[] = [];
+      for (let n = every; n <= RUSH_WAVES; n += every) waves.push(n);
+      const list = waves.length > 1 ? `${waves.slice(0, -1).join(', ')} and ${waves[waves.length - 1]}` : String(waves[0]);
+      return `Every wave scales up. Titans arrive on waves ${list}; after wave ${RUSH_WAVES} the waves never stop, and keep climbing. Between waves you repair and pick one of three refits.`;
+    };
     const runNote = h('p', { class: 'note' }, rushNote());
+    // Boss Rush difficulty: four presets, or Custom with a stepper per knob.
+    const presetOf = (): RushPreset | 'custom' => d.rush?.preset ?? 'normal';
+    const knobs = h('div', { class: 'rush-knobs', role: 'group', 'aria-label': 'Custom difficulty' });
+    const difficultyNote = h('p', { class: 'note' });
+    const syncDifficulty = () => {
+      const preset = presetOf();
+      knobs.hidden = preset !== 'custom';
+      difficultyNote.textContent =
+        preset === 'normal'
+          ? `The Boss Rush as built: waves 1 to ${RUSH_WAVES} as they have always been, then endless waves that keep climbing.`
+          : describeKnobs(rushKnobs(d.rush), this.rushType !== 'survival');
+      runNote.textContent = rushNote();
+    };
+    const custom = () => {
+      const k = this.rushCustom!;
+      knobs.replaceChildren(
+        ...RUSH_KNOBS.filter((s) => this.rushType !== 'survival' || (s.key !== 'bossEvery' && s.key !== 'maxTitans')).map((s) =>
+          this.field(
+            s.label,
+            stepper(s.label, () => k[s.key], (v) => {
+              k[s.key] = v;
+              d.rush = { preset: 'custom', custom: { ...k } };
+              syncDifficulty();
+            }, s, () => this.hooks.click(), `rush-${s.key}`),
+          ),
+        ),
+      );
+    };
+    if (presetOf() === 'custom') custom();
+    const difficulty = [
+      this.field(
+        'Difficulty',
+        this.seg<RushPreset | 'custom'>(
+          [...RUSH_PRESET_IDS, 'custom' as const].map((v) => ({ value: v, label: RUSH_PRESET_LABEL[v] })),
+          presetOf,
+          (v) => {
+            if (v === 'custom') {
+              this.rushCustom ??= rushKnobs(d.rush);
+              d.rush = { preset: 'custom', custom: { ...this.rushCustom } };
+              custom();
+            } else d.rush = v === 'normal' ? undefined : { preset: v };
+            syncDifficulty();
+          },
+        ),
+        difficultyNote,
+      ),
+      knobs,
+    ];
+    syncDifficulty();
     // The screen reads in three parts: what kind of battle, who sails in it, and how hard it is.
     const fields: HTMLElement[] = [];
     const fleets: HTMLElement[] = [];
@@ -471,6 +527,9 @@ export class Menu {
             (v) => {
               d.type = this.rushType = v;
               runNote.textContent = rushNote();
+              // Survival has no titans, so its Custom knobs leave the titan ones out.
+              if (presetOf() === 'custom') custom();
+              syncDifficulty();
             },
           ),
           runNote,
@@ -491,6 +550,7 @@ export class Menu {
         ),
       );
     }
+    if (kind === 'rush') rules.push(...difficulty);
     rules.push(
       this.field(
         'AI skill',
@@ -528,7 +588,9 @@ export class Menu {
     const roster = h('nav', { class: 'roster panel', 'aria-label': 'Ships' });
     const dossier = h('section', { class: 'dossier panel' });
     const survival = d.type === 'survival';
-    const bests = loadBest(survival);
+    const bests = loadBest(survival, d.rush);
+    const preset = d.rush?.preset ?? 'normal';
+    const bestLabel = `${survival ? 'Survival' : 'Boss Rush'}${preset === 'normal' ? '' : ` (${RUSH_PRESET_LABEL[preset]})`}`;
     /** The preview shows the selected ship's Titan Shift form instead of the ship. */
     let formLook = false;
 
@@ -614,7 +676,7 @@ export class Menu {
           return {accepted:changes.map(c=>c.index),pending:[],skipped:[],rejected:[]};
         })).el]:[]),
         ...(s.id === 'tungsten' ? [tungstenCodex(() => this.hooks.click())] : []),
-        h('ul', { class: 'loadout' }, ...loadout(s).map((l) => h('li', {}, l)), ...(best ? [h('li', {}, `Best ${survival ? 'Survival' : 'Boss Rush'}: wave ${best.wave}, ${best.score.toLocaleString()} points`)] : [])),
+        h('ul', { class: 'loadout' }, ...loadout(s).map((l) => h('li', {}, l)), ...(best ? [h('li', {}, `Best ${bestLabel}: wave ${best.wave}, ${best.score.toLocaleString()} points`)] : [])),
       );
     };
 

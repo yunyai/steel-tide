@@ -64,6 +64,34 @@ export function multiSeg<T extends string>(options: { value: T; label: string }[
   return wrap;
 }
 
+/** A `[−] value [+]` control for a number on a step; both buttons take keys and a gamepad like any other. */
+export function stepper(label: string, get: () => number, set: (v: number) => void, o: { min: number; max: number; step: number; format(v: number): string }, click: () => void = () => {}, key = ''): HTMLElement {
+  const value = h('b', { class: 'num', 'aria-live': 'polite' });
+  const button = (d: -1 | 1) => {
+    const b = h('button', { type: 'button', class: 'btn step', 'aria-label': `${d < 0 ? 'Less' : 'More'}: ${label}`, ...(key ? { 'data-k': `${key}-${d < 0 ? 'down' : 'up'}` } : {}) }, d < 0 ? '−' : '+');
+    b.onclick = () => {
+      const v = get() + d * o.step;
+      if (v < o.min || v > o.max) return;
+      click();
+      set(v);
+      render();
+      // A button that just reached its end hands the focus to the other one.
+      if (b.disabled) (d < 0 ? up : down).focus({ preventScroll: true });
+    };
+    return b;
+  };
+  const down = button(-1);
+  const up = button(1);
+  const render = () => {
+    const v = get();
+    value.textContent = o.format(v);
+    down.disabled = v - o.step < o.min;
+    up.disabled = v + o.step > o.max;
+  };
+  render();
+  return h('div', { class: 'stepper', role: 'group', 'aria-label': label }, down, value, up);
+}
+
 export function field(label: string, control: HTMLElement, note?: HTMLElement | string): HTMLElement {
   if (control.getAttribute('role') === 'group' && !control.hasAttribute('aria-label')) control.setAttribute('aria-label', label);
   const f = h('div', { class: 'field' }, h('div', { class: 'label' }, label), control);

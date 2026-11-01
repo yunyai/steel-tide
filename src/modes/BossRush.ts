@@ -11,12 +11,14 @@ import type { Ship } from '../ships/Ship';
 import { copyLoadout } from '../data/architectLoadout';
 import { setArchitectLoadout } from '../skills/misc/ArchitectRuntime';
 import { findOpenWater } from '../world/openWater';
+import { AFFIXES, AFFIX_LABEL, MAX_ALIVE, RUSH_WAVES, isBossWave, isTitanSlot, rushKnobs, rushRecordKey, tableSlots, waveScale, type Affix, type RushDifficulty, type RushKnobs, type Slot, type WaveScale } from './RushDifficulty';
 
 // Boss Rush: the player holds the middle of the map against escalating waves, with a titan
-// every fifth wave. Between waves: a repair, then one of three stacking refit upgrades.
-// Survival is the same fight without titans and without an end: how many waves can you last?
+// every fifth wave (every `bossEvery` on other difficulties, see RushDifficulty). Between waves: a
+// repair, then one of three stacking refit upgrades. Survival is the same fight without titans and
+// without an end: how many waves can you last?
 
-export const RUSH_WAVES = 15;
+export { RUSH_WAVES };
 /** Seconds of the intermission card choice before one is picked automatically. */
 export const OFFER_TIME = 12;
 /** Countdown between choosing an upgrade and the next wave arriving. */
@@ -46,27 +48,28 @@ const BOSS_HP = 0.4;
 /** Undo the player-titan gun buff (reload ×0.75, shell damage ×1.25) on a boss. */
 const BOSS_GUNS = { reload: 1 / 0.75, damage: 0.8 };
 
-/** A titan of the battle's era: the first, second or third in its roster (any one past the end). */
-type Slot = Group | `titan:${number}`;
+/** The line ships extras and endless waves are drawn from. */
+const POOL: Group[] = ['BB', 'BB', 'cruiser', 'cruiser', 'DD', 'DD', 'SS', 'CV'];
 
-/** Waves 1..15. Every fifth is a titan with escorts. */
-const WAVES: Slot[][] = [
-  ['DD', 'DD', 'DD'],
-  ['DD', 'DD', 'cruiser', 'cruiser'],
-  ['cruiser', 'cruiser', 'DD', 'SS'],
-  ['BB', 'cruiser', 'DD', 'DD'],
-  ['titan:0', 'DD', 'DD'],
-  ['BB', 'BB', 'DD', 'DD'],
-  ['CV', 'cruiser', 'cruiser', 'DD', 'SS'],
-  ['BB', 'BB', 'cruiser', 'DD', 'DD'],
-  ['BB', 'cruiser', 'cruiser', 'cruiser', 'DD', 'DD'],
-  ['titan:1', 'cruiser', 'DD', 'DD'],
-  ['BB', 'BB', 'BB', 'DD', 'DD'],
-  ['BB', 'BB', 'CV', 'cruiser', 'DD', 'SS'],
-  ['BB', 'BB', 'cruiser', 'cruiser', 'DD', 'DD', 'SS'],
-  ['BB', 'BB', 'BB', 'cruiser', 'cruiser', 'DD', 'DD'],
-  ['titan:2', 'BB', 'cruiser', 'DD', 'DD'],
-];
+/** What each elite affix does to the ship that carries it (Warded also arrives behind a shield). */
+const ELITE: Record<Affix, (m: Ship['mods']) => void> = {
+  armored: (m) => {
+    m.damageTakenMul *= 0.7;
+  },
+  swift: (m) => {
+    m.speedMul *= 1.25;
+    m.turnMul *= 1.3;
+  },
+  gunner: (m) => {
+    m.reloadMul *= 0.75;
+    m.dispersionMul *= 0.8;
+  },
+  warded: (m) => {
+    m.fireDurationMul *= 0.5;
+  },
+};
+/** A Warded elite's shield, in its max HP. */
+const WARD = 0.25;
 
 export interface Upgrade {
   id: string;
@@ -190,12 +193,23 @@ export class BossRush {
   chainBlast = 0;
   waveShield = 0;
   dropBonus = 0;
+  /** The difficulty's knobs (Normal when the battle sets none). */
+  readonly knobs: RushKnobs;
+  /** Ships of the current wave held back while MAX_ALIVE enemies are afloat. */
+  queue: Slot[] = [];
+  /** Seconds until the next reinforcement group may sail. */
+  reinforce = 0;
+  /** How hard the current wave hits (its reinforcements too). */
+  private scale: WaveScale;
 
   constructor(
     private game: Game,
     /** Survival: no titans, no final wave. */
     readonly survival = false,
-  ) {}
+  ) {
+    this.knobs = rushKnobs(game.config.rush);
+    this.scale = waveScale(1, this.knobs);
+  }
 
   /** Spawn the player (and escorts) in open water at the centre. */
   start(): void {
@@ -278,23 +292,52 @@ export class BossRush {
   }
 
   get isBossWave(): boolean {
-    return !this.survival && this.wave > 0 && this.wave % 5 === 0;
+    return !this.survival && isBossWave(this.wave, this.knobs);
   }
 
-  /** The slots of wave `n` (endless waves past 15 are rolled at random). Survival trades each titan for a battleship and a cruiser. */
+  /** What the next wave brings, for the intermission card. */
+  get next(): { wave: number; ships: number; titans: number; elites: boolean } {
+    const n = this.wave + 1;
+    const k = this.knobs;
+    const sc = waveScale(n, k);
+    const boss = !this.survival && isBossWave(n, k);
+    return { wave: n, ships: n <= RUSH_WAVES ? tableSlots(n, k, boss).length + k.extraShips : sc.ships, titans: boss ? sc.titans : 0, elites: sc.elite > 0 };
+  }
+
+  /**
+   * The slots of wave `n`: waves 1..15 from the table plus the difficulty's extras, endless waves
+   * rolled at random. Survival never sends a titan.
+   */
   private composition(n: number): Slot[] {
-    if (this.survival) return this.rolled(n).flatMap((s): Slot[] => (s.startsWith('titan:') ? ['BB', 'cruiser'] : [s]));
-    return this.rolled(n);
+    const k = this.knobs;
+    const rng = this.game.rng;
+    const boss = !this.survival && isBossWave(n, k);
+    if (n <= RUSH_WAVES) {
+      const out = tableSlots(n, k, boss);
+      for (let i = 0; i < k.extraShips; i++) out.push(pick(POOL, rng));
+      return out;
+    }
+    const sc = waveScale(n, k);
+    const out: Slot[] = [];
+    if (boss) {
+      const first = Math.floor(rng() * bossesOf(configEras(this.game.config)).length);
+      for (let t = 0; t < sc.titans; t++) out.push(`titan:${first + t}`);
+    }
+    while (out.length < sc.ships) out.push(pick(POOL, rng));
+    return out;
   }
 
-  private rolled(n: number): Slot[] {
-    if (n <= RUSH_WAVES) return WAVES[n - 1];
-    const rng = this.game.rng;
-    const count = Math.min(9, 5 + Math.floor((n - RUSH_WAVES) / 2));
-    const pool: Group[] = ['BB', 'BB', 'cruiser', 'cruiser', 'DD', 'DD', 'SS', 'CV'];
-    const out: Slot[] = [];
-    if (n % 5 === 0) out.push(`titan:${Math.floor(rng() * bossesOf(configEras(this.game.config)).length)}`);
-    while (out.length < count) out.push(pick(pool, rng));
+  /** Enemies arrive from the side of the map away from the player, out of sight. */
+  private awayAngle(): number {
+    const p = this.player!;
+    return Math.atan2(-p.pos.z, -p.pos.x) + (this.game.rng() - 0.5) * Math.PI * 0.8;
+  }
+
+  /** `n` affixes, all different, for an elite. */
+  private affixes(n: number): Affix[] {
+    const pool = [...AFFIXES];
+    const out: Affix[] = [];
+    while (out.length < n && pool.length) out.push(pool.splice(Math.floor(this.game.rng() * pool.length), 1)[0]);
     return out;
   }
 
@@ -302,20 +345,43 @@ export class BossRush {
     const g = this.game;
     this.wave++;
     const player = this.player!;
-    // Enemies arrive from the side of the map away from the player, out of sight.
-    const away = Math.atan2(-player.pos.z, -player.pos.x) + (g.rng() - 0.5) * Math.PI * 0.8;
+    const away = this.awayAngle();
     const slots = this.composition(this.wave);
-    const hpMul = 1 + 0.06 * (this.wave - 1);
-    const dmgMul = 1 + 0.04 * (this.wave - 1);
+    this.scale = waveScale(this.wave, this.knobs);
     this.boss = null;
+    // A wave bigger than MAX_ALIVE holds the rest back as reinforcements.
+    this.queue = slots.slice(MAX_ALIVE);
+    this.reinforce = this.knobs.stagger;
+    this.spawnGroup(slots.slice(0, MAX_ALIVE), away);
+    this.enemiesLeft = slots.length;
+    if (this.waveShield > 0 && player.alive) player.addShield(player.maxHp * this.waveShield, 30);
+    this.phase = 'fight';
+    g.events.emit('wave', { wave: this.wave, boss: this.boss });
+  }
+
+  /** Send `room` more of the wave's held-back ships. */
+  private reinforcements(room: number): void {
+    const group = this.queue.splice(0, room);
+    this.spawnGroup(group, this.awayAngle());
+    this.reinforce = this.knobs.stagger;
+    this.game.events.emit('reinforcements', { wave: this.wave, count: group.length, left: this.queue.length });
+  }
+
+  private spawnGroup(slots: Slot[], away: number): void {
+    const g = this.game;
+    const player = this.player!;
+    const { hp: hpMul, dmg: dmgMul, elite, affixes } = this.scale;
     slots.forEach((slot, i) => {
-      const spec: ShipSpec = slot.startsWith('titan:') ? this.titan(Number(slot.slice(6))) : randomOf(slot as Group, g.rng, configEras(g.config));
+      const spec: ShipSpec = isTitanSlot(slot) ? this.titan(Number(slot.slice(6))) : randomOf(slot, g.rng, configEras(g.config));
       const a = away + (i - (slots.length - 1) / 2) * 0.12;
       const r = MAP_HALF * 0.82;
       const pos = findOpenWater(this.game.map, Math.cos(a) * r, Math.sin(a) * r);
       const heading = bearingTo(pos.x, pos.z, player.pos.x, player.pos.z);
-      const s = g.addShip(spec, 1 as Team, spec.cls === 'TT' ? spec.name.toUpperCase() : spec.name, pos.x, pos.z, heading);
       const titan = spec.cls === 'TT';
+      // Late endless waves sail elites: a line ship with one or two affixes in its name.
+      const traits = !titan && elite > 0 && g.rng() < elite ? this.affixes(affixes) : [];
+      const name = titan ? spec.name.toUpperCase() : [...traits.map((t) => AFFIX_LABEL[t]), spec.name].join(' ');
+      const s = g.addShip(spec, 1 as Team, name, pos.x, pos.z, heading);
       // A boss titan fights at the strength titans had before the player-titan buff: 40% of the
       // hit points, no Colossus passive, and the old reload and shell damage.
       if (titan) s.colossus = false;
@@ -343,15 +409,14 @@ export class BossRush {
           m.cooldownMul *= BOSS_COOLDOWN;
         },
       });
+      for (const t of traits) s.addEffect({ id: `refit:elite:${t}`, time: Infinity, apply: ELITE[t] });
+      if (traits.includes('warded')) s.addShield(s.maxHp * WARD, Infinity);
       g.fleet.push(s);
       const ai = new AIController(s, g);
       ai.hunt = player;
       g.ai.set(s, ai);
-      if (spec.cls === 'TT') this.boss = s;
+      if (titan && !this.boss) this.boss = s;
     });
-    if (this.waveShield > 0 && player.alive) player.addShield(player.maxHp * this.waveShield, 30);
-    this.phase = 'fight';
-    g.events.emit('wave', { wave: this.wave, boss: this.boss });
   }
 
   /** Three different upgrades for the intermission. */
@@ -400,7 +465,14 @@ export class BossRush {
     const g = this.game;
     if (g.over) return;
     if (this.phase === 'fight') {
-      this.enemiesLeft = g.ships.filter((s) => s.alive && s.team === 1 && !s.isSummon).length;
+      const afloat = g.ships.filter((s) => s.alive && s.team === 1 && !s.isSummon);
+      this.enemiesLeft = afloat.length + this.queue.length;
+      if (this.queue.length) {
+        this.reinforce -= dt;
+        if (this.reinforce <= 0 && afloat.length < MAX_ALIVE) this.reinforcements(MAX_ALIVE - afloat.length);
+      }
+      // The boss bar follows the wave's next titan when the first one sinks.
+      if (this.boss && !this.boss.alive) this.boss = afloat.find((s) => s.spec.cls === 'TT') ?? this.boss;
       if (this.enemiesLeft === 0) this.waveCleared();
       return;
     }
@@ -451,28 +523,35 @@ export class BossRush {
 const BEST_KEY = 'steel-tide:bossrush';
 const SURVIVAL_KEY = 'steel-tide:survival';
 
+/** Where a difficulty's records live: Normal keeps the keys from before difficulties existed. */
+function recordKey(survival: boolean, d?: RushDifficulty): string {
+  const base = survival ? SURVIVAL_KEY : BEST_KEY;
+  const k = rushRecordKey(d);
+  return k === 'normal' ? base : `${base}:${k}`;
+}
+
 export interface RushBest {
   wave: number;
   score: number;
 }
 
-/** Best run per ship id, from local storage (empty when storage is unavailable). */
-export function loadBest(survival = false): Record<string, RushBest> {
+/** Best run per ship id at a difficulty, from local storage (empty when storage is unavailable). */
+export function loadBest(survival = false, d?: RushDifficulty): Record<string, RushBest> {
   try {
-    return JSON.parse(localStorage.getItem(survival ? SURVIVAL_KEY : BEST_KEY) ?? '{}') as Record<string, RushBest>;
+    return JSON.parse(localStorage.getItem(recordKey(survival, d)) ?? '{}') as Record<string, RushBest>;
   } catch {
     return {};
   }
 }
 
 /** Record a run; returns true when it beat the ship's previous best score. */
-export function saveBest(shipId: string, wave: number, score: number, survival = false): boolean {
-  const all = loadBest(survival);
+export function saveBest(shipId: string, wave: number, score: number, survival = false, d?: RushDifficulty): boolean {
+  const all = loadBest(survival, d);
   const prev = all[shipId];
   if (prev && prev.score >= score) return false;
   all[shipId] = { wave: Math.max(wave, prev?.wave ?? 0), score };
   try {
-    localStorage.setItem(survival ? SURVIVAL_KEY : BEST_KEY, JSON.stringify(all));
+    localStorage.setItem(recordKey(survival, d), JSON.stringify(all));
   } catch {
     // Storage blocked (private window): the run still counts on screen.
   }

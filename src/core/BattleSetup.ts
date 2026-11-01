@@ -4,6 +4,7 @@ import { configEras } from '../data/eras';
 import { SHIPS, SHIP_BY_ID, shipsIn } from '../data/ships';
 import { pick } from './math';
 import type { BattleEra, Era, EraSel, ShipClass, ShipSpec, Team } from './types';
+import type { RushDifficulty } from '../modes/RushDifficulty';
 
 /** One captain at this screen, or several on a LAN (each peer runs the same battle in lockstep). */
 export type BattleMode = 'solo' | 'lan';
@@ -45,6 +46,8 @@ export interface BattleConfig {
   seed: number;
   /** Boss Rush: AI escorts sailing with the player (0 or 2). */
   escorts?: number;
+  /** Boss Rush and Survival: the difficulty (Normal when unset). */
+  rush?: RushDifficulty;
   /** Convoy: which side of it the player's team is on (escort by default). */
   convoySide?: ConvoySide;
   /** The eras whose ships sail (see data/eras); replaces `era` when set. */

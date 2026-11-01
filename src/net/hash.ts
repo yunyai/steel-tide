@@ -138,7 +138,7 @@ export function hashSections(g: Game): Sections {
   h = SEED;
   const r = g.rush;
   h = mix(h, r ? 1 : 0);
-  if (r) for (const n of [r.wave, idOf(r.phase), r.timer, r.score, r.enemiesLeft, r.cleared ? 1 : 0, r.offer.length]) h = mix(h, n);
+  if (r) for (const n of [r.wave, idOf(r.phase), r.timer, r.score, r.enemiesLeft, r.cleared ? 1 : 0, r.offer.length, r.queue.length, r.reinforce]) h = mix(h, n);
   const c = g.convoy;
   h = mix(h, c ? 1 : 0);
   if (c) for (const n of [c.arrived, c.sunk, ...c.transports.map((t) => t.id)]) h = mix(h, n);

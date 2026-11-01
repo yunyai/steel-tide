@@ -1,6 +1,7 @@
 import { CLASS_LABEL } from '../data/ships';
 import { openPlay } from '../core/BattleSetup';
 import type { Game } from '../core/Game';
+import { RUSH_PRESET_LABEL } from '../modes/RushDifficulty';
 import type { Team } from '../core/types';
 import type { Ship } from '../ships/Ship';
 import { captainName } from './names';
@@ -125,6 +126,8 @@ export function buildReport(game: Game, humans: Ship[], newBest: boolean, action
   if (rush) {
     verdict.textContent = rush.cleared ? `${rush.wave} waves survived` : `Wave ${rush.wave}`;
     verdict.classList.add(rush.cleared ? 'win' : 'rush');
+    const preset = game.config.rush?.preset ?? 'normal';
+    if (preset !== 'normal') verdict.append(el('span', 'badge', RUSH_PRESET_LABEL[preset]));
     if (newBest) verdict.append(el('span', 'badge', 'New best'));
   } else if (openPlay(game.config.type)) {
     verdict.textContent = game.sandbox ? 'Sandbox over' : 'Free play over';
