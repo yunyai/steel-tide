@@ -4462,3 +4462,11 @@ select {
 .codex-detail dt { padding-top:1px; font-family:var(--display); font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--mute); }
 .codex-detail dd { margin:0; color:#d6e4ee; }
 @media(max-width:520px) { .tungsten-codex { padding:10px; } .codex-chips { grid-template-columns:repeat(4,minmax(0,1fr)); } .codex-detail dl { grid-template-columns:minmax(0,1fr); gap:2px; } .codex-detail dd { margin-bottom:6px; } }
+
+/* Ship-specific resources stay adjacent to the titan skill bar. */
+.misc-titan-info{max-width:800px;padding:7px 12px;background:rgba(12,18,27,.88);border-left:2px solid #e9bb75;color:#eadbc3;font-size:11px;letter-spacing:.04em;line-height:1.5;pointer-events:none}
+.judge-law-menu{display:grid;grid-template-columns:repeat(3,minmax(110px,1fr));gap:4px;padding:10px;background:#151c29;border:1px solid #d9b66e;pointer-events:auto}
+.judge-law-menu[hidden]{display:none}.judge-law-menu button{padding:9px 12px;color:#e5d9c2;background:#222c3c;border:1px solid #556071;text-align:left;font:inherit;cursor:pointer}.judge-law-menu button.selected,.judge-law-menu button:focus-visible{border-color:#ffe19b;background:#4d4230;outline:2px solid #ffe19b;outline-offset:1px}
+@media(max-width:650px){.judge-law-menu{grid-template-columns:repeat(2,minmax(95px,1fr))}.misc-titan-info{font-size:10px;max-width:95vw}}
+
+.judge-law-menu::after{content:attr(data-help);grid-column:1/-1;color:#d8c69e;font-size:11px;padding:4px 2px 0}

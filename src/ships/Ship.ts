@@ -1,3 +1,7 @@
+import {newJudgeState,updateJudge,clearJudge, type JudgeState} from '../skills/misc/JudgeRuntime';
+import {newHexweaverState,updateHexweaver,clearHexweaver,hexweaverAbsorb,pinCharges,type HexweaverState} from '../skills/misc/HexweaverRuntime';
+import {newGourmandState,updateGourmand,clearGourmand,swallowedBy,gourmandBlocksSkill,gourmandSwallowMods,type GourmandState} from '../skills/misc/GourmandRuntime';
+import {newFaultlineState,updateFaultline,clearFaultline,applyFaultlinePassives,type FaultlineState} from '../skills/misc/FaultlineRuntime';
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
 import { dockedShot, dockedType } from '../skills/misc/ArchitectDocked';
@@ -86,6 +90,8 @@ export interface ControlState {
   slot: number | null;
   /** Skill to trigger this tick: 0 and 1 normal skills, 2 the ultimate, -1 none. */
   skill: number;
+  /** Selected Judge law, supplied with the E activation. */
+  judgeLaw?: number;
   consumable: number;
   architectHullDash:boolean;
   architectMobileBattery:boolean;
@@ -527,6 +533,10 @@ export class Ship {
   expiresAt = Infinity;
   stepper: StepperState | null = null;
   tungsten: TungstenState | null = null;
+  judge:JudgeState|null=null;
+  hexweaver:HexweaverState|null=null;
+  gourmand:GourmandState|null=null;
+  faultline:FaultlineState|null=null;
 
   pos = new Vector3();
   heading = 0;
@@ -670,6 +680,10 @@ export class Ship {
     this.hp = this.maxHp = spec.hp;
     if (spec.id === 'stepper') this.stepper = newStepperState();
     if (spec.id === 'tungsten') this.tungsten = newTungstenState();
+    if(spec.id==='judge')this.judge=newJudgeState();
+    if(spec.id==='hexweaver')this.hexweaver=newHexweaverState();
+    if(spec.id==='gourmand')this.gourmand=newGourmandState();
+    if(spec.id==='faultline')this.faultline=newFaultlineState();
     this.colossus = spec.cls === 'TT';
     this.trait = traitOf(spec);
     this.build(spec);
@@ -962,13 +976,19 @@ export class Ship {
     this.updateForm();
     this.updateShield(dt);
     this.updateSub(dt);
-    if (!this.architectPlatform && !this.architectDrone && !wasAssembly && !wasDrive && !wasCross && !this.stepper?.flicker && !this.stepper?.rush && !this.tungsten?.lunge) this.updateMovement(dt);
+    if (!swallowedBy(this.game,this) && !this.architectPlatform && !this.architectDrone && !wasAssembly && !wasDrive && !wasCross && !this.stepper?.flicker && !this.stepper?.rush && !this.tungsten?.lunge) this.updateMovement(dt);
     updateTungsten(this, dt);
+    updateJudge(this,dt);
+    updateHexweaver(this,dt);
+    updateGourmand(this,dt);
+    updateFaultline(this,dt);
+    if(!swallowedBy(this.game,this)){
     this.updateMain(dt);
     this.updateSecondaries(dt);
     this.updateTorpedoes(dt);
     this.updateVls(dt);
     this.updateAir(dt);
+    }
     this.updateDamageOverTime(dt);
     this.updateRegen(dt);
     this.updateAura(dt);
@@ -1057,6 +1077,7 @@ export class Ship {
     for (const e of this.effects) if (!e.id.startsWith('debuff:')) e.apply(m);
     if (this.architect) applyArsenalPassives(this, m);
     if (this.tungsten) applyTungstenPassives(this, m);
+    applyFaultlinePassives(this,m);
     const { speedMul, traverseMul, turnMul } = m;
     for (const e of this.effects) if (e.id.startsWith('debuff:')) e.apply(m);
     if (m.unstoppable) {
@@ -1077,6 +1098,7 @@ export class Ship {
     if (m.untargetable && this.trait?.ambush) this.ambushReady = true;
     m.damageTakenMul *= 1 - m.citadelDR;
     if (m.bulwark) m.damageTakenMul *= bulwarkTaken(m.bulwark);
+    gourmandSwallowMods(this,m);
     this.mods = m;
   }
 
@@ -1112,6 +1134,7 @@ export class Ship {
     c.throttleUp = c.throttleDown = c.diveUp = c.diveDown = false;
     c.slot = null;
     c.skill = -1;
+    delete c.judgeLaw;
     c.consumable = -1;
     c.architectHullDash=c.architectMobileBattery=false;
   }
@@ -1119,6 +1142,8 @@ export class Ship {
   /** Ready to trigger: off cooldown (or meter full for an ultimate) and not already running. */
   skillReady(i: number): boolean {
     const st = this.skills[i];
+    if(gourmandBlocksSkill(this.game,this,i))return false;
+    if(this.hexweaver&&i===0&&pinCharges(this)<=0)return false;
     if (this.architect?.ultimate && ![1,4,5].includes(i)) return false;
     if (!st || !this.alive || st.active || this.controlBlocks(st.spec)) return false;
     return st.spec.ult ? st.meter >= 1 && !this.isSummon : st.cooldown <= 0;
@@ -1181,6 +1206,7 @@ export class Ship {
       st.meter = 0;
       this.form?.used.add(i);
     } else st.cooldown = st.spec.cooldown * this.mods.cooldownMul;
+    if(this.judge&&i===1)delete this.control.judgeLaw;
     this.game.events.emit('skill', { ship: this, index: i });
     mirrorStep(this, i, origin);
     return true;
@@ -1207,7 +1233,7 @@ export class Ship {
       if (st.cooldown > 0) st.cooldown -= dt;
       if (!st.active) continue;
       const impl = SKILLS[st.spec.id];
-      impl?.update?.(this, this.game, dt, st);
+      if(!gourmandBlocksSkill(this.game,this,st.index))impl?.update?.(this, this.game, dt, st);
       st.time -= dt;
       if (st.time <= 0 || !this.alive) {
         st.active = false;
@@ -1289,6 +1315,7 @@ export class Ship {
     this.pushZ *= pk;
     const fx = forwardX(this.heading);
     const fz = forwardZ(this.heading);
+    if(this.effects.some(e=>e.id.startsWith('debuff:judgeFreeze:'))&&this.mods.rooted)this.pushX=this.pushZ=0;
     const nx = this.pos.x + (fx * this.speed + this.pushX) * dt;
     const nz = this.pos.z + (fz * this.speed + this.pushZ) * dt;
 
@@ -1298,7 +1325,7 @@ export class Ship {
     const hBow = this.game.map.heightAt(nx + fx * probe, nz + fz * probe);
     const hMid = this.game.map.heightAt(nx, nz);
     const keel = -Math.min(s.draft, 6) * 0.6;
-    if (hBow > keel || hMid > keel) {
+    if (hBow > keel || hMid > keel || this.game.map.dynamicPathBlocked(this.pos.x,this.pos.z,nx,nz,s.beam*.5)) {
       this.speed = 0;
       this.pushX = this.pushZ = 0;
       // A touch pushes the hull clear and stops it dead, so the next one may come a second or so
@@ -1695,6 +1722,7 @@ export class Ship {
     if (pierce && (this.mods.banished || this.effects.some((e) => e.id === 'spawn' || e.id === 'revived'))) return 0;
     if (this.mods.invulnerable && !pierce) return 0;
     if (incomingStep(this, attacker, reflected, pierce, periodic)) return 0;
+    if(this.judge&&this.judge.objectionUntil>this.game.time&&attacker&&attacker.team!==this.team&&!pierce&&this.game.rng()<.5)return 0;
     const hostile = !!attacker && attacker.team !== this.team;
     const huntOwner=attacker?.architectPlatform?.owner??attacker?.architectDrone?.owner??attacker;
     if(!forwarded&&!reflected&&huntOwner?.architect&&huntOwner.architect.huntUntil>this.game.time&&huntOwner.architect.huntTarget===this.id)amount*=1.4;
@@ -1754,6 +1782,7 @@ export class Ship {
       if (this.shield <= 0) this.shield = this.shieldMax = this.shieldTime = 0;
       if (raw <= 0) return 0;
     }
+    if(hostile&&!pierce)raw=hexweaverAbsorb(this,raw);
     if (hostile) this.intake += raw;
     let dmg = Math.min(this.hp, raw);
     if (this.mods.undying || this.game.sandbox?.undying(this)) dmg = Math.max(0, Math.min(dmg, this.hp - 1));
@@ -1969,6 +1998,7 @@ export class Ship {
     clearArchitect(this);
     clearStepper(this);
     clearTungsten(this);
+    clearJudge(this);clearHexweaver(this);clearGourmand(this);clearFaultline(this);
     this.withdrawn = false;
     this.detonated = false;
     this.hp = this.maxHp;
@@ -2046,6 +2076,7 @@ export class Ship {
     clearArchitect(this);
     clearStepper(this);
     clearTungsten(this);
+    clearJudge(this);clearHexweaver(this);clearGourmand(this);clearFaultline(this);
     this.alive = false;
     this.withdrawn = true;
     this.hp = 0;

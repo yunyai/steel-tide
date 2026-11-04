@@ -15,6 +15,72 @@ export interface Island {
   losR: number;
 }
 
+/** A temporary capsule-shaped ridge. Width is its full blocking width, in metres. */
+export interface DynamicRidge {
+  id: number;
+  owner: number;
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+  width: number;
+  height: number;
+  expiresAt: number;
+}
+
+export function ridgeNearest(r: DynamicRidge, x: number, z: number): { x: number; z: number } {
+  const dx = r.x1 - r.x0, dz = r.z1 - r.z0;
+  const f = Math.max(0, Math.min(1, ((x - r.x0) * dx + (z - r.z0) * dz) / (dx * dx + dz * dz || 1)));
+  return { x: r.x0 + dx * f, z: r.z0 + dz * f };
+}
+
+export function ridgeDistance(r: DynamicRidge, x: number, z: number): number {
+  const p = ridgeNearest(r, x, z);
+  return Math.hypot(x - p.x, z - p.z);
+}
+
+function segmentDistance(a: DynamicRidge, b: DynamicRidge): number {
+  const cross = (ax: number, az: number, bx: number, bz: number) => ax * bz - az * bx;
+  const ax = a.x1 - a.x0, az = a.z1 - a.z0, bx = b.x1 - b.x0, bz = b.z1 - b.z0;
+  const den = cross(ax, az, bx, bz);
+  if (Math.abs(den) > 1e-8) {
+    const t = cross(b.x0 - a.x0, b.z0 - a.z0, bx, bz) / den;
+    const u = cross(b.x0 - a.x0, b.z0 - a.z0, ax, az) / den;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return 0;
+  }
+  return Math.min(ridgeDistance(a, b.x0, b.z0), ridgeDistance(a, b.x1, b.z1), ridgeDistance(b, a.x0, a.z0), ridgeDistance(b, a.x1, a.z1));
+}
+
+/** Parametric intervals where a segment lies inside a capsule's planar footprint. */
+function ridgeIntervals(r: DynamicRidge, ax: number, az: number, bx: number, bz: number, clearance: number): [number, number][] {
+  const intervals: [number, number][] = [], radius = r.width / 2 + clearance;
+  const dx = bx - ax, dz = bz - az, length = Math.hypot(r.x1 - r.x0, r.z1 - r.z0);
+  const ux = (r.x1 - r.x0) / (length || 1), uz = (r.z1 - r.z0) / (length || 1);
+  const localX = (ax - r.x0) * ux + (az - r.z0) * uz;
+  const localZ = -(ax - r.x0) * uz + (az - r.z0) * ux;
+  let lo = 0, hi = 1;
+  for (const [origin, direction, min, max] of [[localX, dx * ux + dz * uz, 0, length], [localZ, -dx * uz + dz * ux, -radius, radius]]) {
+    if (Math.abs(direction) < 1e-10) {
+      if (origin < min || origin > max) { hi = -1; break; }
+    } else {
+      const a = (min - origin) / direction, b = (max - origin) / direction;
+      lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b));
+      if (lo > hi) break;
+    }
+  }
+  if (lo <= hi) intervals.push([lo, hi]);
+  const a = dx * dx + dz * dz;
+  for (const [cx, cz] of [[r.x0, r.z0], [r.x1, r.z1]]) {
+    const ox = ax - cx, oz = az - cz, c = ox * ox + oz * oz - radius * radius;
+    if (a < 1e-10) { if (c <= 0) intervals.push([0, 1]); continue; }
+    const b = 2 * (ox * dx + oz * dz), discriminant = b * b - 4 * a * c;
+    if (discriminant < 0) continue;
+    const root = Math.sqrt(discriminant), low = Math.max(0, (-b - root) / (2 * a)), high = Math.min(1, (-b + root) / (2 * a));
+    if (low <= high) intervals.push([low, high]);
+  }
+  return intervals;
+}
+
 export interface CapPoint {
   name: string;
   x: number;
@@ -143,6 +209,7 @@ const SEABED = -40;
 
 export class GameMap {
   readonly islands: Island[];
+  dynamicRidges: DynamicRidge[] = [];
 
   constructor(
     readonly preset: MapPreset,
@@ -157,8 +224,8 @@ export class GameMap {
     return isl.r * (1 + 0.22 * Math.sin(3 * angle + s) + 0.13 * Math.sin(5 * angle + s * 1.7) + 0.07 * Math.sin(9 * angle + s * 0.3));
   }
 
-  /** Terrain height at a world point (negative = underwater). */
-  heightAt(x: number, z: number): number {
+  /** Static island height remains independent of temporary gameplay terrain. */
+  staticHeightAt(x: number, z: number): number {
     let h = SEABED;
     for (const isl of this.islands) {
       const dx = x - isl.x;
@@ -181,6 +248,48 @@ export class GameMap {
     return h;
   }
 
+  /** Height queries are shared by grounding, AI navigation and projectile collision. */
+  heightAt(x: number, z: number): number {
+    let h = this.staticHeightAt(x, z);
+    for (const r of this.dynamicRidges) if (ridgeDistance(r, x, z) <= r.width / 2) h = Math.max(h, r.height);
+    return h;
+  }
+
+  /** Require clear ends and a navigable margin so ridges cannot connect land or form cages. */
+  canPlaceDynamicRidge(r: DynamicRidge): boolean {
+    if (![r.id, r.owner, r.x0, r.z0, r.x1, r.z1, r.width, r.height, r.expiresAt].every(Number.isFinite)) return false;
+    const len = Math.hypot(r.x1 - r.x0, r.z1 - r.z0);
+    if (len < 100 || len > 1800 || r.width < 40 || r.width > 220 || r.height < 10 || r.height > 120) return false;
+    const margin = 350 + r.width / 2;
+    for (const [x, z] of [[r.x0, r.z0], [r.x1, r.z1]]) {
+      if (Math.abs(x) + margin > MAP_HALF * .76 || Math.abs(z) + margin > MAP_HALF - 300) return false;
+    }
+    // Bound each island's full lobed footprint rather than testing only the clearance ring.
+    // A tiny island between samples must not become a bridge that seals a channel.
+    if (this.islands.some(isl => ridgeDistance(r, isl.x, isl.z) < isl.r * 1.6 + margin)) return false;
+    const samples = Math.ceil(len / 100);
+    for (let i = 0; i <= samples; i++) {
+      const x = r.x0 + (r.x1 - r.x0) * i / samples, z = r.z0 + (r.z1 - r.z0) * i / samples;
+      for (let j = 0; j < 12; j++) {
+        const a = j * Math.PI / 6;
+        if (this.staticHeightAt(x + Math.cos(a) * margin, z + Math.sin(a) * margin) > -20) return false;
+      }
+      if (this.staticHeightAt(x, z) > -20) return false;
+    }
+    return !this.dynamicRidges.some(o => segmentDistance(o, r) < (o.width + r.width) / 2 + 350);
+  }
+
+  addDynamicRidge(r: DynamicRidge): boolean {
+    if (!this.canPlaceDynamicRidge(r)) return false;
+    if (this.dynamicRidges.some(o => o.id === r.id && o.owner === r.owner)) return false;
+    this.dynamicRidges.push({ ...r });
+    return true;
+  }
+
+  expireDynamicRidges(now: number): void {
+    this.dynamicRidges = this.dynamicRidges.filter(r => r.expiresAt > now);
+  }
+
   /** Unit vector pointing away from the nearest island. */
   awayFromLand(x: number, z: number): { x: number; z: number } {
     let best: Island | null = null;
@@ -192,6 +301,19 @@ export class GameMap {
         best = isl;
       }
     }
+    let nearestDynamic: { x: number; z: number } | null = null;
+    for (const r of this.dynamicRidges) {
+      const p = ridgeNearest(r, x, z), d = Math.hypot(x - p.x, z - p.z) - r.width / 2;
+      if (d >= bd) continue;
+      bd = d;
+      const dx = x - p.x, dz = z - p.z, n = Math.hypot(dx, dz);
+      if (n > .001) nearestDynamic = { x: dx / n, z: dz / n };
+      else {
+        const rx = r.x1 - r.x0, rz = r.z1 - r.z0, len = Math.hypot(rx, rz) || 1;
+        nearestDynamic = { x: -rz / len, z: rx / len };
+      }
+    }
+    if (nearestDynamic) return nearestDynamic;
     if (!best) return { x: 0, z: 0 };
     const dx = x - best.x;
     const dz = z - best.z;
@@ -199,8 +321,26 @@ export class GameMap {
     return { x: dx / l, z: dz / l };
   }
 
+  /** Swept planar collision, including the caller's hull/route clearance. */
+  dynamicPathBlocked(ax: number, az: number, bx: number, bz: number, clearance = 0): boolean {
+    const line: DynamicRidge = { id: 0, owner: 0, x0: ax, z0: az, x1: bx, z1: bz, width: 0, height: 0, expiresAt: 0 };
+    return this.dynamicRidges.some(r => segmentDistance(r, line) <= r.width / 2 + Math.max(0, clearance));
+  }
+
+  /** Swept 3D collision: high shells pass over the ridge, low shots and torpedoes do not. */
+  dynamicSegmentBlocked(ax: number, ay: number, az: number, bx: number, by: number, bz: number, clearance = 0): boolean {
+    const padding = Math.max(0, clearance);
+    for (const r of this.dynamicRidges) {
+      for (const [lo, hi] of ridgeIntervals(r, ax, az, bx, bz, padding)) {
+        if (Math.min(ay + (by - ay) * lo, ay + (by - ay) * hi) <= r.height + padding) return true;
+      }
+    }
+    return false;
+  }
+
   /** True if islands block the view between two points. */
   losBlocked(ax: number, az: number, bx: number, bz: number): boolean {
+    if (this.dynamicPathBlocked(ax, az, bx, bz)) return true;
     for (const isl of this.islands) {
       if (segmentHitsCircle(ax, az, bx, bz, isl.x, isl.z, isl.losR)) return true;
     }

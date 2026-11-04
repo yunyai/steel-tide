@@ -1,3 +1,5 @@
+import {LAWS,LAW_LABELS,violationCount} from '../skills/misc/JudgeRuntime';
+import {pinCharges} from '../skills/misc/HexweaverRuntime';
 import { architectSkillPresentation,architectModuleSkillPresentation,architectIncomingBattery } from './ArchitectSkillPresentation';
 import { architectDockingStatus } from '../skills/misc/ArchitectRuntime';
 import { dockedCount } from '../skills/misc/ArchitectDocked';
@@ -167,6 +169,8 @@ export class HUD {
     gauges: Record<'cube' | 'store', { root: HTMLElement; fill: HTMLElement; text: HTMLElement }>;
   } | null = null;
   private skillEls: SkillEl[] = [];
+  private miscInfo:HTMLElement|null=null;
+  private lawMenu:HTMLElement|null=null;
   private consEls: SkillEl[] = [];
   private vectorEls: {root:HTMLElement;t:HTMLElement;count:HTMLElement;lastActive?:number;wasReady:boolean}[] = [];
   /** LAN Free play: the last "minutes left" warning given before the server's time limit. */
@@ -381,6 +385,12 @@ export class HUD {
       e.formLeft = el('span', 'left num', fb);
     }
 
+    if(me.judge||me.hexweaver||me.gourmand||me.faultline){
+      this.miscInfo=el('div','misc-titan-info',ck);this.miscInfo.setAttribute('aria-live','polite');
+      if(me.judge){this.lawMenu=el('div','judge-law-menu',ck);this.lawMenu.setAttribute('role','listbox');this.lawMenu.setAttribute('aria-label','Choose law');this.lawMenu.title='1–6: choose · Arrows: select · Enter/E: enact · Escape: cancel';this.lawMenu.dataset.help=pc.device==='mouse'?this.lawMenu.title:'D-pad: select · A: enact · B: cancel';
+        LAWS.forEach((law,i)=>{const b=el('button','',this.lawMenu!);b.textContent=`${i+1} · ${LAW_LABELS[law]}`;b.setAttribute('role','option');b.addEventListener('click',()=>{pc.lawSelection.cursor=i;const choice=pc.lawSelection.confirm();if(choice!==null){pc.out.judgeLaw=choice;pc.out.skill=1;}});});
+      }
+    }
     const sb = el('div', `skillbar${titan ? ' titan' : ''}`, ck);
     let normals = 0;
     let ults = 0;
@@ -659,6 +669,16 @@ export class HUD {
     this.updateHull(dt);
     this.updateSkills();
     this.updateTungsten();
+    if(this.miscInfo){
+      let info='';
+      if(me.judge){const a=me.judge,target=pc.lock??pc.assist;info=`COURT ${a.court?'ACTIVE':'UNPLACED'} · ${a.martialUntil>g.time?'MARTIAL LAW '+Math.ceil(a.martialUntil-g.time)+'s':a.laws.map(l=>LAW_LABELS[l.id]+' '+Math.ceil(l.until-g.time)+'s').join(' · ')||'E: choose a law'}${target?' · '+target.name+': '+violationCount(me,target)+'/20 violations':''}`;}
+      if(me.hexweaver){const a=me.hexweaver;info=`PINS ${pinCharges(me)}/4${a.recharge.length?' · next '+Math.max(0,Math.min(...a.recharge)-g.time).toFixed(1)+'s':''} · DOLLS ${a.dolls.length}/4 · `+a.dolls.map(d=>{const t=g.ships.find(t=>t.id===d.target);return `${t?.name??'Doll'} ${d.pins} pins${d.stitchedUntil>g.time?' ↔':''}${d.burnUntil>g.time?' ♨':''}`;}).join(' · ');}
+      if(me.gourmand){const a=me.gourmand,p=a.pantry;info=`PANTRY · Shell ${p.shells} · Explosive ${p.explosives} · Scrap ${p.wreckage} / ${a.banquetUntil>g.time?30:18}${a.cooked?' · MEAL READY '+Math.ceil(a.cooked.until-g.time)+'s':''}${a.swallow?' · DIGESTING '+Math.ceil(a.swallow.until-g.time)+'s':''}`;}
+      if(me.faultline){const a=me.faultline;info=`PRESSURE ${Math.round(a.pressure)} · FRACTURES ${a.fractures.length} · RIDGES ${g.map.dynamicRidges.filter(r=>r.owner===me.id).length}/6`;}
+      setText(this.miscInfo,info);
+    }
+    if(this.lawMenu){this.lawMenu.hidden=!pc.lawSelection.open;Array.from(this.lawMenu.children).forEach((b,i)=>{b.setAttribute('aria-selected',String(i===pc.lawSelection.cursor));b.classList.toggle('selected',i===pc.lawSelection.cursor);});}
+
     if(me.architect){
       // The docking summary rides on the turret strip instead of a bar of its own.
       const docking=architectDockingStatus(me),summary=`Modular arsenal · Dock ${docking.count}/10 · DR ${Math.round(docking.damageReduction*100)}% · Hull +${Math.round(!me.alive||me.mods.healBlock?0:docking.hullRegenPerSecond*me.mods.regenMul).toLocaleString()}/s · CAP ${docking.capacitors} ready / ${docking.chargingCycles} half`;

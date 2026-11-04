@@ -39,7 +39,8 @@ export type Nation =
   | 'abyss'
   | 'fold'
   | 'lodestone'
-  | 'foundry';
+  | 'foundry'
+  | 'tribunal' | 'coven' | 'feast' | 'rift';
 export type AmmoType = 'AP' | 'HE';
 export type Team = 0 | 1;
 

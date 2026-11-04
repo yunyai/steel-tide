@@ -1,3 +1,5 @@
+import {swallowedBy} from '../skills/misc/GourmandRuntime';
+import {MiscTitanFx} from './MiscTitanFx';
 import { ArchitectBatteryFx } from './ArchitectBatteryFx';
 import { ArchitectDashFx } from './ArchitectDashFx';
 import { ArchitectElementFx } from './ArchitectElementFx';
@@ -32,6 +34,7 @@ const SHORE_HALF = MAP_HALF + 500;
 export class NavalScene implements BattleScene {
   readonly torpedoAim = new TorpedoAim();
   readonly fleetFx: FleetFx;
+  readonly miscFx:MiscTitanFx;
   readonly elementFx:ArchitectElementFx;
   readonly architectFx: ArchitectFx;
   readonly batteryFx: ArchitectBatteryFx;
@@ -64,6 +67,7 @@ export class NavalScene implements BattleScene {
   ) {
     this.scene.add(this.torpedoAim.root);
     this.fleetFx = new FleetFx(this.scene, game);
+    this.miscFx=new MiscTitanFx(this.scene,game);
     this.crossFx = new CrossStepFx(this.scene, game);
     this.stepperFx = new StepperFx(this.scene, game);
     this.tungstenFx = new TungstenCubeFx(this.scene, game, (s) => this.views.get(s)?.tungstenModel ?? null);
@@ -147,6 +151,7 @@ export class NavalScene implements BattleScene {
     this.elementFx.dispose();
     this.crossFx.dispose();
     this.fleetFx.dispose();
+    this.miscFx.dispose();
     this.stepperFx.dispose();
     this.tungstenFx.dispose();
     this.torpedoAim.dispose();
@@ -210,6 +215,7 @@ export class NavalScene implements BattleScene {
     const built = this.syncShips();
     this.warmUp(dt, built);
     const t = g.renderTime;
+    this.miscFx.update(t,dt);
     for (const [s, v] of this.views) {v.stepFold=this.stepperFx.foldPhase(s);v.stepYaw=this.stepperFx.turnOffset(s);v.update(s,t);}
     for (const w of this.wrecks) {
       w.t += dt;
@@ -252,7 +258,7 @@ export class NavalScene implements BattleScene {
   private visibility(team: Team | -1): void {
     for (const [s, v] of this.views) {
       v.side(team === -1 ? s.team === 0 : s.team === team);
-      v.setMode(s.stepper?.copy&&!s.alive?'hidden':shipViewMode(s, team));
+      v.setMode(swallowedBy(this.game,s)||s.stepper?.copy&&!s.alive?'hidden':shipViewMode(s, team));
     }
     for (const [s, v] of this.views) {
       if (v.dome) v.dome.visible = v.root.visible && v.glowing;
@@ -264,6 +270,7 @@ export class NavalScene implements BattleScene {
 
   prepare(vp: Viewport, heightPx: number): void {
     this.fleetFx.prepare(vp.team);
+    this.miscFx.prepare(vp.team,heightPx);
     this.architectFx.prepare(vp.team, heightPx);
     this.batteryFx.prepare(vp.team, heightPx);
     this.dashFx.prepare(vp.team, heightPx);

@@ -1,3 +1,4 @@
+import {MiscTitanModel,isMiscTitan} from './MiscTitanModels';
 import { ELEMENTS } from '../skills/misc/ArchitectElements';
 import { addFleetDetails, FLEET_DETAILS } from './FleetDetails';
 import { ArchitectModel, architectTurretGeometry, elementalTurretGeometry, architectGlowMaterial } from './ArchitectModel';
@@ -1065,6 +1066,7 @@ export class ShipView {
   private stepModel: StepperModel | null = null;
   /** The Tungsten's electromagnet and its docked cubes. */
   tungstenModel: TungstenModel | null = null;
+  miscModel:MiscTitanModel|null=null;
 
   constructor(readonly spec: ShipSpec, shadows = true) {
     const geo = geometriesFor(spec);
@@ -1262,6 +1264,10 @@ export class ShipView {
         this.body.add(obj);
         this.launchers.push(obj);
       }
+    }
+    if(isMiscTitan(spec.id)){
+      for(const child of this.body.children)child.visible=false;
+      this.miscModel=new MiscTitanModel(spec);this.body.add(this.miscModel.group);
     }
   }
 
@@ -1489,6 +1495,8 @@ export class ShipView {
     // Recoil spring (about a 3 s roll period, lightly damped).
     const dt = this.lastTime < 0 ? 0 : clamp(time - this.lastTime, 0, 0.1);
     this.lastTime = time;
+    this.miscModel?.update(ship,time,dt);
+    if(this.miscModel)ship.turrets.forEach((t,i)=>{const battery=this.miscModel!.group.getObjectByName(`${spec.id}-battery-${i}`);if(battery)battery.rotation.y=-(t.spec.facing+t.yaw)*DEG;});
     this.heelV += (-4.8 * this.heel - 1.5 * this.heelV) * dt;
     this.heel += this.heelV * dt;
     this.trimV += (-9 * this.trim - 2.4 * this.trimV) * dt;
@@ -1658,6 +1666,7 @@ export class ShipView {
     this.architectModel?.dispose();
     this.stepModel?.dispose();
     this.tungstenModel?.dispose();
+    this.miscModel?.dispose();
     this.aura.material.dispose();
     this.formShell?.material.dispose();
     this.material.dispose();

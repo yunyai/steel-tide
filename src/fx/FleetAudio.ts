@@ -7,6 +7,11 @@ const a=(...names:string[])=>names.map(n=>`${import.meta.env.BASE_URL}audio/${n}
 export interface FleetCue {assets:string[];kind:SoundKind;gain:number;rate:number}
 export function fleetCue(ship:ShipSpec,skill:SkillSpec,event: 'activate'|'release'='activate'):FleetCue|undefined{
  if(ship.id==='stepper'||ship.nation==='foundry')return;
+ // New Misc titans have signature material sounds, using packaged recordings.
+ if(['judge','hexweaver','gourmand','faultline'].includes(ship.id)){
+   const names=ship.id==='judge'?(skill.icon==='shield'?['ward-rise']:skill.ult?['mechanical-hit','blast-heavy']:['mechanical-hit','sensor-ping']):ship.id==='hexweaver'?(skill.ult?['collapse','cut-heavy']:['cut-light','arcane-charge']):ship.id==='gourmand'?(skill.ult?['blast-heavy','jet-release']:['mechanical-hit','jet-release']):(skill.ult?['thunder','collapse']:['blast-shock','mechanical-hit']);
+   return {assets:a(...names),kind:skill.ult?'thunder':'charge',gain:skill.ult?.8:.55,rate:ship.id==='gourmand'?.7:ship.id==='judge'?.83:ship.id==='faultline'?.76:1.1};
+ }
  const era=eraOf(ship),tech=era==='modern'||era==='historic',titan=ship.cls==='TT',kind=skillTreatment(skill);
  let assets:string[],sound:SoundKind='zap';
  switch(kind){

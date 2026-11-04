@@ -1,3 +1,4 @@
+import { NEW_MISC } from './miscTitans';
 import type { ShipSpec } from '../core/types';
 import { STEPPER_SKILLS } from '../skills/misc/stepper';
 import { HADAL_SKILLS } from '../skills/misc/hadal';
@@ -119,4 +120,5 @@ export const MISC: ShipSpec[] = [
       lightStrip: 0x5fe0d0,
     },
   },
+  ...NEW_MISC,
 ];

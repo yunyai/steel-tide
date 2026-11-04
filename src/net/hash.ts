@@ -29,10 +29,21 @@ function idOf(id: string): number {
   return n;
 }
 
+/** Deterministic plain runtime data: ordered arrays, sorted object fields, no object identities. */
+function runtimeHash(h:number,v:unknown):number {
+ if(v===null||v===undefined)return mix(h,-1);
+ if(typeof v==='number')return mix(h,v);
+ if(typeof v==='boolean')return mix(h,v?1:0);
+ if(typeof v==='string')return mix(h,idOf(v));
+ if(Array.isArray(v)){h=mix(h,v.length);for(const x of v)h=runtimeHash(h,x);return h;}
+ if(typeof v==='object'){const o=v as Record<string,unknown>;for(const k of Object.keys(o).sort()){h=mix(h,idOf(k));h=runtimeHash(h,o[k]);}}return h;
+}
+
 /** The ship's whole state that later ticks depend on: pose, health, every clock and every runtime. */
 function shipHash(s: Game['ships'][number]): number {
   let h = SEED;
   h = mix(h, s.id);
+  h=runtimeHash(h,[s.judge,s.hexweaver,s.gourmand,s.faultline]);
   h = mix(h, s.pos.x);
   h = mix(h, s.pos.y);
   h = mix(h, s.pos.z);
@@ -159,6 +170,7 @@ export function hashSections(g: Game): Sections {
 
   h = SEED;
   for (const m of g.smokes) for (const n of [m.x, m.z, m.r, m.life, m.team]) h = mix(h, n);
+  h=runtimeHash(h,g.map.dynamicRidges);
   for (const w of g.walls) for (const n of [w.x0, w.z0, w.x1, w.z1, w.team, w.age, w.life]) h = mix(h, n);
   for (const cap of g.caps) for (const n of [cap.owner, cap.capturer, cap.progress, cap.contested ? 1 : 0]) h = mix(h, n);
   for (const x of g.respawns) for (const n of [x.ship.id, x.at]) h = mix(h, n);

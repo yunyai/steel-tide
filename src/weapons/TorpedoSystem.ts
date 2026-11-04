@@ -120,7 +120,7 @@ export class TorpedoSystem {
         t.alive = false;
         continue;
       }
-      if (g.map.heightAt(t.x, t.z) > -3) {
+      if (g.map.heightAt(t.x, t.z) > -3 || g.map.dynamicPathBlocked(ox,oz,t.x,t.z)) {
         t.alive = false;
         g.events.emit('explosion', { x: t.x, y: 0, z: t.z, size: 0.6 });
         continue;

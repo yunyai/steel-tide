@@ -210,6 +210,7 @@ export class ShellSystem {
         }
       }
 
+      if(g.map.dynamicSegmentBlocked(ox,oy,oz,s.x,s.y,s.z)){s.alive=false;g.events.emit('terrainHit',{x:s.x,y:s.y,z:s.z,caliber:s.spec.caliber});continue;}
       if (s.y <= 0) {
         s.alive = false;
         // Interpolate the water entry point for the splash.
@@ -256,7 +257,7 @@ export class ShellSystem {
     const g = this.game;
     const segLen = Math.hypot(s.x - ox, s.y - oy, s.z - oz);
     const cube = cubeIntercept(g, s.team, ox, oy, oz, s.x, s.y, s.z, 'shell');
-    if (cube) {
+    if (cube && !g.map.dynamicSegmentBlocked(ox,oy,oz,ox+(s.x-ox)*cube.t,oy+(s.y-oy)*cube.t,oz+(s.z-oz)*cube.t)) {
       const k = cube.t;
       s.alive = false;
       absorbCube(cube, s.spec.damage * s.dmgMul, s.owner, ox + (s.x - ox) * k, oy + (s.y - oy) * k, oz + (s.z - oz) * k);
@@ -274,6 +275,7 @@ export class ShellSystem {
       const wx = ox + (s.x - ox) * hit.t;
       const wy = oy + (s.y - oy) * hit.t;
       const wz = oz + (s.z - oz) * hit.t;
+      if(g.map.dynamicSegmentBlocked(ox,oy,oz,wx,wy,wz))continue;
       this.applyHit(s, ship, hit.geo, wx, wy, wz);
       if (s.pierce > 0) {
         s.pierce--;

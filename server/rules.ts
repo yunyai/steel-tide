@@ -118,6 +118,7 @@ export const navalRules: BattleRules = {
     if (o.td === 1) e.td = 1;
     if (smallInt(o.sl, 8)) e.sl = o.sl;
     if (smallInt(o.sk, 16)) e.sk = o.sk;
+    if(o.sk===1&&smallInt(o.jl,5))e.jl=o.jl;
     if (smallInt(o.co, 8)) e.co = o.co;
     if(o.hd===1)e.hd=1;
     if(o.mb===1)e.mb=1;

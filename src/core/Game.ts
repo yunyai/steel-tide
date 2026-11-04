@@ -1,3 +1,7 @@
+import {recordJudgeAction,clearJudge} from '../skills/misc/JudgeRuntime';
+import {clearHexweaver} from '../skills/misc/HexweaverRuntime';
+import {clearGourmand,swallowedBy} from '../skills/misc/GourmandRuntime';
+import {clearFaultline} from '../skills/misc/FaultlineRuntime';
 import { setArchitectLoadout } from '../skills/misc/ArchitectRuntime';
 import { copyLoadout } from '../data/architectLoadout';
 import { clearArchitect, destroyPlatform } from '../skills/misc/ArchitectRuntime';
@@ -129,6 +133,11 @@ export class Game {
 
   constructor(readonly config: BattleConfig) {
     this.rng = makeRng(config.seed);
+    this.events.on('gunFired',e=>{if(!e.secondary)recordJudgeAction(e.ship,'fire');});
+    this.events.on('torpLaunched',e=>recordJudgeAction(e.ship,'fire'));
+    this.events.on('missileLaunched',e=>recordJudgeAction(e.ship,'fire'));
+    this.events.on('squadronLaunched',e=>recordJudgeAction(e.ship,'fire'));
+    this.events.on('skill',e=>recordJudgeAction(e.ship,'skill'));
     this.map = new GameMap(MAP_BY_ID[config.mapId] ?? MAPS[0], config.seed);
     this.battery = new ArchitectBatterySystem(this);
     this.shells = new ShellSystem(this);
@@ -453,11 +462,11 @@ export class Game {
     const ships = this.ships;
     for (let i = 0; i < ships.length; i++) {
       const a = ships[i];
-      if (!a.alive || a.deep || a.mods.banished) continue;
+      if (!a.alive || a.deep || a.mods.banished || swallowedBy(this,a)) continue;
       for (let j = i + 1; j < ships.length; j++) {
         const b = ships[j];
         if(a.architectDrone&&a.architectDrone.owner===(b.architectPlatform?.owner??(b.architectDrone?.owner??b))||b.architectDrone&&b.architectDrone.owner===(a.architectPlatform?.owner??(a.architectDrone?.owner??a)))continue;
-        if (!b.alive || b.deep || b.mods.banished || a.architectPlatform && (a.pos.y > 20 || a.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || a.architectPlatform.owner.architect?.slots[a.architectPlatform.index].path) || b.architectPlatform && (b.pos.y > 20 || b.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || b.architectPlatform.owner.architect?.slots[b.architectPlatform.index].path) || a.stepper?.rush || b.stepper?.rush || a.tungsten?.lunge || b.tungsten?.lunge || a.architect?.drive || b.architect?.drive) continue;
+        if (!b.alive || b.deep || b.mods.banished || swallowedBy(this,b) || a.architectPlatform && (a.pos.y > 20 || a.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || a.architectPlatform.owner.architect?.slots[a.architectPlatform.index].path) || b.architectPlatform && (b.pos.y > 20 || b.architectPlatform.owner.architect?.ultimate?.kind === 'killbox' || b.architectPlatform.owner.architect?.slots[b.architectPlatform.index].path) || a.stepper?.rush || b.stepper?.rush || a.tungsten?.lunge || b.tungsten?.lunge || a.architect?.drive || b.architect?.drive) continue;
         const reach = (a.spec.length + b.spec.length) / 2;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
@@ -492,7 +501,7 @@ export class Game {
       const cap = this.caps[ci];
       const n: [number, number] = [0, 0];
       for (const s of this.ships) {
-        if (!s.alive || s.isSummon) continue;
+        if (!s.alive || s.isSummon || swallowedBy(this,s)) continue;
         if (Math.hypot(s.pos.x - cap.x, s.pos.z - cap.z) < CAP_RADIUS) n[s.team]++;
       }
       cap.contested = n[0] > 0 && n[1] > 0;
@@ -529,6 +538,7 @@ export class Game {
     const stepCopy = ship.stepper?.copy;
     clearStepper(ship);
     clearTungsten(ship);
+    clearJudge(ship);clearHexweaver(ship);clearGourmand(ship);clearFaultline(ship);
     this.events.emit('shipSunk', { ship, killer });
     if (stepCopy) return;
     this.events.emit('explosion', { x: ship.pos.x, y: 8, z: ship.pos.z, size: 3 + ship.spec.length / 120 });
@@ -603,6 +613,7 @@ export class Game {
     for (const s of this.ships) if (s.architect) clearArchitect(s);
     for (const s of this.ships) if (s.spec.id === 'stepper' && !s.isSummon) clearStepper(s);
     for (const s of this.ships) if (s.tungsten) clearTungsten(s);
+    for(const s of this.ships){clearJudge(s);clearHexweaver(s);clearGourmand(s);clearFaultline(s);}
     this.winner = winner;
     this.reason = reason;
     this.events.emit('gameOver', { winner, reason });

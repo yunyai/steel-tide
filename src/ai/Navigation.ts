@@ -12,6 +12,7 @@ export function headingClear(game: Game, ship: Ship, heading: number): boolean {
   const fz = forwardZ(heading);
   const half = ship.spec.length / 2;
   const keel = -Math.max(6, ship.spec.draft + 2);
+  if(game.map.dynamicPathBlocked(ship.pos.x,ship.pos.z,ship.pos.x+fx*(PROBES[PROBES.length-1]+half),ship.pos.z+fz*(PROBES[PROBES.length-1]+half),ship.spec.beam*.6))return false;
   for (const d of PROBES) {
     const x = ship.pos.x + fx * (d + half);
     const z = ship.pos.z + fz * (d + half);
