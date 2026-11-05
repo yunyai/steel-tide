@@ -38,5 +38,9 @@ export function fleetCue(ship:ShipSpec,skill:SkillSpec,event: 'activate'|'releas
 export function variantAsset(assets:readonly string[],sequence:number):string{return assets[sequence%assets.length];}
 export function fleetWeapon(ship:ShipSpec,look:string|undefined):string|undefined{
  if(ship.id==='stepper'||ship.nation==='foundry'||!look||look==='shell')return;
+ if(look==='gavel')return `${import.meta.env.BASE_URL}audio/mechanical-hit.m4a`;
+ if(look==='needle')return `${import.meta.env.BASE_URL}audio/cut-light.m4a`;
+ if(look==='dish')return `${import.meta.env.BASE_URL}audio/jet-release.m4a`;
+ if(look==='magma')return `${import.meta.env.BASE_URL}audio/blast-shock.m4a`;
  return look==='rail'?`${import.meta.env.BASE_URL}audio/mechanical-hit.m4a`:look==='laser'||look==='plasma'?`${import.meta.env.BASE_URL}audio/plasma-shot.m4a`:look==='soulfire'?`${import.meta.env.BASE_URL}audio/phase-arrival.m4a`:look==='runefire'?`${import.meta.env.BASE_URL}audio/blast-shock.m4a`:`${import.meta.env.BASE_URL}audio/energy-pulse.m4a`;
 }

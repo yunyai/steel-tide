@@ -702,6 +702,9 @@ it('rejects incompatible clients before joining a lobby',()=>{
  const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',name:'Old client'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
 });
 
+it('refuses protocol 18 peers from before the misc titans fun pass',()=>{
+ const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',protocol:18,name:'Old Titans'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
+});
 it('refuses protocol 17 peers from before co-op Boss Rush and Architect stacking',()=>{
  const s=new LobbyServer(),messages:ServerMsg[]=[];const p=s.connect(m=>messages.push(m));s.receive(p,{t:'hello',protocol:17,name:'Old Rush'});expect(messages.some(m=>m.t==='error'&&/versions differ/.test(m.text))).toBe(true);expect(messages.some(m=>m.t==='welcome')).toBe(false);s.close();
 });

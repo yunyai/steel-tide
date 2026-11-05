@@ -3,6 +3,7 @@ import type { Ship } from '../ships/Ship';
 import type { AmmoType, ConsumableType, GunLook, HitOutcome, SkillSpec, Team } from './types';
 import type { Pickup } from './Pickups';
 import type { Strike } from '../weapons/StrikeSystem';
+import type { MiscTitanEvent } from '../skills/misc/MiscEvents';
 
 export type TungstenEventKind =
   | 'throw' | 'hit' | 'land' | 'dock' | 'break' | 'reform' | 'switch' | 'signature' | 'slam' | 'reel'
@@ -96,6 +97,12 @@ export interface GameEventMap {
   squadronLaunched: { ship: Ship };
   missileLaunched: { ship: Ship; x: number; y: number; z: number };
   gameOver: { winner: Team | -1; reason: string };
+  /**
+   * A misc titan's moment worth drawing or hearing: a battery round striking a hull (`gunHit`) or the
+   * sea (`gunLand`), a cast, an impact or a citation. `target` is the hull it concerns, `tx`/`tz` a
+   * second point (a throw's destination), `radius` an area and `n` a count or amount.
+   */
+  miscTitan: MiscTitanEvent;
 }
 
 type Handler<T> = (payload: T) => void;

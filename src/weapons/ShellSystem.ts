@@ -47,6 +47,10 @@ export interface Shell {
   straight: boolean;
   /** Called on each hull it hits. */
   onHit: ((target: Ship, x: number, z: number) => void) | null;
+  /** Called once where the round falls into the sea. */
+  onLand: ((x: number, z: number) => void) | null;
+  /** Scales the round's damage against one hull (a misc titan's battery reading its target). */
+  hitMul: ((target: Ship) => number) | null;
   /** How the round looks in flight. */
   element?: {owner:Ship;slot:number;splash?:number;kind?:import('../data/architectLoadout').ArchitectElement;docked?:import('../data/architectLoadout').ArchitectType};
   look: GunLook;
@@ -71,6 +75,8 @@ export interface FireOptions {
   /** Fly flat at this multiple of muzzle velocity (railgun mode is 3, with piercing). */
   flat?: number;
   onHit?: (target: Ship, x: number, z: number) => void;
+  onLand?: (x: number, z: number) => void;
+  hitMul?: (target: Ship) => number;
   element?: {owner:Ship;slot:number;splash?:number;kind?:import('../data/architectLoadout').ArchitectElement;docked?:import('../data/architectLoadout').ArchitectType};
   look?: GunLook;
 }
@@ -120,6 +126,8 @@ export class ShellSystem {
       cluster: o.cluster ?? null,
       straight: o.railgun || (o.flat ?? 0) > 0,
       onHit: o.onHit ?? null,
+      onLand: o.onLand ?? null,
+      hitMul: o.hitMul ?? null,
       element:element?{...element,kind:element.kind??element.owner.architect?.slots[element.slot]?.element}:undefined,
       look: o.look ?? 'shell',
     };
@@ -180,6 +188,8 @@ export class ShellSystem {
       cluster: null,
       straight: false,
       onHit: null,
+      onLand: null,
+      hitMul: null,
       look: 'shell',
     };
     this.shells.push(s);
@@ -218,6 +228,7 @@ export class ShellSystem {
         const wx = ox + (s.x - ox) * f;
         const wz = oz + (s.z - oz) * f;
         if (s.cluster) this.burst(s, wx, wz);
+        s.onLand?.(wx, wz);
         if (s.bomb) g.depth.bombSplash(s.owner, wx, wz, s.spec.damage * s.dmgMul);
         g.events.emit('splash', { x: wx, y: 0, z: wz, caliber: s.spec.caliber });
         continue;
@@ -347,7 +358,7 @@ export class ShellSystem {
     const res = this.resolve(s, ship, geo, g.rng);
     let damage = 0;
     if (res.factor > 0) {
-      const raw = s.spec.damage * res.factor * s.dmgMul * (s.ammo === 'AP' ? ship.mods.apTakenMul : 1) * s.owner.critMul(ship) * (s.element?.docked ? dockedHitMul(s.element.docked, ship) : 1);
+      const raw = s.spec.damage * res.factor * s.dmgMul * (s.ammo === 'AP' ? ship.mods.apTakenMul : 1) * s.owner.critMul(ship) * (s.element?.docked ? dockedHitMul(s.element.docked, ship) : 1) * (s.hitMul ? s.hitMul(ship) : 1);
       g.hitKind = s.bomb ? 'air' : s.secondary ? 'secondary' : 'gun';
       damage = ship.takeDamage(res.outcome === 'citadel' ? raw : ship.zoneDamage(res.zone, raw), s.owner, s.skill ?? null);
       g.hitKind = 'gun';

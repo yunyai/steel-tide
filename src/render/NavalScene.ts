@@ -101,6 +101,7 @@ export class NavalScene implements BattleScene {
     this.skillFx = new SkillFx(game, this.scene, renderer.alpha, renderer.add, renderer.flat);
     this.skillFx.onFlash = (k, c) => renderer.flash(k, c);
     this.tungstenFx.onFlash = (x, z, k, c) => this.skillFx.flash(x, z, k, c);
+    this.miscFx.onFlash = (x, z, k, c) => this.skillFx.flash(x, z, k, c);
     this.off.push(
       game.events.view('gunFired', (e) => {
         if (!e.secondary) this.views.get(e.ship)?.recoil(e.bearing - e.ship.heading, e.caliber);
@@ -139,6 +140,7 @@ export class NavalScene implements BattleScene {
     this.dashFx.setFog(color, density);
     this.elementFx.setFog(color, density);
     this.tungstenFx.setFog(color, density);
+    this.miscFx.setFog(color, density);
   }
 
   dispose(): void {
@@ -266,7 +268,7 @@ export class NavalScene implements BattleScene {
     }
   }
 
-  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions,...this.batteryFx.distortions,...this.elementFx.distortions,...this.tungstenFx.distortions]; }
+  get distortions() { return [...this.stepperFx.distortions,...this.crossFx.distortions,...this.batteryFx.distortions,...this.elementFx.distortions,...this.tungstenFx.distortions,...this.miscFx.distortions]; }
 
   prepare(vp: Viewport, heightPx: number): void {
     this.fleetFx.prepare(vp.team);

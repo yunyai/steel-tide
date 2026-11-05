@@ -1,3 +1,4 @@
+import { miscBattery } from '../skills/misc/MiscBattery';
 import {newJudgeState,updateJudge,clearJudge, type JudgeState} from '../skills/misc/JudgeRuntime';
 import {newHexweaverState,updateHexweaver,clearHexweaver,hexweaverAbsorb,pinCharges,type HexweaverState} from '../skills/misc/HexweaverRuntime';
 import {newGourmandState,updateGourmand,clearGourmand,swallowedBy,gourmandBlocksSkill,gourmandSwallowMods,type GourmandState} from '../skills/misc/GourmandRuntime';
@@ -1423,6 +1424,8 @@ export class Ship {
     const docked = this.architect ? dockedType(this, index) : null;
     const shot = dockedShot(docked);
     const dmgMul = this.mods.damageMul * (this.stepper && this.stepper.broadUntil > this.game.time ? 2 : 1) * (ammo === 'AP' ? this.mods.apDamageMul : 1) * (buff?.damageMul ?? 1) * shot.damage;
+    // A misc titan's battery reports its hits and landings, and reads its targets, unless a skill rides the salvo.
+    const rider = buff?.onHit ? null : miscBattery(this, index);
     for (let b = 0; b < t.spec.barrels; b++) {
       const lateral = truncGaussian(g.rng) * sigmaH;
       const along = truncGaussian(g.rng) * sigmaV;
@@ -1444,7 +1447,9 @@ export class Ship {
         railgun: this.mods.railgun || !!buff?.railgun,
         cluster: buff?.cluster ? buff.skill : undefined,
         flat: (this.mods.flatShots || main.flat || 0) * shot.pace,
-        onHit: buff?.onHit,
+        onHit: buff?.onHit ?? rider?.onHit,
+        onLand: rider?.onLand,
+        hitMul: rider?.hitMul,
         element:this.architect?{owner:this,slot:index,...(docked?{docked}:{})}:undefined,
         look: main.look,
       });

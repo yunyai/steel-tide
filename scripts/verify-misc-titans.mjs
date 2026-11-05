@@ -101,7 +101,7 @@ try {
         id,
         skills: s.skills.length,
         model: !!b.scene.views.get(s).miscModel,
-        resources: document.querySelector(".misc-titan-info")?.textContent,
+        resources: document.querySelector(".misc-panel .mp-line")?.textContent,
         finite: g.ships.every(
           (t) => Number.isFinite(t.hp) && Number.isFinite(t.pos.x),
         ),

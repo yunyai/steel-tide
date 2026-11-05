@@ -4464,9 +4464,25 @@ select {
 @media(max-width:520px) { .tungsten-codex { padding:10px; } .codex-chips { grid-template-columns:repeat(4,minmax(0,1fr)); } .codex-detail dl { grid-template-columns:minmax(0,1fr); gap:2px; } .codex-detail dd { margin-bottom:6px; } }
 
 /* Ship-specific resources stay adjacent to the titan skill bar. */
-.misc-titan-info{max-width:800px;padding:7px 12px;background:rgba(12,18,27,.88);border-left:2px solid #e9bb75;color:#eadbc3;font-size:11px;letter-spacing:.04em;line-height:1.5;pointer-events:none}
+/* Misc titans: the own-titan panel, the victim banner and the marker chip, each in its titan's accent. */
+.misc-panel, .misc-banner, .misc-chip { --misc:#e9bb75; }
+.misc-panel.judge, .misc-banner[data-kind=judge], .misc-chip[data-kind=judge] { --misc:#ffca73; }
+.misc-panel.hexweaver, .misc-banner[data-kind=hexweaver], .misc-chip[data-kind=hexweaver] { --misc:#f290cf; }
+.misc-panel.gourmand, .misc-banner[data-kind=gourmand], .misc-chip[data-kind=gourmand] { --misc:#ffa040; }
+.misc-panel.faultline, .misc-banner[data-kind=faultline], .misc-chip[data-kind=faultline] { --misc:#ff6a2a; }
+.misc-panel { display:grid; grid-template-columns:auto minmax(0,1fr); gap:4px 12px; align-items:center; max-width:800px; padding:6px 12px; background:rgba(12,18,27,.88); border-left:3px solid var(--misc); color:#eadbc3; font-size:11px; letter-spacing:.04em; line-height:1.5; pointer-events:none; }
+.misc-panel .mp-name { font-family:var(--display); font-size:12px; letter-spacing:.08em; color:var(--misc); }
+.misc-panel .mp-body { grid-column:1/-1; }
+.misc-panel .mp-body:empty { display:none; }
+.misc-banner { display:flex; gap:10px; align-items:baseline; max-width:800px; padding:6px 12px; background:rgba(30,12,16,.9); border:1px solid var(--misc); color:#f4e6d0; font-size:12px; letter-spacing:.04em; pointer-events:none; }
+.misc-banner[hidden] { display:none; }
+.misc-banner b { font-family:var(--display); color:var(--misc); text-transform:uppercase; }
+.misc-banner.alert { background:rgba(90,14,18,.92); border-color:#ff5a4a; }
+.misc-chip { margin-left:6px; padding:0 5px; border:1px solid var(--misc); border-radius:3px; color:var(--misc); font-size:10px; line-height:14px; }
+.misc-chip[hidden] { display:none; }
+.misc-chip.alert { color:#fff; background:#c0261c; border-color:#ff7a6a; }
 .judge-law-menu{display:grid;grid-template-columns:repeat(3,minmax(110px,1fr));gap:4px;padding:10px;background:#151c29;border:1px solid #d9b66e;pointer-events:auto}
 .judge-law-menu[hidden]{display:none}.judge-law-menu button{padding:9px 12px;color:#e5d9c2;background:#222c3c;border:1px solid #556071;text-align:left;font:inherit;cursor:pointer}.judge-law-menu button.selected,.judge-law-menu button:focus-visible{border-color:#ffe19b;background:#4d4230;outline:2px solid #ffe19b;outline-offset:1px}
-@media(max-width:650px){.judge-law-menu{grid-template-columns:repeat(2,minmax(95px,1fr))}.misc-titan-info{font-size:10px;max-width:95vw}}
+@media(max-width:650px){.judge-law-menu{grid-template-columns:repeat(2,minmax(95px,1fr))}.misc-panel,.misc-banner{font-size:10px;max-width:95vw}}
 
 .judge-law-menu::after{content:attr(data-help);grid-column:1/-1;color:#d8c69e;font-size:11px;padding:4px 2px 0}

@@ -1,10 +1,12 @@
-import type { ShipSpec, Nation } from "../core/types";
+import type { GunLook, ShipSpec, Nation } from "../core/types";
 import type { SkillDef } from "../skills/types";
 import { JUDGE_SKILLS } from "../skills/misc/judge";
 import { HEXWEAVER_SKILLS } from "../skills/misc/hexweaver";
 import { GOURMAND_SKILLS } from "../skills/misc/gourmand";
 import { FAULTLINE_SKILLS } from "../skills/misc/faultline";
 import { TITAN_REPAIR, search } from "./common";
+/** Each battery fires its own round: gavel bolts, needles, dishes and ember rocks. */
+const BATTERY_LOOK: Record<string, GunLook> = { judge: "gavel", hexweaver: "needle", gourmand: "dish", faultline: "magma" };
 function titan(
   id: string,
   name: string,
@@ -49,12 +51,7 @@ function titan(
     citadel: { length: 0.5, top: 2, width: 0.65 },
     main: {
       name: name + " battery",
-      look:
-        id === "hexweaver"
-          ? "soulfire"
-          : id === "faultline"
-            ? "runefire"
-            : "rail",
+      look: BATTERY_LOOK[id],
       turrets: [
         { x: length * 0.32, y: 0, facing: 0, halfArc: 150, barrels: 3 },
         { x: -length * 0.32, y: 0, facing: 180, halfArc: 150, barrels: 3 },

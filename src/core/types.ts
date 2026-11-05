@@ -61,7 +61,8 @@ export type HitOutcome =
 export type ConsumableType = 'repair' | 'smoke' | 'search' | 'speedBoost' | 'depthCharges';
 
 /** How a main battery's rounds look in flight (and what its two ammo types are called). */
-export type GunLook = 'shell' | 'starbolt' | 'runefire' | 'soulfire' | 'arcane' | 'rail' | 'laser' | 'plasma';
+/** `gavel`, `needle`, `dish` and `magma` belong to the Judge, Hexweaver, Gourmand and Faultline batteries. */
+export type GunLook = 'shell' | 'starbolt' | 'runefire' | 'soulfire' | 'arcane' | 'rail' | 'laser' | 'plasma' | 'gavel' | 'needle' | 'dish' | 'magma';
 /** What a carrier's squadrons are drawn as. */
 export type PlaneLook = 'plane' | 'griffon' | 'gyro' | 'bat' | 'dragon' | 'jet' | 'heli' | 'drone' | 'petal';
 /** What a torpedo is drawn as. */
