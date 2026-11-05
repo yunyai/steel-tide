@@ -13,6 +13,25 @@ const IDS = new Set(['judge', 'hexweaver', 'gourmand', 'faultline']);
 const UP = new Vector3(0, 1, 0);
 const TAU = Math.PI * 2;
 
+/** What the Hexweaver's effigy copies from one bound enemy's doll. */
+interface Mirror {
+  pins: number;
+  flinch: number;
+  twist: number;
+}
+
+const STILL: Mirror = { pins: 0, flinch: 0, twist: 0 };
+
+/** The doll the effigy mirrors: the targeted enemy's, else the one holding the most pins. */
+function effigyMirror(ship: Ship, reduce: boolean): Mirror {
+  const dolls = ship.hexweaver?.dolls;
+  const now = ship.game?.time;
+  if (!dolls?.length || now === undefined) return STILL;
+  const d = dolls.find((x) => x.target === ship.control?.targetId) ?? dolls.reduce((a, b) => (b.pins > a.pins ? b : a));
+  const fade = (age: number, span: number) => Math.max(0, Math.min(1, 1 - age / span));
+  return { pins: d.pins, flinch: reduce ? 0 : fade(now - d.struck, 0.45), twist: reduce ? 0 : fade(now - d.twistedAt, 1) };
+}
+
 export function isMiscTitan(id: string): boolean { return IDS.has(id); }
 
 /** Complete, read-only procedural replacement models. Local +X is bow, +Y up and +Z starboard. */
@@ -32,6 +51,7 @@ export class MiscTitanModel {
   private readonly meters: number[] = [];
   private readonly impulses: number[] = [];
   private pinRecharge = 0;
+  private mirror: Mirror = STILL;
   private activity = 0;
   private ultimate = 0;
   private disposed = false;
@@ -373,15 +393,19 @@ export class MiscTitanModel {
     const suspension = [-1, 1].map(side => this.line(.55, this.metal, p.pale, `suspension-${side}`));
     const strings = needles.map((_, i) => this.line(.32, this.glow, p.light, `curse-thread-${i}`));
     this.pose = (t, active, ult) => {
-      const sway = Math.sin(t * .63) * .035;
-      effigy.position.y = 72 + Math.sin(t * .91) * 1.5 + active * 5 + ult * 9;
-      effigy.rotation.set(Math.sin(t * .57) * .025, Math.sin(t * .43) * .05 + active * .07, sway);
-      limbs.forEach((limb, i) => { const side = i < 2 ? -1 : 1, arm = i % 2 === 0; limb.rotation.x = side * (arm ? -.7 - active * .4 : .09) + Math.sin(t * .8 + i) * .055; limb.rotation.z = Math.sin(t * .72 + i * 1.7) * .05 + active * .08; });
+      // The effigy mirrors one bound enemy's doll: it jolts when that ship is hurt, is wrung by a
+      // Twist, and a pair of needles leans in to pierce it for each pin.
+      const { pins, flinch, twist } = this.mirror;
+      const jolt = flinch * flinch;
+      const sway = Math.sin(t * .63) * .035 + jolt * .3 * Math.sin(t * 55 + 1);
+      effigy.position.y = 72 + Math.sin(t * .91) * 1.5 + active * 5 + ult * 9 + jolt * 7;
+      effigy.rotation.set(Math.sin(t * .57) * .025 + jolt * .2, Math.sin(t * .43) * .05 + active * .07 + (1 - (1 - twist) ** 2) * TAU * 1.5, sway);
+      limbs.forEach((limb, i) => { const side = i < 2 ? -1 : 1, arm = i % 2 === 0; limb.rotation.x = side * (arm ? -.7 - active * .4 - jolt * .6 : .09 + jolt * .3) + Math.sin(t * .8 + i) * .055; limb.rotation.z = Math.sin(t * .72 + i * 1.7) * .05 + active * .08; });
       needles.forEach((needle, i) => {
-        const side = i < 3 ? -1 : 1, index = i % 3;
-        needle.rotation.x = -side * (.46 + active * .24 + Math.sin(t * 1.1 + i) * .055);
-        needle.rotation.z = (index - 1) * .46 + Math.sin(t * .87 + i * 1.4) * .045;
-        needle.position.y = 15 + Math.sin(t * 1.3 + i * 1.2) * 1.8 + active * (4 + Math.sin(t * 5 + i) * 2);
+        const side = i < 3 ? -1 : 1, index = i % 3, pierce = index < pins ? 1 : 0;
+        needle.rotation.x = -side * (.46 + active * .24 + pierce * .38 + Math.sin(t * 1.1 + i) * .055);
+        needle.rotation.z = (index - 1) * .46 * (1 - pierce * .4) + Math.sin(t * .87 + i * 1.4) * .045;
+        needle.position.y = 15 + Math.sin(t * 1.3 + i * 1.2) * 1.8 + active * (4 + Math.sin(t * 5 + i) * 2) + pierce * 10;
         const rotation = needle.quaternion;
         const eye = new Vector3(0, 4, 0).applyQuaternion(rotation).add(needle.position);
         this.stretch(strings[i], [-60 + index * 60, 24, side * 27], [eye.x, eye.y, eye.z]);
@@ -640,6 +664,7 @@ export class MiscTitanModel {
     const pinRecharge = recharge?.length ? Math.max(...recharge) : 0;
     const pinCast = this.id === 'hexweaver' && pinRecharge > this.pinRecharge + .01;
     this.pinRecharge = pinRecharge;
+    if (this.id === 'hexweaver') this.mirror = alive ? effigyMirror(ship, this.reduce) : STILL;
     for (let i = 0; i < ship.skills.length; i++) {
       const skill = ship.skills[i], previous = this.cooldowns[i], meter = this.meters[i];
       const cast = (previous !== undefined && skill.cooldown > previous + .15)

@@ -1,6 +1,7 @@
 import type { PlayerController } from '../player/PlayerController';
 import type { Ship } from '../ships/Ship';
-import { judgePanel, miscMarkerChip, miscTitanKind, miscTitanSummary, miscVictimBanner, type LawView } from './MiscTitanPresentation';
+import { reducedMotion } from '../render/ArchitectPose';
+import { hexPanel, judgePanel, miscMarkerChip, miscTitanKind, miscTitanSummary, miscVictimBanner, type LawView } from './MiscTitanPresentation';
 
 // The misc titans' HUD: the captain's own titan panel beside the skill bar, the banner a captain
 // sees while an enemy misc titan holds them, and the chip on each marker. All three copy what
@@ -61,6 +62,11 @@ class Meter {
       this.root.setAttribute('aria-valuemax', String(cap));
     }
   }
+}
+
+/** What a victim banner's meter counts, for screen readers. */
+function meterName(kind: string): string {
+  return kind === 'hexweaver' ? 'Pins in your doll' : 'Your case';
 }
 
 /** The six laws as chips: each names what it asks and lights while it is being broken. */
@@ -135,6 +141,116 @@ class JudgeGauges {
   }
 }
 
+const SVG = 'http://www.w3.org/2000/svg';
+
+function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>, parent: Element): SVGElementTagNameMap[K] {
+  const e = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  parent.append(e);
+  return e;
+}
+
+function setStyle(e: HTMLElement | SVGElement, prop: string, v: string): void {
+  if (e.style.getPropertyValue(prop) !== v) e.style.setProperty(prop, v);
+}
+
+/** One shelf slot: a little stitched doll, its pins and pricks, and its ship's name, health and life. */
+class DollView {
+  readonly root: HTMLElement;
+  private doll: SVGSVGElement;
+  private pins: SVGLineElement[] = [];
+  private pricks: HTMLElement[] = [];
+  private name: HTMLElement;
+  private hp: HTMLElement;
+  private life: HTMLElement;
+  private stab = 0;
+
+  constructor(parent: HTMLElement) {
+    this.root = el('div', 'hx-slot', parent);
+    this.life = el('span', 'hx-life', this.root);
+    this.doll = svg('svg', { viewBox: '-20 -26 40 52', class: 'hx-doll', 'aria-hidden': 'true' }, this.life) as SVGSVGElement;
+    // Head, body, arms and legs of a rag doll, with button eyes and a cross-stitched seam.
+    svg('circle', { cx: 0, cy: -15, r: 8, class: 'cloth' }, this.doll);
+    svg('path', { d: 'M-7 -7 Q-9 6 -6 12 L6 12 Q9 6 7 -7 Z', class: 'cloth' }, this.doll);
+    svg('path', { d: 'M-7 -5 L-16 2 M7 -5 L16 2 M-4 12 L-6 23 M4 12 L6 23', class: 'limb' }, this.doll);
+    svg('path', { d: 'M-4.5 -17 l3 3 m0 -3 l-3 3 M1.5 -17 l3 3 m0 -3 l-3 3', class: 'eyes' }, this.doll);
+    svg('path', { d: 'M0 -5 v14 M-2 -2 h4 M-2 2 h4 M-2 6 h4', class: 'seam' }, this.doll);
+    for (const [x, y, a] of [
+      [-9, -14, -40],
+      [9, -2, 35],
+      [-6, 6, -20],
+    ])
+      this.pins.push(svg('line', { x1: x, y1: y, x2: x - Math.sin((a * Math.PI) / 180) * 12, y2: y - Math.cos((a * Math.PI) / 180) * 12, class: 'pin' }, this.doll) as SVGLineElement);
+    const info = el('span', 'hx-info', this.root);
+    this.name = el('b', 'hx-name', info);
+    const bar = el('span', 'hx-hp', info);
+    this.hp = el('i', '', bar);
+    const ticks = el('span', 'hx-pricks', info);
+    for (let i = 0; i < 4; i++) this.pricks.push(el('i', '', ticks));
+  }
+
+  set(v: ReturnType<typeof hexPanel>['slots'][number] | undefined, still: boolean): void {
+    if (this.root.hidden !== !v) this.root.hidden = !v;
+    if (!v) return;
+    setText(this.name, v.name);
+    setStyle(this.hp, 'width', `${(v.hp * 100).toFixed(1)}%`);
+    setStyle(this.life, '--life', `${(v.life * 360).toFixed(0)}deg`);
+    this.pins.forEach((p, i) => {
+      const on = i < v.pins;
+      if (p.classList.contains('on') !== on) p.classList.toggle('on', on);
+    });
+    this.pricks.forEach((p, i) => setFlag(p, 'on', i < v.pricks));
+    setFlag(this.root, 'burning', v.burning);
+    setFlag(this.root, 'stitched', v.stitched);
+    setFlag(this.root, 'aimed', v.aimed);
+    setFlag(this.root, 'hurt', v.flinch > 0);
+    // The doll jolts when its ship is hurt and wrings round when it is twisted.
+    const turn = still ? 0 : v.flinch * -16 * (Math.round(v.flinch * 10) % 2 ? 1 : -1) + v.twist * 200;
+    setStyle(this.doll, 'transform', turn ? `rotate(${turn.toFixed(1)}deg)` : '');
+    if (v.stab > this.stab + 0.5) flash(this.root, 'stab');
+    this.stab = v.stab;
+  }
+}
+
+/** The Hexweaver's gauges: pin pips, the doll shelf with its threads, and previews on the aimed doll. */
+class HexGauges {
+  private pips: HTMLElement[] = [];
+  private slots: DollView[] = [];
+  private threads: SVGSVGElement;
+  private paths: SVGPathElement[] = [];
+  private previews: HTMLElement;
+  private still = reducedMotion();
+
+  constructor(body: HTMLElement) {
+    const row = el('div', 'jp-row', body);
+    const pips = el('span', 'hx-pips', row);
+    pips.setAttribute('aria-label', 'Pin charges');
+    for (let i = 0; i < 4; i++) this.pips.push(el('i', '', pips));
+    this.previews = el('span', 'hx-prev', row);
+    const shelf = el('div', 'hx-shelf', body);
+    this.threads = svg('svg', { viewBox: '0 0 400 24', preserveAspectRatio: 'none', class: 'hx-threads', 'aria-hidden': 'true' }, shelf) as SVGSVGElement;
+    for (let i = 0; i < 6; i++) this.paths.push(svg('path', { d: '' }, this.threads) as SVGPathElement);
+    for (let i = 0; i < 4; i++) this.slots.push(new DollView(shelf));
+  }
+
+  update(me: Ship, target: Ship | null): void {
+    const p = hexPanel(me, target);
+    this.pips.forEach((e, i) => {
+      setStyle(e, '--fill', p.pins[i].toFixed(2));
+      setFlag(e, 'ready', p.pins[i] >= 1);
+    });
+    this.slots.forEach((v, i) => v.set(p.slots[i], this.still));
+    // Threads arc over the shelf between stitched slots.
+    this.paths.forEach((path, i) => {
+      const l = p.links[i];
+      const d = l ? `M${50 + l[0] * 100} 24 Q${50 * (l[0] + l[1]) + 50} ${-6 - 6 * (l[1] - l[0])} ${50 + l[1] * 100} 24` : '';
+      if (path.getAttribute('d') !== d) path.setAttribute('d', d);
+    });
+    const v = p.previews;
+    setText(this.previews, v ? `TWIST ${kilo(v.twist)} · RIP ${kilo(v.rip)} · UNMAKING ${kilo(v.unmaking)}` : 'TWIST — · RIP — · UNMAKING —');
+  }
+}
+
 export class MiscTitanHud {
   /** The captain's own titan panel; null for every other ship. */
   readonly panel: HTMLElement | null = null;
@@ -149,6 +265,7 @@ export class MiscTitanHud {
   /** The banner meter's last value, to flash it on each new violation. */
   private bannerN = -1;
   private judge: JudgeGauges | null = null;
+  private hex: HexGauges | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -165,6 +282,7 @@ export class MiscTitanHud {
       this.body = el('div', 'mp-body', panel);
       this.panel = panel;
       if (kind === 'judge') this.judge = new JudgeGauges(this.body);
+      if (kind === 'hexweaver') this.hex = new HexGauges(this.body);
     }
     this.banner = el('div', 'misc-banner', parent);
     this.banner.setAttribute('role', 'status');
@@ -179,13 +297,19 @@ export class MiscTitanHud {
     const target = this.pc.lock ?? this.pc.assist;
     if (this.line) setText(this.line, miscTitanSummary(me, target));
     this.judge?.update(me, target);
+    this.hex?.update(me, target);
     const b = miscVictimBanner(me);
     if (this.banner.hidden !== !b) this.banner.hidden = !b;
     if (!b) {
       this.bannerN = -1;
       return;
     }
-    if (this.banner.dataset.kind !== b.kind) this.banner.dataset.kind = b.kind;
+    if (this.banner.dataset.kind !== b.kind) {
+      this.banner.dataset.kind = b.kind;
+      // A different titan's meter counts something else; do not flash on the switch.
+      this.bannerN = -1;
+      this.bannerMeter?.root.setAttribute('aria-label', meterName(b.kind));
+    }
     setFlag(this.banner, 'alert', b.alert);
     setText(this.bannerTitle, b.title);
     setText(this.bannerDetail, b.detail);
@@ -195,9 +319,9 @@ export class MiscTitanHud {
     }
     if (this.bannerLaws && this.bannerLaws.root.hidden !== !b.laws) this.bannerLaws.root.hidden = !b.laws;
     if (b.meter) {
-      this.bannerMeter ??= new Meter(this.banner, 'Your case');
+      this.bannerMeter ??= new Meter(this.banner, meterName(b.kind));
       this.bannerMeter.set(b.meter.n, b.meter.cap, b.meter.mark);
-      // Every new violation flashes the banner, so the victim sees the moment they broke a law.
+      // Every new violation or pin flashes the banner, so the victim sees the moment it lands.
       if (this.bannerN >= 0 && b.meter.n > this.bannerN) flash(this.banner, 'cited');
       this.bannerN = b.meter.n;
     }

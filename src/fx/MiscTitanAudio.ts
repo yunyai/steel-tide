@@ -30,6 +30,19 @@ const SOUNDS: Partial<Record<MiscFxKind, MiscSound>> = {
   warn: s('zap', 'ui-warning', 0.5, 1),
   verdict: s('nuke', 'blast-heavy', 1.2, 0.8),
   death: s('collapse', 'slash', 1.1, 0.7),
+  pin: s('hit', 'cut-light', 0.55, 1.3),
+  stitch: s('zap', 'slash', 0.6, 1.2),
+  twist: s('collapse', 'cut-heavy', 0.7, 0.8),
+  fire: s('charge', 'arcane-charge', 0.6, 1.1),
+  ignite: s('charge', 'energy-pulse', 0.35, 1.2, 0.3),
+  rip: s('explosion', 'cut-heavy', 0.8, 0.9),
+  erupt: s('explosion', 'blast-shock', 0.65, 1, 0.2),
+  substitute: s('shield', 'phase-arrival', 0.5, 1.1),
+  decoyBurst: s('explosion', 'blast-shock', 0.75, 0.9),
+  coven: s('thunder', 'arcane-charge', 0.85, 0.7),
+  needle: s('hit', 'cut-light', 0.3, 1.6, 0.12),
+  unmake: s('nuke', 'blast-heavy', 1.15, 0.9, 0.1),
+  tear: s('hit', 'slash', 0.4, 1.4, 0.2),
 };
 
 /** The recording a misc titan event plays, or null when it is left to other sounds. */

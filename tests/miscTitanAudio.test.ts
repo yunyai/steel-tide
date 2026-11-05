@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { miscSound } from '../src/fx/MiscTitanAudio';
-import type { JudgeFxKind } from '../src/skills/misc/MiscEvents';
+import type { HexFxKind, JudgeFxKind } from '../src/skills/misc/MiscEvents';
 
 // Every misc titan effect that should be heard maps to one of the packaged recordings.
 
@@ -18,6 +18,21 @@ describe('Misc titan sounds', () => {
   it('make the Verdict and the Death Penalty the loudest Judge moments', () => {
     const loud = Math.min(miscSound('verdict')!.gain, miscSound('death')!.gain);
     for (const k of JUDGE_KINDS) if (k !== 'verdict' && k !== 'death') expect(miscSound(k)!.gain).toBeLessThan(loud);
+  });
+
+  const HEX_KINDS: HexFxKind[] = ['pin', 'stitch', 'twist', 'fire', 'ignite', 'rip', 'erupt', 'substitute', 'decoyBurst', 'coven', 'needle', 'unmake', 'tear'];
+
+  it.each(HEX_KINDS)('give the Hexweaver’s %s a packaged recording', (kind) => {
+    const s = miscSound(kind);
+    expect(s).not.toBeNull();
+    expect(existsSync(`public/audio/${s!.asset}.m4a`)).toBe(true);
+    expect(s!.gain).toBeGreaterThan(0);
+  });
+
+  it('make the Unmaking the loudest Hexweaver moment and let the rain of needles share a voice', () => {
+    const loud = miscSound('unmake')!.gain;
+    for (const k of HEX_KINDS) if (k !== 'unmake') expect(miscSound(k)!.gain).toBeLessThan(loud);
+    expect(miscSound('needle')!.gap).toBeGreaterThan(0);
   });
 
   it('leave battery hits to the gun sounds', () => {

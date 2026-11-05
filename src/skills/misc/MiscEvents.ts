@@ -13,7 +13,15 @@ export type MiscGunKind = 'gunHit' | 'gunLand';
  */
 export type JudgeFxKind = 'court' | 'cite' | 'gavelThrow' | 'gavelHit' | 'contempt' | 'arrest' | 'taxes' | 'objection' | 'martial' | 'warn' | 'verdict' | 'death';
 
-export type MiscFxKind = MiscGunKind | JudgeFxKind;
+/**
+ * The Hexweaver: a pin stabbing a doll (`n` its pins), a stitch sweep, a twist (`n` 1 when it
+ * spent a pin), Effigy Fire and a doll catching fire, Rip the Seam and a stitched doll erupting,
+ * Substitute and its effigy bursting, a coven, one of the Thousand Needles, a doll unmade (`radius`
+ * when it blasts) and a doll torn off the shelf.
+ */
+export type HexFxKind = 'pin' | 'stitch' | 'twist' | 'fire' | 'ignite' | 'rip' | 'erupt' | 'substitute' | 'decoyBurst' | 'coven' | 'needle' | 'unmake' | 'tear';
+
+export type MiscFxKind = MiscGunKind | JudgeFxKind | HexFxKind;
 
 export interface MiscTitanEvent {
   ship: Ship;

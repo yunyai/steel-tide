@@ -1,217 +1,125 @@
-import { def, type SkillDef } from "../types";
-import { aimPoint, buff, hurt } from "../kit";
-import { miscTarget, moveSafe } from "./MiscSupport";
-import { dollDamage, igniteDoll, pinDoll } from "./HexweaverRuntime";
-const names = [
-  "Pin",
-  "Stitch",
-  "Twist",
-  "Effigy Fire",
-  "Rip the Seam",
-  "Substitute",
-  "Coven",
-  "Thousand Needles",
-  "Effigy Unmaking",
-];
-const descriptions = [
-  "Four stored Pins, each recovering in 6 s. Hit an enemy within 5 km for 24k and bind an 18 s doll; repeat for up to three pins. Keep four dolls.",
-  "A needle sweep hits for 35k and slows around the reticle. Nearby dolls stitch for 8 s, echoing 35% of doll damage once, at most 45k per echo.",
-  "Wrench the aimed enemy for 55k plus 15k per pin and slow it. Consume one pin for an extra 45k focused burst. Works without a doll.",
-  "Ignite a 650 m patch for 25k and burn dolls for 5 s. Stitches spread ignition. Each pin strengthens the burn.",
-  "A 900 m cutting wave deals 50k, cashes out remaining doll fire and consumes pins for 30k each. Stitched dolls erupt in smaller outward bursts.",
-  "Dash toward the reticle up to 700 m, leaving a 140k-HP effigy that absorbs incoming damage for 4 s before exploding. Nearby stitched enemies are cursed.",
-  "Create a 1.8 km ritual area at the reticle: bind enemies, preserve stronger pins and stitch all dolls for 8 s.",
-  "Twelve needle strikes chase the aimed enemy, each dealing 18k plus 30% per pin. Stitches echo a capped share to the group.",
-  "A giant effigy tears apart: detonate every doll for 120k plus 70k per pin. Stitched dolls create 650 m blasts. Clears all dolls.",
-];
-export const HEXWEAVER_SKILLS: SkillDef[] = names.map((name, i) =>
+import { def, type SkillDef } from '../types';
+import { aimPoint, hurt } from '../kit';
+import { miscTarget } from './MiscSupport';
+import { coven, dollOf, effigyFire, HEX, pinCharges, pinDoll, ripSeam, stitch, substitute, thousandNeedles, twist, unmake } from './HexweaverRuntime';
+
+// The Hexweaver's nine skills, Q E Z X C V R T B. Their numbers live in `HEX`.
+
+const k = (v: number) => `${v / 1000}k`;
+
+const SKILLS = [
+  {
+    id: 'hexPin',
+    name: 'Pin',
+    cooldown: 0,
+    icon: 'salvo',
+    description: `${HEX.pin.charges} stored Pins, each back ${HEX.pin.recharge} s after it is spent. Stab the aimed enemy within ${HEX.pin.range / 1000} km for ${k(HEX.pin.damage)} and bind it to a doll, or add a pin to its doll (up to ${HEX.pin.max}). Each pin makes it take +${HEX.pinBonus * 100}% from you. Keep ${HEX.dolls} dolls.`,
+  },
+  {
+    id: 'hexStitch',
+    name: 'Stitch',
+    cooldown: 12,
+    icon: 'root',
+    description: `A needle sweep hits every enemy within ${HEX.stitch.radius / 1000} km of the reticle for ${k(HEX.stitch.damage)}, slows them ${HEX.stitch.slow * 100}% for ${HEX.stitch.slowTime} s and stitches their dolls for ${HEX.stitch.time} s: a stitched doll passes ${HEX.stitch.echo * 100}% of Twist, Rip and Needle damage to the others, at most ${k(HEX.stitch.echoCap)} each.`,
+  },
+  {
+    id: 'hexTwist',
+    name: 'Twist',
+    cooldown: 9,
+    icon: 'root',
+    description: `Wring the aimed enemy's doll for ${k(HEX.twist.damage)} plus ${k(HEX.twist.perPin)} per pin; spending a pin adds ${k(HEX.twist.consume)}. The hull is wrenched a quarter turn and slowed ${HEX.twist.slow * 100}% for ${HEX.twist.slowTime} s. Works without a doll.`,
+  },
+  {
+    id: 'hexFire',
+    name: 'Effigy Fire',
+    cooldown: 12,
+    icon: 'rune',
+    description: `Set a ${HEX.fire.radius} m patch alight: ${k(HEX.fire.damage)} at once and ${k(HEX.fire.field)}/s for ${HEX.fire.fieldTime} s. Dolls inside burn for ${HEX.fire.time} s at ${k(HEX.fire.burn)}/s, +${HEX.fire.perPin * 100}% per pin, and the fire spreads to every stitched doll.`,
+  },
+  {
+    id: 'hexRip',
+    name: 'Rip the Seam',
+    cooldown: 14,
+    icon: 'root',
+    description: `Tear a ${HEX.rip.radius} m seam for ${k(HEX.rip.damage)}, cashing out each doll's remaining burn and ${k(HEX.rip.perPin)} per pin it holds. Stitched dolls erupt for ${k(HEX.rip.erupt)} in ${HEX.rip.eruptRadius} m.`,
+  },
+  {
+    id: 'hexSubstitute',
+    name: 'Substitute',
+    cooldown: 18,
+    icon: 'shield',
+    description: `Dash up to ${HEX.substitute.dash} m toward the reticle, leaving a straw effigy that soaks ${k(HEX.substitute.hp)} of damage aimed at you and draws enemy fire within ${HEX.substitute.lure / 1000} km for ${HEX.substitute.time} s, then bursts for ${k(HEX.substitute.burst)} in ${HEX.substitute.burstRadius} m.`,
+  },
+  {
+    id: 'hexCoven',
+    name: 'Coven',
+    cooldown: 85,
+    icon: 'root',
+    description: `Draw a ${HEX.coven.radius / 1000} km ritual circle at the reticle: every enemy inside is bound with at least one pin, every doll is stitched for ${HEX.coven.stitch} s, and the circle burns ${k(HEX.coven.dps)}/s for ${HEX.coven.time} s.`,
+  },
+  {
+    id: 'hexNeedles',
+    name: 'Thousand Needles',
+    cooldown: 90,
+    duration: HEX.needles.time,
+    icon: 'root',
+    description: `${HEX.needles.count} needles rain on the aimed enemy over ${HEX.needles.time} s, ${k(HEX.needles.damage)} each, +${HEX.needles.perPin * 100}% per pin. Stitches echo them to the group.`,
+  },
+  {
+    id: 'hexUnmaking',
+    name: 'Effigy Unmaking',
+    cooldown: 110,
+    icon: 'skull',
+    description: `Tear every doll apart: each deals ${k(HEX.unmaking.damage)} plus ${k(HEX.unmaking.perPin)} per pin to its ship, and a stitched doll blasts ${k(HEX.unmaking.blast)} across ${HEX.unmaking.blastRadius} m. Clears all dolls.`,
+  },
+] as const;
+
+export const HEXWEAVER_SKILLS: SkillDef[] = SKILLS.map((sk, i) =>
   def(
     {
-      id:
-        "hex" +
-        [
-          "Pin",
-          "Stitch",
-          "Twist",
-          "Fire",
-          "Rip",
-          "Substitute",
-          "Coven",
-          "Needles",
-          "Unmaking",
-        ][i],
-      name,
-      short: name.toUpperCase(),
-      description: descriptions[i],
-      cooldown: [0, 12, 9, 12, 14, 18, 85, 90, 110][i],
-      duration: i === 7 ? 2 : 0,
+      id: sk.id,
+      name: sk.name,
+      short: sk.name.toUpperCase(),
+      description: sk.description,
+      cooldown: sk.cooldown,
+      duration: 'duration' in sk ? sk.duration : 0,
       ult: i >= 6,
       accent: 0xe878bd,
-      icon:
-        i === 5
-          ? "shield"
-          : i === 0
-            ? "salvo"
-            : i === 3
-              ? "rune"
-              : i === 8
-                ? "skull"
-                : "root",
+      icon: sk.icon,
     },
     {
       activate(s, _g, st) {
-        const a = s.hexweaver!,
-          t = miscTarget(s),
-          p = aimPoint(s, 5000),
-          now = s.game.time;
-        if (i === 0) {
-          if (!t) return s.failSkill("Aim at a detected enemy within 5 km");
-          if (!pinDoll(s, t)) return false;
-          hurt(s, t, 24000, st.spec);
-        }
-        if (i === 1) {
-          for (const v of s.game.ships)
-            if (
-              v.alive &&
-              v.team !== s.team &&
-              Math.hypot(v.pos.x - p.x, v.pos.z - p.z) < 1200
-            ) {
-              hurt(s, v, 35000, st.spec);
-              buff(v, "debuff:stitchSlow", 3, (m) => {
-                m.speedMul *= 0.65;
-              });
-              const d = a.dolls.find((d) => d.target === v.id);
-              if (d) d.stitchedUntil = now + 8;
-            }
-        }
-        if (i === 2) {
-          if (!t) return false;
-          const d = a.dolls.find((d) => d.target === t.id);
-          dollDamage(
-            s,
-            t,
-            55000 + (d?.pins ?? 0) * 15000 + (d && d.pins > 0 ? 45000 : 0),
-            st.spec,
-          );
-          if (d && d.pins > 0) d.pins--;
-          buff(t, "debuff:twist", 2, (m) => {
-            m.speedMul *= 0.5;
-          });
-        }
-        if (i === 3) {
-          for (const v of s.game.ships)
-            if (
-              v.alive &&
-              v.team !== s.team &&
-              Math.hypot(v.pos.x - p.x, v.pos.z - p.z) < 650
-            )
-              hurt(s, v, 25000, st.spec);
-          const d = t && a.dolls.find((d) => d.target === t.id);
-          if (d) {
-            igniteDoll(s, d);
-            if (d.stitchedUntil > now)
-              for (const o of a.dolls)
-                if (o.stitchedUntil > now) igniteDoll(s, o);
-          }
-          s.game.fields.add(s, {
-            x: p.x,
-            z: p.z,
-            r: 650,
-            life: 5,
-            dps: 9000,
-            skill: st.spec,
-            look: "fire",
-            color: 0xe878bd,
-          });
-        }
-        if (i === 4) {
-          for (const v of s.game.ships.slice())
-            if (
-              v.alive &&
-              v.team !== s.team &&
-              Math.hypot(v.pos.x - p.x, v.pos.z - p.z) < 900
-            ) {
-              const d = a.dolls.find((d) => d.target === v.id),
-                extra = d
-                  ? Math.max(0, d.burnUntil - now) *
-                      18000 *
-                      (1 + d.pins * 0.2) +
-                    d.pins * 30000
-                  : 0;
-              dollDamage(s, v, 50000 + extra, st.spec);
-              if (d) {
-                if (d.stitchedUntil > now)
-                  s.game.strikes.spawn(s, {
-                    kind: "rod",
-                    skill: st.spec,
-                    x: v.pos.x,
-                    z: v.pos.z,
-                    radius: 450,
-                    delay: 0,
-                    damage: 35000,
-                    look: "rune",
-                  });
-                d.pins = 0;
-                d.burnUntil = 0;
-              }
-            }
-        }
+        const p = aimPoint(s, 5000);
+        if (i === 1) return stitch(s, p.x, p.z, st.spec);
+        if (i === 3) return effigyFire(s, p.x, p.z, st.spec);
+        if (i === 4) return ripSeam(s, p.x, p.z, st.spec);
         if (i === 5) {
-          const dest = aimPoint(s, 700),
-            from = { x: s.pos.x, z: s.pos.z };
-          if (!moveSafe(s, dest.x, dest.z))
-            return s.failSkill("Substitute needs clear water");
-          a.decoy = { ...from, hp: 140000, until: now + 4 };
+          const dest = aimPoint(s, HEX.substitute.dash);
+          return substitute(s, dest.x, dest.z);
         }
-        if (i === 6) {
-          for (const v of s.game.ships)
-            if (
-              v.alive &&
-              v.team !== s.team &&
-              !v.mods.untargetable &&
-              Math.hypot(v.pos.x - p.x, v.pos.z - p.z) < 1800
-            ) {
-              if (!a.dolls.some((d) => d.target === v.id)) pinDoll(s, v, true);
-            }
-          for (const d of a.dolls) d.stitchedUntil = now + 8;
+        if (i === 6) return coven(s, p.x, p.z, st.spec);
+        if (i === 8) return unmake(s, st.spec);
+        const t = miscTarget(s, HEX.pin.range);
+        if (!t) return s.failSkill(`Aim at a detected enemy within ${HEX.pin.range / 1000} km`);
+        if (i === 0) {
+          if (pinCharges(s) <= 0) return s.failSkill('All four Pins are recovering');
+          hurt(s, t, HEX.pin.damage * (1 + (dollOf(s, t)?.pins ?? 0) * HEX.pinBonus), st.spec);
+          return pinDoll(s, t);
         }
-        if (i === 7) {
-          if (!t) return false;
-          a.needles.push({ target: t.id, next: now, left: 12 });
-        }
-        if (i === 8) {
-          if (!a.dolls.length)
-            return s.failSkill("Bind at least one doll before Unmaking");
-          const dolls = a.dolls.slice();
-          a.dolls = [];
-          for (const d of dolls) {
-            const v = s.game.ships.find((v) => v.id === d.target && v.alive);
-            if (v) {
-              hurt(s, v, 120000 + d.pins * 70000, st.spec);
-              if (d.stitchedUntil > now)
-                s.game.strikes.spawn(s, {
-                  kind: "rod",
-                  skill: st.spec,
-                  x: v.pos.x,
-                  z: v.pos.z,
-                  radius: 650,
-                  delay: 0.3,
-                  damage: 65000,
-                  look: "rune",
-                });
-            }
-          }
-        }
+        if (i === 2) return twist(s, t, st.spec);
+        if (i === 7) return thousandNeedles(s, t);
       },
       aiShouldUse(s, _g, t) {
         if (!t) return false;
         const a = s.hexweaver!;
+        const d = Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z);
+        const pins = dollOf(s, t)?.pins ?? 0;
         if (i === 5) return s.hp < s.maxHp * 0.6;
-        if (i === 8)
-          return a.dolls.some((d) => d.pins >= 2) || a.dolls.length >= 2;
-        if (i === 1) return a.dolls.length >= 2;
-        if (i === 4) return a.dolls.some((d) => d.burnUntil > s.game.time);
-        return Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) < 4800;
+        if (i === 8) return a.dolls.reduce((n, x) => n + x.pins, 0) >= 3 || a.dolls.length >= 2;
+        if (i === 1) return a.dolls.length >= 1 && d < 4800;
+        if (i === 2) return pins >= 1 && d < 4800;
+        if (i === 4) return a.dolls.some((x) => x.pins >= 2 || x.burnUntil > s.game.time) && d < 4800;
+        return d < 4800;
       },
     },
   ),

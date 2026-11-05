@@ -10,6 +10,7 @@ import type { Ship } from '../ships/Ship';
 import { aiWantsSkill } from '../skills/registry';
 import { CUBE, TUNGSTEN_MODES } from '../skills/misc/TungstenModes';
 import { aiThrows, throwerCube } from '../skills/misc/TungstenRuntime';
+import { effigyLure } from '../skills/misc/HexweaverRuntime';
 import { solve } from '../weapons/Ballistics';
 import { avoid, evasion, rudderFor, separate } from './Navigation';
 
@@ -567,6 +568,13 @@ export class AIController {
     const ship = this.ship;
     const c = ship.control;
     const t = this.target;
+    // A Hexweaver's effigy draws the fire of every captain near it.
+    const lure = effigyLure(ship);
+    if (lure) {
+      c.aimX = lure.x;
+      c.aimZ = lure.z;
+      return;
+    }
     // A hovering cube sits still: straight at it.
     const k = this.cube;
     if (k && ship.currentSlot?.kind === 'gun' && c.skill < 0) {

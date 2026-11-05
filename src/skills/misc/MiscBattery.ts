@@ -1,4 +1,5 @@
 import type { Ship } from '../../ships/Ship';
+import { hexRider } from './HexweaverRuntime';
 import { judgeRider } from './JudgeRuntime';
 import { emitMisc, isMiscTitanShip, type TitanRider } from './MiscEvents';
 
@@ -19,6 +20,7 @@ export interface MiscRider {
 
 function titanRider(s: Ship): TitanRider {
   if (s.judge) return judgeRider(s);
+  if (s.hexweaver) return hexRider(s);
   return {};
 }
 

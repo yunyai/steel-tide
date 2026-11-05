@@ -111,6 +111,25 @@ describe('misc titan models', () => {
     model.dispose();
   });
 
+  it('mirrors the aimed enemy’s doll on the Hexweaver’s effigy: its pins, flinches and twist', () => {
+    const doll = (o: Record<string, number>) => ({ target: 7, pins: 0, pricks: 0, until: 99, stitchedUntil: 0, burnUntil: 0, burnNext: 1e9, struck: -1e9, pinnedAt: -1e9, twistedAt: -1e9, ...o });
+    const hexed = (o: Record<string, number>) =>
+      ({ ...ship(), game: { time: 10 }, control: { targetId: 7 }, hexweaver: { recharge: [], dolls: [doll(o)], decoy: null, needles: [] } }) as unknown as Ship;
+    const pose = (o: Record<string, number>) => {
+      const model = new MiscTitanModel(spec('hexweaver'));
+      model.update(hexed(o), 1, .25);
+      const t = transforms(model.group);
+      model.dispose();
+      return t;
+    };
+    const calm = pose({});
+    expect(pose({ pins: 2 })).not.toEqual(calm);
+    expect(pose({ struck: 10 })).not.toEqual(calm);
+    expect(pose({ twistedAt: 10 })).not.toEqual(calm);
+    expect(pose({ target: 8, pins: 2, struck: 10 })).not.toEqual(calm);
+    expect(pose({ struck: 8 })).toEqual(calm);
+  });
+
   it('animates instant ultimates when their meter is spent', () => {
     const model = new MiscTitanModel(spec('judge'));
     const ready = { ...ship(), skills: ship().skills.map((state, index) => ({ ...state, spec: { ...state.spec, ult: index === 6 }, meter: 1 })) } as Ship;

@@ -1,5 +1,5 @@
 import type { Ship } from '../ships/Ship';
-import { pinCharges } from '../skills/misc/HexweaverRuntime';
+import { burnRate, dollOf, HEX, pinCharges, type Doll } from '../skills/misc/HexweaverRuntime';
 import { brokeRecently, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAW_OFFENCES, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
 import type { MiscTitanEvent } from '../skills/misc/MiscEvents';
 
@@ -89,6 +89,82 @@ export function judgePanel(me: Ship, target: Ship | null): JudgePanel {
   };
 }
 
+/** One doll on the Hexweaver's shelf. */
+export interface DollSlot {
+  target: number;
+  name: string;
+  /** Its ship's health, 0–1. */
+  hp: number;
+  pins: number;
+  /** Needle hits toward the next free pin, of `HEX.pricks`. */
+  pricks: number;
+  /** The doll's remaining life, 0–1. */
+  life: number;
+  burning: boolean;
+  stitched: boolean;
+  aimed: boolean;
+  /** 1 the moment its ship is hurt by the Hexweaver, fading to 0. */
+  flinch: number;
+  /** 1 the moment it is twisted, fading to 0. */
+  twist: number;
+  /** 1 the moment a pin goes in, fading to 0. */
+  stab: number;
+}
+
+/** The Hexweaver's own panel. */
+export interface HexPanel {
+  /** One pip per Pin charge: 1 ready, else how far it has recovered. */
+  pins: number[];
+  slots: DollSlot[];
+  /** Pairs of shelf slots stitched together. */
+  links: [number, number][];
+  /** What Twist, Rip the Seam and Effigy Unmaking would deal the aimed doll now. */
+  previews: { twist: number; rip: number; unmaking: number } | null;
+}
+
+const fade = (since: number, time: number): number => Math.max(0, Math.min(1, 1 - since / time));
+
+export function hexPanel(me: Ship, target: Ship | null): HexPanel {
+  const a = me.hexweaver!;
+  const now = me.game.time;
+  const spent = a.recharge.filter((r) => r > now + 1e-8).sort((x, y) => x - y);
+  const pins = [...Array<number>(HEX.pin.charges - spent.length).fill(1), ...spent.map((r) => 1 - (r - now) / HEX.pin.recharge)];
+  const slots: DollSlot[] = [];
+  for (const d of a.dolls) {
+    const t = me.game.ships.find((v) => v.id === d.target);
+    if (!t) continue;
+    slots.push({
+      target: d.target,
+      name: t.name,
+      hp: t.maxHp > 0 ? Math.max(0, t.hp / t.maxHp) : 0,
+      pins: d.pins,
+      pricks: d.pricks,
+      life: Math.max(0, Math.min(1, (d.until - now) / HEX.pin.life)),
+      burning: d.burnUntil > now,
+      stitched: d.stitchedUntil > now,
+      aimed: !!target && target.id === d.target,
+      flinch: fade(now - d.struck, 0.4),
+      twist: fade(now - d.twistedAt, 0.8),
+      stab: fade(now - d.pinnedAt, 0.5),
+    });
+  }
+  const links: [number, number][] = [];
+  for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) if (slots[i].stitched && slots[j].stitched) links.push([i, j]);
+  const t = target && target.team !== me.team && target.alive ? target : null;
+  const d = t ? dollOf(me, t) : undefined;
+  return { pins, slots, links, previews: t ? hexPreviews(me, d, now) : null };
+}
+
+function hexPreviews(me: Ship, d: Doll | undefined, now: number): HexPanel['previews'] {
+  const n = d?.pins ?? 0;
+  const mul = me.mods.damageMul;
+  return {
+    twist: (HEX.twist.damage + n * HEX.twist.perPin + (n > 0 ? HEX.twist.consume : 0)) * mul,
+    rip: (HEX.rip.damage + (d ? Math.max(0, d.burnUntil - now) * burnRate(d) : 0) + n * HEX.rip.perPin) * mul,
+    unmaking: (HEX.unmaking.damage + n * HEX.unmaking.perPin) * mul * me.mods.ultDamageMul,
+  };
+}
+
 /** A citation popup: `+n label` over `target`, merged by `key` while the same law keeps breaking. */
 export interface CitePopup {
   target: Ship;
@@ -117,11 +193,8 @@ export function miscTitanSummary(me: Ship, target: Ship | null): string {
   if (me.hexweaver) {
     const a = me.hexweaver;
     const next = a.recharge.length ? ` · next ${Math.max(0, Math.min(...a.recharge) - now).toFixed(1)}s` : '';
-    const dolls = a.dolls.map((d) => {
-      const t = me.game.ships.find((t) => t.id === d.target);
-      return `${t?.name ?? 'Doll'} ${d.pins} pins${d.stitchedUntil > now ? ' ↔' : ''}${d.burnUntil > now ? ' ♨' : ''}`;
-    });
-    return `PINS ${pinCharges(me)}/4${next} · DOLLS ${a.dolls.length}/4 · ${dolls.join(' · ')}`;
+    const pins = a.dolls.reduce((n, d) => n + d.pins, 0);
+    return `PINS ${pinCharges(me)}/${HEX.pin.charges}${next} · DOLLS ${a.dolls.length}/${HEX.dolls} · ${pins} pins bound`;
   }
   if (me.gourmand) {
     const a = me.gourmand;
@@ -143,12 +216,43 @@ export function miscMarkerChip(viewer: Ship, s: Ship): MiscChip | null {
   let cases = 0;
   for (const j of viewer.game.ships) if (j.judge && j.alive && j.team === viewer.team) cases = Math.max(cases, violationCount(j, s));
   if (cases > 0) return { kind: 'judge', text: `⚖ ${cases}`, alert: cases >= JUDGE.death };
+  let doll: Doll | undefined;
+  for (const h of viewer.game.ships) {
+    if (!h.hexweaver || !h.alive || h.team !== viewer.team) continue;
+    const d = dollOf(h, s);
+    if (d && (!doll || d.pins > doll.pins)) doll = d;
+  }
+  if (doll) return { kind: 'hexweaver', text: `✂ ${doll.pins}`, alert: doll.pins >= HEX.pin.max || doll.burnUntil > viewer.game.time };
   return null;
 }
 
 /** The banner `me` sees while an enemy misc titan holds it; null when none does. */
 export function miscVictimBanner(me: Ship): MiscBanner | null {
-  return judgeBanner(me);
+  return judgeBanner(me) ?? hexBanner(me);
+}
+
+/** The enemy Hexweaver with the most pins in `me`'s doll. */
+function hexBanner(me: Ship): MiscBanner | null {
+  const now = me.game.time;
+  let doll: Doll | undefined;
+  for (const h of me.game.ships) {
+    if (!h.hexweaver || !h.alive || h.team === me.team) continue;
+    const d = dollOf(h, me);
+    if (d && (!doll || d.pins > doll.pins)) doll = d;
+  }
+  if (!doll) return null;
+  const stitched = doll.stitchedUntil > now;
+  const burning = doll.burnUntil > now;
+  const parts = [`${doll.pins} ${doll.pins === 1 ? 'pin' : 'pins'}: +${Math.round(doll.pins * HEX.pinBonus * 100)}% damage from the Hexweaver`];
+  if (stitched) parts.push('STITCHED: shares the pain of other dolls');
+  if (burning) parts.push(`BURNING ${Math.ceil(doll.burnUntil - now)}s`);
+  return {
+    kind: 'hexweaver',
+    title: 'Hexed',
+    detail: parts.join(' · '),
+    alert: doll.pins >= HEX.pin.max || burning,
+    meter: { n: doll.pins, cap: HEX.pin.max, mark: HEX.pin.max },
+  };
 }
 
 /** The enemy Judge whose court holds `me`, or else the one with the biggest case on it. */
