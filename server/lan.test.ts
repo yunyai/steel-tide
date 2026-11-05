@@ -750,6 +750,16 @@ describe('co-op Boss Rush lobbies', () => {
     expect(navalRules.hostEnds(st)).toBe(true);
   });
 
+  it('refuses to start a fleet battle with more than 8 captains on one team, as a run left behind can', () => {
+    const nine = Array.from({ length: 9 }, (_, i) => ({ pick: 'iowa', team: 0 as const, name: `C${i}` }));
+    for (const type of ['domination', 'freeplay', 'sandbox'] as const) {
+      const st = navalRules.defaults();
+      navalRules.applySettings(st, { type });
+      expect(navalRules.startError(st, nine), type).toBe('Team A has more than 8 captains: move some to Team B.');
+      expect(navalRules.startError(st, nine.map((c, i) => ({ ...c, team: (i % 2) as 0 | 1 }))), type).toBeNull();
+    }
+  });
+
   it('passes rush card picks in a rush only, as a whole card number', () => {
     const st = rushSettings();
     expect(navalRules.cleanEdge({ rc: 2 }, st)).toEqual({ rc: 2 });

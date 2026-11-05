@@ -129,14 +129,17 @@ export const navalRules: BattleRules = {
   holdFire: (c) => { const held: Continuous = [...c]; held[3] = 0; return held; },
 
   startError(st, captains) {
-    // A sandbox has no fleets to fill: its captains sail alone until they spawn dummies.
-    if (st.type === 'sandbox') return null;
     // A co-op run is its captains against the waves: one fleet of them.
     if (rushPlay(st.type)) {
       const mode = st.type === 'survival' ? 'Survival' : 'Boss Rush';
       if (!captains.length) return `${mode} needs a captain`;
       return captains.length > MAX_PER_TEAM ? `${mode} takes up to ${MAX_PER_TEAM} captains` : null;
     }
+    // A co-op run left behind can leave every captain on Team A, past what one team holds.
+    const crowded = ([0, 1] as Team[]).find((t) => captains.filter((c) => c.team === t).length > MAX_PER_TEAM);
+    if (crowded !== undefined) return `Team ${crowded === 0 ? 'A' : 'B'} has more than ${MAX_PER_TEAM} captains: move some to Team ${crowded === 0 ? 'B' : 'A'}.`;
+    // A sandbox has no fleets to fill: its captains sail alone until they spawn dummies.
+    if (st.type === 'sandbox') return null;
     const error = selectionError(st.aiSelection, st.eras, st.titans, st.ai);
     if (error) return error;
     // Every other battle is decided by one fleet running out of ships (or never meeting one).

@@ -537,7 +537,8 @@ export class BossRush {
       s.heal(s.maxHp * 0.35);
       s.extinguish();
     }
-    for (const c of this.captains) if (!c.ship.alive) this.revive(c.ship);
+    // The sunk sail again only if a shipmate saw the wave out; a fleet that went down with it has lost.
+    if (this.afloat().length) for (const c of this.captains) if (!c.ship.alive) this.revive(c.ship);
     for (const { ship } of this.captains) {
       const kit = ship.consumables[0];
       if (kit) kit.charges = Math.min(kit.spec.charges, kit.charges + 1);
@@ -556,7 +557,8 @@ export class BossRush {
    * hull; the repair kits (an Extra repair kit among them) are carried over the respawn's fresh set.
    */
   private revive(ship: Ship): void {
-    const kits = ship.consumables.map((k) => ({ spec: k.spec, charges: k.charges }));
+    // Sunk in a titan form, the hull's own kits are the ones the form set aside.
+    const kits = (ship.form?.saved.consumables ?? ship.consumables).map((k) => ({ spec: k.spec, charges: k.charges }));
     const by = this.afloat()[0];
     const at = by ? findOpenWater(this.game.map, by.pos.x, by.pos.z + CAPTAIN_GAP) : this.centre();
     this.game.revive(ship, at.x, at.z, REVIVE_HP);

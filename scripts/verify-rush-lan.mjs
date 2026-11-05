@@ -102,8 +102,16 @@ try {
   const differ = common.filter((k) => hashes[0][k] !== hashes[1][k]);
   check(common.length > 90 && differ.length === 0, `LAN checkpoints: ${common.length} common, ${differ.length} differ`);
 
-  // The host ends the run: a result for everyone, and no solo record written.
-  await host.evaluate(() => window.steel.net.client.send({ t: 'end' }));
+  // The host ends the run from the battle menu: a result for everyone, and no solo record written.
+  // A guest's menu has no such button.
+  await guest.keyboard.press('Escape');
+  await guest.waitForSelector('.pause');
+  check((await guest.getByRole('button', { name: 'End run', exact: true }).count()) === 0, 'A guest cannot end the run');
+  await guest.getByRole('button', { name: 'Resume battle', exact: true }).click();
+  await host.keyboard.press('Escape');
+  await host.waitForSelector('.pause');
+  await host.screenshot({ path: `${out}/menu-host.jpg`, quality: 88 });
+  await host.getByRole('button', { name: 'End run', exact: true }).click();
   await Promise.all(pages.map((p) => p.waitForFunction(() => window.steel.battle.game.over, undefined, { timeout: 10000 })));
   const ended = await Promise.all(pages.map((p) => p.evaluate(() => ({ reason: window.steel.battle.game.reason, records: Object.keys(localStorage).filter((k) => k.startsWith('steel-tide:bossrush') || k.startsWith('steel-tide:survival')) }))));
   check(ended.every((e) => e.reason === 'Run ended on wave 2'), `Run ended: ${JSON.stringify(ended)}`);

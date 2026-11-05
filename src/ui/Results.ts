@@ -1,5 +1,5 @@
 import { CLASS_LABEL } from '../data/ships';
-import { openPlay } from '../core/BattleSetup';
+import { openPlay, rushPlay, type BattleType } from '../core/BattleSetup';
 import type { Game } from '../core/Game';
 import { RUSH_PRESET_LABEL } from '../modes/RushDifficulty';
 import type { Team } from '../core/types';
@@ -194,6 +194,20 @@ export interface PauseActions {
 export interface PauseExtra {
   label: string;
   run(): void;
+}
+
+/**
+ * What the Esc sheet offers past Settings: Free play lets a captain afloat change ship, and whoever
+ * runs it (solo, or the LAN host) end it; the LAN host of a co-op run can end it for everyone.
+ */
+export function battleMenuChoices(type: BattleType, sailing: boolean, link: { host: boolean } | null): ('Change ship' | 'End battle' | 'End run')[] {
+  const out: ('Change ship' | 'End battle' | 'End run')[] = [];
+  if (openPlay(type) && sailing) {
+    out.push('Change ship');
+    if (!link || link.host) out.push('End battle');
+  }
+  if (rushPlay(type) && link?.host) out.push('End run');
+  return out;
 }
 
 /** The Esc sheet. Solo it freezes the battle; in a LAN battle (`title` "Battle menu") it does not. */

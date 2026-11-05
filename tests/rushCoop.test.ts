@@ -176,6 +176,45 @@ describe('co-op Boss Rush', () => {
     expect(Math.hypot(lost.pos.x - keep.pos.x, lost.pos.z - keep.pos.z)).toBeLessThan(1500);
   });
 
+  it('brings a captain sunk in their Titan Shift form back with their own repair kits', () => {
+    const g = new Game({ mode: 'solo', type: 'bossrush', mapId: 'open', teamSize: 1, difficulty: 'normal', eras: ['historic', 'anime'], seed: 11, escorts: 0, players: [{ shipId: 'iowa', device: 'mouse', name: 'C1' }, { shipId: 'naruto', device: 'mouse', name: 'C2' }] });
+    const r = g.rush!;
+    run(g, 5);
+    const [keep, lost] = r.captains.map((c) => c.ship);
+    upgrade('repair').apply(lost, r);
+    const own = lost.consumables.map((k) => ({ spec: k.spec, charges: k.charges }));
+    expect(g.shiftShip(lost)).toBe(true);
+    g.step(SIM_DT);
+    expect(lost.form).toBeTruthy();
+    expect(lost.consumables[0].spec).not.toEqual(own[0].spec);
+    lost.sink(null);
+    wipe(g, keep);
+    run(g, 0.1);
+    expect(lost.alive).toBe(true);
+    expect(lost.form).toBeNull();
+    expect(lost.consumables.map((k) => k.spec)).toEqual(own.map((k) => k.spec));
+    expect(lost.consumables[0].charges).toBe(Math.min(own[0].spec.charges, own[0].charges + 1));
+  });
+
+  it('ends the run when the last captains and the last enemy sink on the same tick', () => {
+    for (const n of [1, 2]) {
+      const g = rushGame(captains(n));
+      const r = g.rush!;
+      run(g, 5);
+      r.queue.length = 0;
+      const foes = enemies(g);
+      for (const s of foes.slice(1)) s.sink(r.player);
+      run(g, 0.1);
+      expect(g.over).toBe(false);
+      foes[0].sink(r.player);
+      for (const c of r.captains) c.ship.sink(foes[0]);
+      g.step(SIM_DT);
+      expect(g.over, `${n} captain(s)`).toBe(true);
+      expect(g.winner).toBe(1);
+      expect(r.captains.every((c) => !c.ship.alive)).toBe(true);
+    }
+  });
+
   it('ends the run only when every captain is down', () => {
     const g = rushGame(captains(2));
     const r = g.rush!;

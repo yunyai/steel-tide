@@ -20,7 +20,7 @@ import type { SendCard } from '../ui/Intermission';
 import { PerfPanel } from '../ui/PerfPanel';
 import { SandboxHud } from '../ui/SandboxHud';
 import { buildSandboxPanel } from '../ui/SandboxPanel';
-import { buildPause, buildReport, buildScoreboard, type PauseExtra } from '../ui/Results';
+import { battleMenuChoices, buildPause, buildReport, buildScoreboard, type PauseExtra } from '../ui/Results';
 import { buildSettings } from '../ui/SettingsSheet';
 import { buildShipPicker } from '../ui/ShipPicker';
 import type { ActiveBattle, BattleLink } from './ActiveBattle';
@@ -300,7 +300,7 @@ export class NavalBattle implements ActiveBattle {
     }
   }
 
-  /** The Esc sheet; Free play adds changing ship and (solo, or for the LAN host) ending the battle. */
+  /** The Esc sheet; Free play adds changing ship and ending the battle, a LAN co-op run ending it (see battleMenuChoices). */
   private showPauseMenu(): void {
     const resume = this.usesMouse ? 'Resume to take the helm again.' : 'Press Start to resume.';
     const hint = this.link ? `The battle carries on while this menu is open, and your ship holds its course. ${resume}` : `The battle is frozen. ${resume}`;
@@ -322,23 +322,15 @@ export class NavalBattle implements ActiveBattle {
         },
       });
     }
-    if (openPlay(this.config.type) && this.pcs.length) {
+    for (const label of battleMenuChoices(this.config.type, this.pcs.length > 0, this.link)) {
       extra.push({
-        label: 'Change ship',
+        label,
         run: () => {
           audio.ui('click');
-          this.openShipPicker();
+          if (label === 'Change ship') this.openShipPicker();
+          else this.endFreePlay();
         },
       });
-      if (!this.link || this.link.host) {
-        extra.push({
-          label: 'End battle',
-          run: () => {
-            audio.ui('click');
-            this.endFreePlay();
-          },
-        });
-      }
     }
     this.setOverlay(
       buildPause(
@@ -428,7 +420,7 @@ export class NavalBattle implements ActiveBattle {
     }
   }
 
-  /** Free play has no result to wait for: the solo captain or the LAN host calls it. */
+  /** Free play has no result to wait for: the solo captain or the LAN host calls it. On LAN the host also ends a co-op run this way. */
   private endFreePlay(): void {
     if (this.link) {
       this.link.end();
