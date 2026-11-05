@@ -2,6 +2,7 @@ import type { Color, Scene } from 'three';
 import type { Game } from '../core/Game';
 import type { Team } from '../core/types';
 import type { Ship } from '../ships/Ship';
+import { playMiscSound } from '../fx/MiscTitanAudio';
 import type { SpatialDistortion } from './SpatialDistortion';
 import { FaultlineFx } from './misc/FaultlineFx';
 import { GourmandFx } from './misc/GourmandFx';
@@ -23,6 +24,8 @@ export class MiscTitanFx {
   readonly gourmand: GourmandFx;
   readonly faultline: FaultlineFx;
   private all: MiscShipFx[];
+  /** The captains on this screen, whose titans' sounds play louder. */
+  locals: Ship[] = [];
   private off: (() => void)[] = [];
   private live = new Set<string>();
 
@@ -37,6 +40,7 @@ export class MiscTitanFx {
       game.events.view('miscTitan', (e) => {
         if (game.over) return;
         this.all.find((fx) => fx.owns(e.ship))?.add(e);
+        playMiscSound(e, game.time, this.locals.includes(e.ship));
       }),
       game.events.view('gameOver', () => {
         for (const fx of this.all) fx.clear();

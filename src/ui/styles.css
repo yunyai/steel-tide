@@ -4481,4 +4481,31 @@ select {
 .misc-chip { margin-left:6px; padding:0 5px; border:1px solid var(--misc); border-radius:3px; color:var(--misc); font-size:10px; line-height:14px; }
 .misc-chip[hidden] { display:none; }
 .misc-chip.alert { color:#fff; background:#c0261c; border-color:#ff7a6a; }
+.misc-banner { flex-wrap:wrap; row-gap:4px; }
+.misc-banner.cited { animation:misc-cited .6s ease-out; }
+@keyframes misc-cited { 0% { box-shadow:0 0 0 2px #ff5a4a, 0 0 22px #ff5a4a; background:rgba(120,20,22,.95); } 100% { box-shadow:none; } }
+.misc-laws { display:flex; flex-wrap:wrap; gap:3px; }
+.misc-laws[hidden], .misc-meter[hidden] { display:none; }
+.misc-laws .law { padding:0 5px; border:1px solid rgba(255,202,115,.35); border-radius:2px; color:#cdbb98; font-size:10px; line-height:15px; white-space:nowrap; }
+.misc-laws .law.broken { color:#fff; background:#b0221c; border-color:#ff7a6a; }
+.misc-laws .law.hit { animation:misc-law-hit .5s ease-out; }
+@keyframes misc-law-hit { 0% { transform:scale(1.25); box-shadow:0 0 12px #ff5a4a; } 100% { transform:none; box-shadow:none; } }
+.misc-meter { display:inline-flex; gap:6px; align-items:center; }
+.misc-meter .mm-track { position:relative; width:140px; height:7px; background:rgba(255,255,255,.08); border:1px solid rgba(255,202,115,.35); }
+.misc-meter .mm-fill { position:absolute; inset:0 auto 0 0; background:var(--misc); transition:width .2s ease-out; }
+.misc-meter .mm-notch { position:absolute; top:-3px; bottom:-3px; width:2px; margin-left:-1px; background:#ff5a4a; }
+.misc-meter .mm-n { min-width:3.2em; font-variant-numeric:tabular-nums; color:var(--misc); }
+.misc-meter.alert .mm-fill { background:#e0332a; animation:misc-due 1s ease-in-out infinite alternate; }
+.misc-meter.alert .mm-n { color:#ff7a6a; }
+.misc-meter.idle { opacity:.4; }
+@keyframes misc-due { to { filter:brightness(1.6); } }
+.misc-panel .jp-row { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; margin-top:3px; }
+.misc-panel .jp-aim { min-width:8em; color:#fff; font-weight:600; }
+.misc-panel .jp-contempt { color:#ff7a6a; }
+.misc-panel .jp-contempt:empty { display:none; }
+.misc-panel .jp-ready { padding:0 6px; color:#fff; background:#b0221c; letter-spacing:.08em; animation:misc-due .6s ease-in-out infinite alternate; }
+.misc-panel .jp-ready[hidden] { display:none; }
+.misc-panel .jp-prev span { color:#cdbb98; font-variant-numeric:tabular-nums; }
+.misc-panel .jp-prev .jp-top { color:var(--misc); }
+@media (prefers-reduced-motion: reduce) { .misc-banner.cited, .misc-laws .law.hit, .misc-meter.alert .mm-fill, .misc-panel .jp-ready { animation:none; } .misc-meter .mm-fill { transition:none; } }
 @media(max-width:650px){.misc-panel,.misc-banner{font-size:10px;max-width:95vw}}

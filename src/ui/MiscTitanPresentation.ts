@@ -1,6 +1,7 @@
 import type { Ship } from '../ships/Ship';
 import { pinCharges } from '../skills/misc/HexweaverRuntime';
-import { brokeRecently, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
+import { brokeRecently, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAW_OFFENCES, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
+import type { MiscTitanEvent } from '../skills/misc/MiscEvents';
 
 // What the HUD shows for the four misc titans, as plain data the DOM layer only copies out. Pure
 // functions of the game state, so they are tested without a document.
@@ -86,6 +87,22 @@ export function judgePanel(me: Ship, target: Ship | null): JudgePanel {
       .slice(0, 3)
       .map((c) => ({ name: me.game.ships.find((s) => s.id === c.target)?.name ?? '?', n: c.stacks })),
   };
+}
+
+/** A citation popup: `+n label` over `target`, merged by `key` while the same law keeps breaking. */
+export interface CitePopup {
+  target: Ship;
+  key: string;
+  label: string;
+  n: number;
+}
+
+/** The popup `viewer` sees for a Judge's `cite` event: only its victim and the Judge itself see one. */
+export function judgeCitePopup(viewer: Ship, e: MiscTitanEvent): CitePopup | null {
+  if (e.kind !== 'cite' || !e.target || !e.n) return null;
+  if (viewer !== e.target && viewer !== e.ship && viewer !== e.ship.summonOwner) return null;
+  const law = e.law !== undefined && e.law >= 0 ? LAWS[e.law] : null;
+  return { target: e.target, key: `cite:${law ?? 'any'}`, label: law ? LAW_OFFENCES[law] : 'CITED', n: e.n };
 }
 
 /** One line naming a misc titan's own resources, aimed at `target`; '' for every other ship. */

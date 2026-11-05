@@ -8,7 +8,8 @@ import { DEFAULT_SETTINGS } from '../src/net/protocol';
 import { emptyControl, type Ship } from '../src/ships/Ship';
 import { miscBattery } from '../src/skills/misc/MiscBattery';
 import { cite, JUDGE, LAWS, recordJudgeAction, updateJudge, violationCount } from '../src/skills/misc/JudgeRuntime';
-import { judgePanel, miscMarkerChip, miscVictimBanner } from '../src/ui/MiscTitanPresentation';
+import { judgeCitePopup, judgePanel, miscMarkerChip, miscVictimBanner } from '../src/ui/MiscTitanPresentation';
+import type { GameEventMap } from '../src/core/Events';
 import { navalRules } from '../server/rules';
 import { emptyGame, place, run } from './helpers';
 
@@ -411,5 +412,23 @@ describe('Judge HUD', () => {
     expect(b.laws).toHaveLength(6);
     expect(b.meter).toEqual({ n: 3, cap: 50, mark: 30 });
     expect(miscVictimBanner(j)).toBeNull();
+  });
+  it('pops each citation over the cited ship for its victim and the Judge’s own captain only', () => {
+    const g = emptyGame();
+    const j = court(g);
+    const t = place(g, 'stepper', 1, 500, 0);
+    const ally = place(g, 'iowa', 1, 900, 0);
+    const other = place(g, 'iowa', 0, -900, 0);
+    const seen: GameEventMap['miscTitan'][] = [];
+    g.events.on('miscTitan', (e) => seen.push(e));
+    sail(g, j, t, 0.1, 25);
+    const speeding = seen.find((e) => e.kind === 'cite')!;
+    expect(judgeCitePopup(t, speeding)).toEqual({ target: t, key: 'cite:speedLimit', label: 'SPEEDING', n: 1 });
+    expect(judgeCitePopup(j, speeding)).toEqual({ target: t, key: 'cite:speedLimit', label: 'SPEEDING', n: 1 });
+    expect(judgeCitePopup(ally, speeding)).toBeNull();
+    expect(judgeCitePopup(other, speeding)).toBeNull();
+    cite(j, t, 2);
+    expect(judgeCitePopup(t, seen.at(-1)!)).toEqual({ target: t, key: 'cite:any', label: 'CITED', n: 2 });
+    expect(judgeCitePopup(t, { ship: j, kind: 'gavelHit', x: 0, z: 0, target: t, n: 0 })).toBeNull();
   });
 });

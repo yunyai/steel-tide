@@ -10,6 +10,7 @@ import { display } from '../input/Settings';
 import { captainName } from './names';
 import { palette } from './palette';
 import { feedbackDamageText,layoutFeedbackPopups,type FeedbackRect } from './FeedbackLayout';
+import { judgeCitePopup } from './MiscTitanPresentation';
 
 // Combat feedback for one HUD: damage numbers over the ships you hit (skill hits get the big
 // accent-coloured ones), hit and kill marks on the reticle, kill-streak callouts, a red edge and
@@ -80,6 +81,8 @@ interface Pop {
   damage: number;
   /** Skill popups: the short name shown as the label. */
   title: string;
+  /** Citation popups: violations added while it stays merged. */
+  cites: number;
   /** Laid-out size, re-measured when the text changes. */
   w: number;
   h: number;
@@ -160,7 +163,7 @@ export class Feedback {
       p.style.display = 'none';
       const label = el('small', '', p);
       const num = el('b', 'num', p);
-      this.pops.push({ el: p, label, num, live: false, target: null, key: '', born: 0, last: 0, row: 0, kind: 'he', counts: {}, damage: 0, title: '', w: 0, h: 0, dirty: true });
+      this.pops.push({ el: p, label, num, live: false, target: null, key: '', born: 0, last: 0, row: 0, kind: 'he', counts: {}, damage: 0, title: '', cites: 0, w: 0, h: 0, dirty: true });
     }
 
     this.hitmark = el('div', 'hitmark', root);
@@ -200,6 +203,10 @@ export class Feedback {
         this.add(h.ship,reaction?`reaction:${[...reaction].sort().join('+')}`:`skill:${h.skill.id}`,'skill',h.damage,reaction?`${ELEMENT_STYLE[reaction[0]].short} + ${ELEMENT_STYLE[reaction[1]].short} · ${h.skill.short}`:h.skill.short,element?hex(element):accentCss(h.skill.accent),reaction?hex(reaction[0]):'');
         this.tick(false);
       }),
+      ev.view('miscTitan', (e) => {
+        const c = judgeCitePopup(pc.ship, e);
+        if (c) this.cite(c.target, c.key, c.label, c.n);
+      }),
       ev.view('shipSunk', (s) => {
         if (s.ship.architectPlatform || s.ship.architectDrone) return;
         if (!mine(s.killer) || s.ship.team === team) return;
@@ -219,7 +226,7 @@ export class Feedback {
     this.off = [];
   }
 
-  private add(target: Ship, key: string, kind: PopKind, damage: number, title = '', accent = '', accent2 = ''): void {
+  private add(target: Ship, key: string, kind: PopKind, damage: number, title = '', accent = '', accent2 = ''): Pop {
     const now = this.clock;
     const merge = kind === 'skill' ? SKILL_MERGE : MERGE;
     let p = this.pops.find((q) => q.live && q.target === target && q.key === key && now - q.last < merge);
@@ -253,6 +260,14 @@ export class Feedback {
     p.dirty = true;
     const cls = `pop k-${p.kind}${key === 'sec' ? ' sec' : ''}${key.startsWith('reaction:')?' elemental-reaction':key.startsWith('element:')?' elemental-hit':''}${p.el.classList.contains('fresh') ? ' fresh' : ''}`;
     if (p.el.className !== cls) p.el.className = cls;
+    return p;
+  }
+
+  /** A Judge's citation over `target`: "+n SPEEDING", adding up while the same law keeps breaking. */
+  private cite(target: Ship, key: string, label: string, n: number): void {
+    const p = this.add(target, key, 'skill', 0, label, '#ffca73');
+    p.cites = (p.counts.skill === 1 ? 0 : p.cites) + n;
+    p.label.textContent = `+${p.cites} ${label}`;
   }
 
   private tick(citadel: boolean): void {

@@ -217,6 +217,7 @@ export class NavalScene implements BattleScene {
     const built = this.syncShips();
     this.warmUp(dt, built);
     const t = g.renderTime;
+    this.miscFx.locals = this.skillFx.locals;
     this.miscFx.update(t,dt);
     for (const [s, v] of this.views) {v.stepFold=this.stepperFx.foldPhase(s);v.stepYaw=this.stepperFx.turnOffset(s);v.update(s,t);}
     for (const w of this.wrecks) {
