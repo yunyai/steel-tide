@@ -22,8 +22,8 @@ export const HEX = {
   fire: { damage: 70000, radius: 650, field: 25000, fieldTime: 5, burn: 30000, perPin: 0.25, time: 6, tick: 0.5 },
   rip: { damage: 150000, radius: 900, perPin: 80000, erupt: 100000, eruptRadius: 450 },
   substitute: { dash: 800, hp: 300000, time: 5, lure: 2000, burst: 150000, burstRadius: 600 },
-  coven: { radius: 1800, stitch: 10, dps: 50000, time: 6 },
-  needles: { count: 24, damage: 40000, time: 3, perPin: 0.3 },
+  coven: { radius: 1800, stitch: 10, dps: 40000, time: 6 },
+  needles: { count: 24, damage: 32000, time: 3, perPin: 0.25 },
   unmaking: { damage: 300000, perPin: 150000, blast: 150000, blastRadius: 650 },
 } as const;
 

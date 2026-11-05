@@ -365,10 +365,10 @@ export const FACTIONS: Record<Nation, Faction> = {
     },
   },
 
-  tribunal:{id:'tribunal',era:'misc',label:'The Tribunal',short:'Tribunal',focus:'Laws, violations and spectacular punishment.',trait:{name:'Jurisdiction',description:'Inside the court, broken laws build separate cases against each offender.'}},
-  coven:{id:'coven',era:'misc',label:'The Coven',short:'Coven',focus:'Dolls, pins and interwoven curses.',trait:{name:'Sympathetic Thread',description:'Four stored Pins bind dolls. Stack pins to focus damage or stitch dolls to echo curses.'}},
-  feast:{id:'feast',era:'misc',label:'The Feast',short:'Feast',focus:'Consume the battle and serve it back.',trait:{name:'Battle Pantry',description:'Consume hostile weapons and wreckage, then cook their ingredients into powerful meals.'}},
-  rift:{id:'rift',era:'misc',label:'The Rift',short:'Rift',focus:'Tectonic engines reshape the sea.',trait:{name:'Tectonic Engine',description:'Fractures and braced impacts build pressure. Temporary ridges reshape movement and fire.'}},
+  tribunal:{id:'tribunal',era:'misc',label:'The Tribunal',short:'Tribunal',focus:'Laws, violations and spectacular punishment.',trait:{name:'Jurisdiction',description:'The court enforces six laws at once. Every breach and every gavel bolt adds to a case, and each violation adds 2% to the gavel battery’s damage.'}},
+  coven:{id:'coven',era:'misc',label:'The Coven',short:'Coven',focus:'Dolls, pins and interwoven curses.',trait:{name:'Sympathetic Thread',description:'Needle hits prick bound dolls into free pins. Every pin makes the Hexweaver hit 15% harder; stitched dolls echo each other.'}},
+  feast:{id:'feast',era:'misc',label:'The Feast',short:'Feast',focus:'Consume the battle and serve it back.',trait:{name:'Battle Pantry',description:'Eat hostile weapons and wreckage. Every salvo is cooked from the fullest jar: shells pierce, explosives burn, scrap shreds.'}},
+  rift:{id:'rift',era:'misc',label:'The Rift',short:'Rift',focus:'Tectonic engines reshape the sea.',trait:{name:'Tectonic Engine',description:'Mortar hits and braced impacts build pressure, and every fourth salvo opens a fracture. Basalt ridges reshape movement and fire.'}},
   foundry: { id:'foundry',era:'misc',label:'The Foundry',short:'Foundry',focus:'Modular arsenals that assemble their own battlefield.',trait:{name:'Modular Arsenal',description:'Ten railgun modules share the hull’s HP: each reserves 100k hull capacity to field a 200k-HP platform. Recall returns surviving health; destroyed modules rebuild in 5 s using redistributed hull health.'} },
   lodestone: {
     id: 'lodestone', era: 'misc', label: 'The Lodestone', short: 'Lodestone',

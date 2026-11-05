@@ -23,9 +23,9 @@ export const GOURMAND = {
   carve: { damage: 180000, radius: 900, bleed: 15000, bleedTime: 4, tick: 0.5, scrap: 2 },
   cooker: { range: 3000, fuse: 1.5, damage: 200000, perIngredient: 15000, max: 10, radius: 500, perExplosive: 40, focus: 20000, ring: 300, shrapnel: 8000, knock: 30, perScrap: 6 },
   skewer: { damage: 150000, range: 2500, time: 2, speed: 420, chomp: 100000, scrap: 2 },
-  serve: { damage: 150000, radius: 350, range: 3500, delay: 0.55, spend: 3 },
+  serve: { damage: 120000, radius: 350, range: 3500, delay: 0.55, spend: 3 },
   comfort: { heal: 0.03, perHeal: 20000, shield: 150000, perShield: 40000, shieldTime: 6, burp: 600, burpDamage: 60000, burpKnock: 80, burpDelay: 0.6 },
-  banquet: { time: 12, every: 1, side: 90000, targets: 2, reach: 3500, sideRadius: 300, reduction: 0.2 },
+  banquet: { time: 12, every: 1, side: 70000, targets: 2, reach: 3500, sideRadius: 300, reduction: 0.2 },
   swallow: { reach: 1000, warning: 0.8, bite: 200000, digest: 120000, tick: 0.5, time: 3, spit: 200000, spitRadius: 450 },
   catastrophe: { fuse: 1, damage: 500000, perIngredient: 25000, radius: 1500, perExplosive: 35, focus: 10000, knock: 100, perScrap: 15, oil: 40000, oilRadius: 800, oilTime: 6 },
 } as const;

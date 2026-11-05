@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { KNOT, SPEED_SCALE } from '../src/config';
 import type { Game } from '../src/core/Game';
 import { NEW_MISC } from '../src/data/miscTitans';
+import { JUDGE_SKILLS } from '../src/skills/misc/judge';
 import { SHIP_BY_ID } from '../src/data/ships';
 import { stateHash } from '../src/net/hash';
 import { DEFAULT_SETTINGS } from '../src/net/protocol';
@@ -246,6 +247,33 @@ describe('Judge skills', () => {
     recordJudgeAction(t, 'fire');
     expect(violationCount(j, t)).toBe(before + 3);
     expect(hp - t.hp).toBeCloseTo(JUDGE.contempt.zap, 0);
+  });
+
+  it('lets the AI throw the gavel only at a cited enemy within reach', () => {
+    const g = emptyGame();
+    const j = court(g);
+    const t = dummy(g, 500, 0);
+    const gavel = JUDGE_SKILLS[1].impl;
+    expect(gavel.aiShouldUse(j, g, t, j.skills[1])).toBe(false);
+    cite(j, t, 1);
+    expect(gavel.aiShouldUse(j, g, t, j.skills[1])).toBe(true);
+    t.pos.x = 6000;
+    expect(gavel.aiShouldUse(j, g, t, j.skills[1])).toBe(false);
+  });
+
+  it('counts a breach in contempt ×3 under Martial Law too, rather than compounding to ×6', () => {
+    const g = emptyGame();
+    const j = court(g);
+    const t = dummy(g, 500, 0);
+    j.meter = 1;
+    expect(j.activateSkill(6)).toBe(true);
+    aim(j, t);
+    expect(j.activateSkill(2)).toBe(true);
+    run(g, 1.8);
+    const before = violationCount(j, t);
+    g.time += 1.01;
+    recordJudgeAction(t, 'fire');
+    expect(violationCount(j, t)).toBe(before + JUDGE.contempt.mul);
   });
 
   it('drags an arrested enemy to court, hurting it and citing it every second', () => {

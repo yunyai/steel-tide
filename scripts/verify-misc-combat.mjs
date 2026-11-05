@@ -11,11 +11,14 @@ const {
   module: { SHIP_BY_ID },
 } = await runnerImport(`${process.cwd()}/src/data/ships.ts`);
 const out = "docs/verification/misc-titans";
+// Two mirrored sides per seed, so a seed is one matchup played twice; eight seeds keep a single
+// duel's swing from deciding the count. SEEDS=2 reproduces the original 12-duel run.
+const SEEDS = Number(process.env.SEEDS ?? 8);
 mkdirSync(out, { recursive: true });
 const results = [];
 for (const id of ["judge", "hexweaver", "gourmand", "faultline"])
   for (const foe of ["stepper", "tungsten", "architect"])
-    for (let seed = 0; seed < 2; seed++)
+    for (let seed = 0; seed < SEEDS; seed++)
       for (const side of [0, 1]) {
         const g = new Game({
           mode: "solo",
@@ -82,12 +85,19 @@ const summary = ["judge", "hexweaver", "gourmand", "faultline"].map((id) => {
     id,
     battles: r.length,
     wins: r.filter((r) => r.won).length,
+    rate: Math.round((100 * r.filter((r) => r.won).length) / r.length) / 100,
+    byFoe: Object.fromEntries(
+      ["stepper", "tungsten", "architect"].map((f) => [
+        f,
+        `${r.filter((r) => r.foe === f && r.won).length}/${r.filter((r) => r.foe === f).length}`,
+      ]),
+    ),
     averageDamage: Math.round(r.reduce((n, r) => n + r.damage, 0) / r.length),
     skills: [...new Set(r.flatMap((r) => r.skills))].sort(),
   };
 });
 for (const row of summary)
-  if (row.averageDamage <= 0 || row.skills.length < 4)
+  if (row.averageDamage <= 0 || row.skills.length < 9)
     throw Error("AI fails to exercise kit: " + JSON.stringify(row));
 writeFileSync(
   `${out}/combat-results.json`,

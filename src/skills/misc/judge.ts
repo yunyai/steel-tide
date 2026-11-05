@@ -130,6 +130,7 @@ export const JUDGE_SKILLS: SkillDef[] = SKILLS.map((k, i) =>
         const a = s.judge!;
         const d = Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z);
         const v = violationCount(s, t);
+        if (i === 1) return v > 0 && d < 4800;
         if (i === 0) return !a.court || Math.hypot(t.pos.x - a.court.x, t.pos.z - a.court.z) > JUDGE.court.radius * 0.9;
         if (i === 3) return !!a.court && !inCourt(s, t) && d < 4800;
         if (i === 4) return v >= 3 || s.hp < s.maxHp * 0.6;

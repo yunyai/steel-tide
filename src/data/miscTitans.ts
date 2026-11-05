@@ -122,7 +122,7 @@ export const NEW_MISC: ShipSpec[] = [
     0xffd47b,
     JUDGE_SKILLS,
     "A floating courthouse that writes its own law into the sea. Brass scales balance above an armoured tribunal, while a monumental gavel hangs over the condemned.",
-    "Jurisdiction titan. Choose laws, build violations, arrest offenders and collect Taxes. Martial Law expands the court; Death Penalty can be survived with shields and defensive abilities.",
+    "Jurisdiction titan. The court enforces six laws at once and every gavel bolt cites its target, so cases build as you fight. Throw the gavel through cited hulls, tax them and hold them in contempt; at 30 violations the Death Penalty takes a whole hull, though shields and defensive skills still apply.",
   ),
   titan(
     "hexweaver",
@@ -136,7 +136,7 @@ export const NEW_MISC: ShipSpec[] = [
     0xe878bd,
     HEXWEAVER_SKILLS,
     "A needle-prowed shrine carrying an immense suspended effigy. Every stitch binds a living hull to a smaller doll, and every pin makes the curse more personal.",
-    "Combo titan. Four independently recovering Pins bind up to four dolls. Stack pins for focused punishment or stitch several dolls, spread fire and rip the seams for area bursts.",
+    "Combo titan. Needle volleys prick bound dolls into free pins, and every pin makes your hits land harder. Pin and twist one doll for focused punishment, or stitch several, set them burning and rip the seams; Effigy Unmaking detonates every doll at once.",
   ),
   titan(
     "gourmand",
@@ -150,7 +150,7 @@ export const NEW_MISC: ShipSpec[] = [
     0xff8844,
     GOURMAND_SKILLS,
     "A banquet furnace with a warship built around its appetite. The bow opens into an armoured mouth, cutlery carves passing hulls and the kitchen cooks whatever the battle provides.",
-    "Appetite titan. Eat weapons and wreckage, cook three ingredients into ammunition and serve destructive dishes. Swallow an enemy briefly or empty the kitchen in an explosive catastrophe.",
+    "Appetite titan. The galley mortar cooks every salvo from the fullest jar: shells pierce, explosives burn and scrap shreds. Lob the pressure cooker, skewer and chomp, burp off a meal, swallow an enemy whole or blow the whole kitchen.",
   ),
   titan(
     "faultline",
@@ -164,6 +164,6 @@ export const NEW_MISC: ShipSpec[] = [
     0xff632f,
     FAULTLINE_SKILLS,
     "An exposed tectonic engine whose pistons reach into the seabed. Split armour plates breathe volcanic light as the machine lifts ridges and tears new fractures through the sea.",
-    "Terrain titan. Raise real temporary obstacles, ride fractures and pull enemies into chokepoints. Build pressure behind Bedrock, then release it through Caldera and Worldbreaker.",
+    "Terrain titan. Magma mortars build pressure and open fractures; ride them with Slip, pulse them with Aftershock and raise basalt ridges that erupt as they rise. Brace behind Bedrock to bank pressure, then pour it into the Caldera or break the whole network.",
   ),
 ];

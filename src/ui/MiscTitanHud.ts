@@ -56,7 +56,7 @@ class Meter {
     const at = `${((mark / cap) * 100).toFixed(1)}%`;
     if (this.notch.style.left !== at) this.notch.style.left = at;
     setText(this.label, `${n}/${cap}`);
-    setFlag(this.root, 'alert', n >= mark);
+    setFlag(this.root, 'urgent', n >= mark);
     if (this.root.getAttribute('aria-valuenow') !== String(n)) {
       this.root.setAttribute('aria-valuenow', String(n));
       this.root.setAttribute('aria-valuemax', String(cap));
@@ -203,7 +203,7 @@ class DollView {
     setFlag(this.root, 'burning', v.burning);
     setFlag(this.root, 'stitched', v.stitched);
     setFlag(this.root, 'aimed', v.aimed);
-    setFlag(this.root, 'hurt', v.flinch > 0);
+    setFlag(this.root, 'flinch', v.flinch > 0);
     // The doll jolts when its ship is hurt and wrings round when it is twisted.
     const turn = still ? 0 : v.flinch * -16 * (Math.round(v.flinch * 10) % 2 ? 1 : -1) + v.twist * 200;
     setStyle(this.doll, 'transform', turn ? `rotate(${turn.toFixed(1)}deg)` : '');
@@ -458,7 +458,7 @@ export class MiscTitanHud {
       this.bannerN = -1;
       this.bannerMeter?.root.setAttribute('aria-label', meterName(b.kind));
     }
-    setFlag(this.banner, 'alert', b.alert);
+    setFlag(this.banner, 'urgent', b.alert);
     setText(this.bannerTitle, b.title);
     setText(this.bannerDetail, b.detail);
     if (b.laws) {
@@ -487,7 +487,7 @@ export class MiscTitanHud {
     if (!e) e = el('span', 'misc-chip', marker.querySelector<HTMLElement>('.nm') ?? marker);
     if (e.hidden) e.hidden = false;
     if (e.dataset.kind !== c.kind) e.dataset.kind = c.kind;
-    setFlag(e, 'alert', c.alert);
+    setFlag(e, 'urgent', c.alert);
     setText(e, c.text);
   }
 }
