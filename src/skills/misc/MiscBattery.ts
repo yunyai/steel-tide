@@ -1,4 +1,5 @@
 import type { Ship } from '../../ships/Ship';
+import { gourmandRider } from './GourmandRuntime';
 import { hexRider } from './HexweaverRuntime';
 import { judgeRider } from './JudgeRuntime';
 import { emitMisc, isMiscTitanShip, type TitanRider } from './MiscEvents';
@@ -16,11 +17,14 @@ export interface MiscRider {
   onHit: (target: Ship, x: number, z: number) => void;
   onLand: (x: number, z: number) => void;
   hitMul?: (target: Ship) => number;
+  pierce?: boolean;
+  fire?: boolean;
 }
 
 function titanRider(s: Ship): TitanRider {
   if (s.judge) return judgeRider(s);
   if (s.hexweaver) return hexRider(s);
+  if (s.gourmand) return gourmandRider(s);
   return {};
 }
 
@@ -44,5 +48,7 @@ export function miscBattery(s: Ship, turret: number): MiscRider | null {
       emitMisc(s, 'gunLand', x, z);
     },
     hitMul: own.hitMul,
+    pierce: own.pierce,
+    fire: own.fire,
   };
 }

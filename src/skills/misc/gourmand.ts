@@ -1,254 +1,176 @@
-import type { Game } from "../../core/Game";
-import type { Ship } from "../../ships/Ship";
-import type { SkillIcon } from "../../core/types";
-import { aimPoint, enemiesWithin, hurt, nearestEnemy, buff } from "../kit";
-import { reticleTarget } from "../fantasy/common";
-import { def, type SkillDef } from "../types";
+import type { SkillIcon } from '../../core/types';
+import type { Ship } from '../../ships/Ship';
+import { reticleTarget } from '../fantasy/common';
+import { aimPoint, enemiesWithin, nearestEnemy } from '../kit';
+import { def, type SkillDef } from '../types';
 import {
+  banquet,
   beginSwallow,
-  cook,
-  emptyPantry,
+  carve,
+  comfortFood,
+  devour,
   GOURMAND,
-  ingredient,
+  kitchenCatastrophe,
+  mouthPoint,
   pantryTotal,
+  pressureCooker,
   serve,
   skewer,
   swallowedBy,
-} from "./GourmandRuntime";
+} from './GourmandRuntime';
+
+// The Gourmand's nine skills, Q E Z X C V R T B. Their numbers live in `GOURMAND`.
 
 const AMBER = 0xffad58;
-const spec = (
-  id: string,
-  name: string,
-  cooldown: number,
-  icon: SkillIcon,
-  duration = 0,
-  ult = false,
-) => ({
-  id,
-  name,
-  short: name.toUpperCase(),
-  description: "",
-  cooldown,
-  duration,
-  icon,
-  accent: AMBER,
-  ult,
-});
-const victim = (s: Ship, reach: number) =>
-  reticleTarget(s, s.game, reach, 500) ?? nearestEnemy(s, s.game, reach);
-const attack = (s: Ship, _g: Game, t: Ship | null) =>
-  !!t && Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) < 3000;
-export const GOURMAND_SKILLS: SkillDef[] = [
-  def(
-    {
-      ...spec("gourmandDevour", "Devour", 10, "beast", 4),
-      description:
-        "Open the bow-mouth for 4 s. Eat hostile shells, surface torpedoes and low missiles before they hit; each feeds one pantry ingredient. Nearby wrecks supply three scrap ingredients. Cannot eat attacks behind the ship, deep torpedoes or high-flying missiles.",
+const k = (v: number) => `${v / 1000}k`;
+
+const victim = (s: Ship, reach: number) => reticleTarget(s, s.game, reach, 500) ?? nearestEnemy(s, s.game, reach);
+const range = (s: Ship, t: Ship | null) => (t ? Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) : Infinity);
+
+interface Entry {
+  id: string;
+  name: string;
+  cooldown: number;
+  icon: SkillIcon;
+  duration?: number;
+  description: string;
+  alwaysUsable?: boolean;
+  empowers?: boolean;
+  activate: (s: Ship) => boolean | void;
+  ai: (s: Ship, t: Ship | null) => boolean;
+}
+
+const D = GOURMAND;
+
+const SKILLS: Entry[] = [
+  {
+    id: 'gourmandDevour',
+    name: 'Devour',
+    cooldown: 10,
+    duration: D.devour.time,
+    icon: 'beast',
+    description: `Open the bow mouth for ${D.devour.time} s. It eats hostile shells, surface torpedoes and low missiles, each an ingredient and ${k(D.devour.heal)} of healing; wrecks give three scrap. Ships up to ${D.devour.pull / 1000} km ahead are pulled in at ${D.devour.pullSpeed} m/s, and those within ${D.devour.chomp} m of the mouth are chomped for ${k(D.devour.dps)}/s.`,
+    activate: devour,
+    ai: (s, t) => {
+      const g = s.game;
+      const threat = g.shells.shells.some((p) => p.alive && p.team !== s.team && Math.hypot(p.x - s.pos.x, p.z - s.pos.z) < 1500) || g.torps.torps.some((p) => p.alive && p.team !== s.team && Math.hypot(p.x - s.pos.x, p.z - s.pos.z) < 1500);
+      const m = mouthPoint(s);
+      return threat || (!!t && Math.hypot(t.pos.x - m.x, t.pos.z - m.z) < D.devour.pull * 0.8);
     },
-    {
-      activate(s) {
-        s.gourmand!.mouthUntil = s.game.time + 4;
-      },
-      aiShouldUse(s, g) {
-        return (
-          pantryTotal(s.gourmand!.pantry) < GOURMAND.capacity &&
-          (g.shells.shells.some(
-            (p) =>
-              p.alive &&
-              p.team !== s.team &&
-              Math.hypot(p.x - s.pos.x, p.z - s.pos.z) < 1500,
-          ) ||
-            g.torps.torps.some(
-              (p) =>
-                p.alive &&
-                p.team !== s.team &&
-                Math.hypot(p.x - s.pos.x, p.z - s.pos.z) < 1500,
-            ))
-        );
-      },
+  },
+  {
+    id: 'gourmandCarve',
+    name: 'Carve',
+    cooldown: 8,
+    icon: 'blade',
+    description: `Giant cutlery slices every enemy within ${D.carve.radius} m for ${k(D.carve.damage)}. Each cut bleeds ${k(D.carve.bleed)}/s for ${D.carve.bleedTime} s and gives ${D.carve.scrap} scrap.`,
+    activate: carve,
+    ai: (s) => enemiesWithin(s, s.game, D.carve.radius - 50).length > 0,
+  },
+  {
+    id: 'gourmandCook',
+    name: 'Pressure Cooker',
+    cooldown: 12,
+    icon: 'salvo',
+    description: `Lob the cooker up to ${D.cooker.range / 1000} km. It whistles for ${D.cooker.fuse} s, then bursts for ${k(D.cooker.damage)} plus ${k(D.cooker.perIngredient)} per ingredient, spending up to ${D.cooker.max}. Explosives widen it and set hulls alight, shells hit the nearest hull for ${k(D.cooker.focus)} each, and scrap throws a shrapnel ring that knocks ships back.`,
+    activate: (s) => {
+      const p = aimPoint(s, D.cooker.range);
+      pressureCooker(s, p.x, p.z);
     },
-  ),
-  def(
-    {
-      ...spec("gourmandCarve", "Carve", 9, "blade"),
-      description:
-        "Sweep giant cutlery through enemies within 900 m for 65k damage. Each victim supplies two wreckage ingredients, so the kitchen can cook even without incoming fire.",
+    ai: (s, t) => range(s, t) < D.cooker.range && (pantryTotal(s.gourmand!.pantry) >= 3 || s.hp < s.maxHp * 0.5),
+  },
+  {
+    id: 'gourmandSkewer',
+    name: 'Skewer',
+    cooldown: 12,
+    icon: 'magnet',
+    description: `Hurl a harpoon-fork at an enemy within ${D.skewer.range / 1000} km for ${k(D.skewer.damage)} and reel it toward the mouth for ${D.skewer.time} s. If it arrives, the mouth chomps it for ${k(D.skewer.chomp)} and takes ${D.skewer.scrap} scrap. Land stops the pull.`,
+    activate: (s) => {
+      const t = victim(s, D.skewer.range);
+      if (!t) return s.failSkill(`Skewer: aim at an enemy within ${D.skewer.range / 1000} km`);
+      skewer(s, t);
     },
-    {
-      activate(s) {
-        const targets = enemiesWithin(s, s.game, 900);
-        if (!targets.length)
-          return s.failSkill("Carve: bring an enemy within 900 m");
-        for (const t of targets) {
-          hurt(s, t, 65000, s.skills[1].spec);
-          ingredient(s, "wreckage", 2);
-        }
-        s.game.events.emit("lightning", {
-          points: [
-            { x: s.pos.x - 300, y: 20, z: s.pos.z },
-            { x: s.pos.x + 300, y: 20, z: s.pos.z },
-          ],
-          color: AMBER,
-          straight: true,
-        });
-      },
-      aiShouldUse(s) {
-        return enemiesWithin(s, s.game, 850).length > 0;
-      },
+    ai: (s, t) => range(s, t) > 600 && range(s, t) < D.skewer.range,
+  },
+  {
+    id: 'gourmandServe',
+    name: 'Serve',
+    cooldown: 6,
+    icon: 'strike',
+    description: `Lob a dish up to ${D.serve.range / 1000} km: it lands after ${D.serve.delay} s for ${k(D.serve.damage)} in ${D.serve.radius} m, spending up to ${D.serve.spend} of the fullest jar for its flavour. Shells hit 40% harder, explosives burst half as wide again and burn, and scrap throws a shrapnel ring.`,
+    activate: (s) => {
+      const p = aimPoint(s, D.serve.range);
+      serve(s, p.x, p.z);
     },
-  ),
-  def(
-    {
-      ...spec("gourmandCook", "Pressure Cooker", 12, "salvo"),
-      description:
-        "Cook the pantry into a 14 s preparation for the next main-gun salvo or Serve. Shell ingredients add piercing and damage, explosives add fire and splash, and wreckage adds shrapnel. Serving spends the unfired remainder. Requires at least one ingredient.",
+    ai: (s, t) => range(s, t) < D.serve.range,
+  },
+  {
+    id: 'gourmandComfort',
+    name: 'Comfort Food',
+    cooldown: 20,
+    icon: 'heal',
+    alwaysUsable: true,
+    description: `Eat the whole pantry: heal ${D.comfort.heal * 100}% of max HP plus ${k(D.comfort.perHeal)} per ingredient, and gain a ${k(D.comfort.shield)} + ${k(D.comfort.perShield)} per ingredient shield for ${D.comfort.shieldTime} s. Then a burp hits everything within ${D.comfort.burp} m for ${k(D.comfort.burpDamage)} and pushes it away. Usable under crowd control.`,
+    activate: comfortFood,
+    ai: (s) => s.hp / s.maxHp < 0.7 || s.lastHurt > s.game.time - 2,
+  },
+  {
+    id: 'gourmandBanquet',
+    name: 'Banquet',
+    cooldown: 100,
+    duration: D.banquet.time,
+    icon: 'fleet',
+    empowers: true,
+    description: `For ${D.banquet.time} s the mouth widens, the pantry holds ${D.banquetCapacity} (the excess is lost after), you take ${D.banquet.reduction * 100}% less damage, and the kitchen serves a ${k(D.banquet.side)} side dish at the ${D.banquet.targets} nearest enemies every second.`,
+    activate: banquet,
+    ai: (s, t) => range(s, t) < 3000,
+  },
+  {
+    id: 'gourmandSwallow',
+    name: 'Swallow Whole',
+    cooldown: 110,
+    duration: 4,
+    icon: 'beast',
+    description: `Warn an enemy within ${D.swallow.reach / 1000} km with a bite circle for ${D.swallow.warning} s, then bite it for ${k(D.swallow.bite)} and swallow it for ${D.swallow.time} s, digesting ${k(D.swallow.digest)}/s. It keeps its defensive skills. Then it is spat out for ${k(D.swallow.spit)}. Leaving the circle escapes the bite.`,
+    activate: (s) => {
+      const t = victim(s, D.swallow.reach);
+      if (!t) return s.failSkill(`Swallow Whole: aim at an enemy within ${D.swallow.reach / 1000} km`);
+      return beginSwallow(s, t);
     },
-    {
-      activate: cook,
-      aiShouldUse(s) {
-        return pantryTotal(s.gourmand!.pantry) >= 4 && !s.gourmand!.cooked;
-      },
+    ai: (s, t) => !!t && !swallowedBy(s.game, t) && range(s, t) < D.swallow.reach - 100,
+  },
+  {
+    id: 'gourmandCatastrophe',
+    name: 'Kitchen Catastrophe',
+    cooldown: 125,
+    icon: 'nuke',
+    description: `After a ${D.catastrophe.fuse} s fuse the kitchen blows: ${k(D.catastrophe.damage)} plus ${k(D.catastrophe.perIngredient)} per ingredient within ${D.catastrophe.radius / 1000} km, spending the pantry. Explosives widen it and set hulls alight, shells hit the nearest hull for ${k(D.catastrophe.focus)} each, scrap throws them further. Leaves an oil fire of ${k(D.catastrophe.oil)}/s for ${D.catastrophe.oilTime} s.`,
+    activate: kitchenCatastrophe,
+    ai: (s) => {
+      const near = enemiesWithin(s, s.game, D.catastrophe.radius - 100).length;
+      return near >= 2 || (near > 0 && pantryTotal(s.gourmand!.pantry) >= 8);
     },
-  ),
-  def(
-    {
-      ...spec("gourmandSkewer", "Skewer", 13, "magnet"),
-      description:
-        "Hurl a harpoon-fork at an enemy within 2.5 km for 55k damage. Reel it toward the mouth for 2 s at 240 m/s; land blocks the pull.",
-    },
-    {
-      activate(s) {
-        const t = victim(s, 2500);
-        if (!t) return false;
-        skewer(s, t);
-      },
-      aiShouldUse(s, _g, t) {
-        return (
-          !!t &&
-          Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) > 600 &&
-          Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) < 2500
-        );
-      },
-    },
-  ),
-  def(
-    {
-      ...spec("gourmandServe", "Serve", 7, "strike"),
-      description:
-        "Lob a dish up to 3.5 km away. After 0.55 s it bursts for 55k in 320 m. A prepared meal adds damage, explosive radius, piercing morsels and scrap knockback. An empty pantry still serves a full basic dish.",
-    },
-    {
-      activate(s) {
-        const p = aimPoint(s, 3500);
-        serve(s, p.x, p.z);
-      },
-      aiShouldUse: attack,
-    },
-  ),
-  def(
-    {
-      ...spec("gourmandComfort", "Comfort Food", 20, "heal"),
-      alwaysUsable: true,
-      description:
-        "Eat the pantry to heal 12k per ingredient and gain a 50k + 18k per ingredient shield for 6 s. An empty pantry still grants 50k shielding. Can be used under crowd control.",
-    },
-    {
-      activate(s) {
-        const a = s.gourmand!,
-          n = pantryTotal(a.pantry);
-        a.pantry = emptyPantry();
-        s.heal(n * 12000);
-        s.addShield(50000 + n * 18000, 6);
-      },
-      aiShouldUse(s) {
-        return s.hp / s.maxHp < 0.7 || s.lastHurt > s.game.time - 2;
-      },
-    },
-  ),
-  def(
-    {
-      ...spec("gourmandBanquet", "Banquet", 100, "fleet", 12, true),
-      empowers: true,
-      description:
-        "For 12 s the mouth widens, the pantry holds 30 ingredients (excess is lost when it ends), and the kitchen automatically serves a 35k side dish at nearby enemies every 1.5 s. Normal attacks and cooking remain available.",
-    },
-    {
-      activate(s) {
-        s.gourmand!.banquetUntil = s.game.time + 12;
-        s.gourmand!.nextServing = s.game.time;
-        buff(s, "gourmandBanquet", 12, (m) => {
-          m.damageTakenMul *= 0.8;
-        });
-      },
-      aiShouldUse: attack,
-    },
-  ),
-  def(
-    {
-      ...spec("gourmandSwallow", "Swallow Whole", 110, "beast", 4, true),
-      description:
-        "Warn an enemy within 1 km with a glowing bite circle for 0.8 s, then bite for 90k and swallow it for at most 3 s. Digestion deals 45k/s; the victim retains defensive skills. Spit it into safe water with a 90k impact. Escaping the warning avoids capture.",
-    },
-    {
-      activate(s) {
-        const t = victim(s, GOURMAND.swallowReach);
-        if (!t)
-          return s.failSkill("Swallow Whole: aim at an enemy within 1 km");
-        return beginSwallow(s, t);
-      },
-      aiShouldUse(s, _g, t) {
-        return (
-          !!t &&
-          !swallowedBy(s.game, t) &&
-          Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z) < 900
-        );
-      },
-    },
-  ),
-  def(
-    {
-      ...spec(
-        "gourmandCatastrophe",
-        "Kitchen Catastrophe",
-        125,
-        "nuke",
-        0,
-        true,
-      ),
-      description:
-        "Vent a 180k furnace explosion within 1.5 km after 1 s, spending the pantry for +12k per ingredient. Explosives enlarge the blast and ignite enemies, shell ingredients add focused damage, and wreckage hurls victims away.",
-    },
-    {
-      activate(s) {
-        const a = s.gourmand!,
-          p = { ...a.pantry },
-          n = pantryTotal(p);
-        a.pantry = emptyPantry();
-        s.game.strikes.spawn(s, {
-          kind: "nuke",
-          skill: s.skills[8].spec,
-          x: s.pos.x,
-          z: s.pos.z,
-          radius: 1500 + p.explosives * 35,
-          delay: 1,
-          damage: 180000 + n * 12000,
-          fire: p.explosives ? 1 : 0,
-          knock: 100 + p.wreckage * 15,
-          look: "fireball",
-        });
-        if (p.shells) {
-          const t = victim(s, 2000);
-          if (t) hurt(s, t, p.shells * 10000, s.skills[8].spec);
-        }
-      },
-      aiShouldUse(s) {
-        return (
-          enemiesWithin(s, s.game, 1400).length >= 2 ||
-          (pantryTotal(s.gourmand!.pantry) >= 10 &&
-            enemiesWithin(s, s.game, 1400).length > 0)
-        );
-      },
-    },
-  ),
+  },
 ];
+
+export const GOURMAND_SKILLS: SkillDef[] = SKILLS.map((sk, i) =>
+  def(
+    {
+      id: sk.id,
+      name: sk.name,
+      short: sk.name.toUpperCase(),
+      description: sk.description,
+      cooldown: sk.cooldown,
+      duration: sk.duration ?? 0,
+      icon: sk.icon,
+      accent: AMBER,
+      ult: i >= 6,
+      ...(sk.alwaysUsable ? { alwaysUsable: true } : {}),
+      ...(sk.empowers ? { empowers: true } : {}),
+    },
+    {
+      activate: (s) => sk.activate(s),
+      aiShouldUse: (s, _g, t) => sk.ai(s, t),
+    },
+  ),
+);

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { miscSound } from '../src/fx/MiscTitanAudio';
-import type { HexFxKind, JudgeFxKind } from '../src/skills/misc/MiscEvents';
+import type { GourmandFxKind, HexFxKind, JudgeFxKind } from '../src/skills/misc/MiscEvents';
 
 // Every misc titan effect that should be heard maps to one of the packaged recordings.
 
@@ -33,6 +33,25 @@ describe('Misc titan sounds', () => {
     const loud = miscSound('unmake')!.gain;
     for (const k of HEX_KINDS) if (k !== 'unmake') expect(miscSound(k)!.gain).toBeLessThan(loud);
     expect(miscSound('needle')!.gap).toBeGreaterThan(0);
+  });
+
+  const GOURMAND_KINDS: GourmandFxKind[] = ['devour', 'gulp', 'chomp', 'carve', 'slice', 'cooker', 'cookerBurst', 'skewer', 'serve', 'side', 'plate', 'comfort', 'burp', 'banquet', 'bite', 'swallow', 'spit', 'fuse', 'catastrophe'];
+
+  it.each(GOURMAND_KINDS)('give the Gourmand’s %s a packaged recording', (kind) => {
+    const s = miscSound(kind);
+    expect(s).not.toBeNull();
+    expect(existsSync(`public/audio/${s!.asset}.m4a`)).toBe(true);
+    expect(s!.gain).toBeGreaterThan(0);
+  });
+
+  it('make the Kitchen Catastrophe the loudest Gourmand moment and let rapid bites share a voice', () => {
+    const loud = miscSound('catastrophe')!.gain;
+    for (const k of GOURMAND_KINDS) if (k !== 'catastrophe') expect(miscSound(k)!.gain).toBeLessThan(loud);
+    for (const k of ['gulp', 'chomp', 'slice', 'side'] as const) expect(miscSound(k)!.gap).toBeGreaterThan(0);
+  });
+
+  it('leave the galley mortar’s dishes to the gun sounds', () => {
+    expect(miscSound('dish')).toBeNull();
   });
 
   it('leave battery hits to the gun sounds', () => {

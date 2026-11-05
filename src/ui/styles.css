@@ -4541,4 +4541,24 @@ select {
 .hx-pricks i { width:5px; height:5px; border-radius:50%; background:rgba(242,144,207,.2); }
 .hx-pricks i.on { background:var(--misc); }
 @media (prefers-reduced-motion: reduce) { .hx-slot.stab { animation:none; } .hx-doll { transition:none; } }
+.gm-jars { display:inline-flex; gap:5px; align-items:flex-end; }
+.gm-jar { position:relative; display:inline-flex; flex-direction:column; align-items:center; justify-content:flex-end; width:20px; height:30px; padding-bottom:2px; border:1px solid rgba(255,160,64,.45); border-top-width:3px; border-radius:2px 2px 7px 7px; background:rgba(40,22,12,.65); overflow:hidden; font-variant-numeric:tabular-nums; }
+.gm-jar .gm-fill { position:absolute; inset:auto 0 0 0; height:calc(var(--fill,0) * 100%); background:linear-gradient(#ffd08a,#ff8f3a); opacity:.55; transition:height .25s ease-out; }
+.gm-jar[data-kind=shells] .gm-fill { background:linear-gradient(#e7edf2,#8d9aa6); }
+.gm-jar[data-kind=wreckage] .gm-fill { background:linear-gradient(#d0a074,#7a5434); }
+.gm-jar b, .gm-jar .gm-n { position:relative; font-size:9px; line-height:1; color:#fff3dc; text-shadow:0 0 3px #000; }
+.gm-jar.next { border-color:var(--misc); box-shadow:0 0 6px var(--misc); }
+.gm-jar.gain { animation:gm-gain .4s ease-out; }
+@keyframes gm-gain { 0% { box-shadow:0 0 12px #ffe1a8; } 100% { box-shadow:none; } }
+.gm-next { padding:1px 6px; border-radius:9px; border:1px solid var(--misc); color:#ffe2b8; }
+.gm-next[data-kind=plain] { border-color:rgba(255,255,255,.2); color:#b7a993; }
+.gm-next[data-kind=shells] { border-color:#c8d3dc; }
+.gm-next[data-kind=wreckage] { border-color:#c99060; }
+.gm-prev, .gm-feast { margin-top:3px; color:#cdbb98; font-variant-numeric:tabular-nums; }
+.gm-feast { color:#ffc277; }
+.gm-feast[hidden], .gm-digest[hidden] { display:none; }
+.gm-digest { display:flex; gap:6px; align-items:center; margin-top:4px; color:#ffd7a8; font-variant-numeric:tabular-nums; }
+.gm-dbar { flex:1; height:6px; border-radius:3px; background:rgba(255,120,60,.18); overflow:hidden; }
+.gm-dbar i { display:block; height:100%; background:linear-gradient(90deg,#ff5a2a,#ffb35c); box-shadow:0 0 6px #ff7a3a; }
+@media (prefers-reduced-motion:reduce) { .gm-jar.gain { animation:none; } .gm-jar .gm-fill { transition:none; } }
 @media(max-width:650px){.misc-panel,.misc-banner{font-size:10px;max-width:95vw}}

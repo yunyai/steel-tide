@@ -1,7 +1,7 @@
 import type { PlayerController } from '../player/PlayerController';
 import type { Ship } from '../ships/Ship';
 import { reducedMotion } from '../render/ArchitectPose';
-import { hexPanel, judgePanel, miscMarkerChip, miscTitanKind, miscTitanSummary, miscVictimBanner, type LawView } from './MiscTitanPresentation';
+import { gourmandPanel, hexPanel, judgePanel, miscMarkerChip, miscTitanKind, miscTitanSummary, miscVictimBanner, type LawView } from './MiscTitanPresentation';
 
 // The misc titans' HUD: the captain's own titan panel beside the skill bar, the banner a captain
 // sees while an enemy misc titan holds them, and the chip on each marker. All three copy what
@@ -251,6 +251,70 @@ class HexGauges {
   }
 }
 
+/** The Gourmand's own gauges: three jars, the next salvo's flavour, previews, digestion and the feast timers. */
+class GourmandGauges {
+  private jars: { root: HTMLElement; n: HTMLElement; last: number }[] = [];
+  private next: HTMLElement;
+  private previews: HTMLElement;
+  private digest: HTMLElement;
+  private digestName: HTMLElement;
+  private digestFill: HTMLElement;
+  private digestTime: HTMLElement;
+  private feast: HTMLElement;
+
+  constructor(body: HTMLElement) {
+    const row = el('div', 'jp-row', body);
+    const jars = el('span', 'gm-jars', row);
+    for (const label of ['SHELL', 'EXPLOSIVE', 'SCRAP']) {
+      const root = el('span', 'gm-jar', jars);
+      root.setAttribute('role', 'meter');
+      root.setAttribute('aria-label', `${label} ingredients`);
+      el('i', 'gm-fill', root);
+      el('b', '', root).textContent = label[0];
+      this.jars.push({ root, n: el('span', 'gm-n', root), last: 0 });
+    }
+    this.next = el('span', 'gm-next', row);
+    this.previews = el('div', 'gm-prev', body);
+    this.digest = el('div', 'gm-digest', body);
+    this.digest.hidden = true;
+    this.digestName = el('span', 'gm-dname', this.digest);
+    this.digestFill = el('i', '', el('span', 'gm-dbar', this.digest));
+    this.digestTime = el('span', 'gm-dtime', this.digest);
+    this.feast = el('div', 'gm-feast', body);
+  }
+
+  update(me: Ship): void {
+    const p = gourmandPanel(me);
+    p.jars.forEach((j, i) => {
+      const v = this.jars[i];
+      v.root.dataset.kind = j.kind;
+      setStyle(v.root, '--fill', (j.n / p.cap).toFixed(3));
+      setText(v.n, String(j.n));
+      setFlag(v.root, 'next', p.next.kind === j.kind);
+      if (v.root.getAttribute('aria-valuenow') !== String(j.n)) {
+        v.root.setAttribute('aria-valuenow', String(j.n));
+        v.root.setAttribute('aria-valuemax', String(p.cap));
+      }
+      // A jar that just filled up a little glints.
+      if (j.n > v.last) flash(v.root, 'gain');
+      v.last = j.n;
+    });
+    setText(this.next, `NEXT ${p.next.label} · ${p.next.effect}`);
+    if (this.next.dataset.kind !== (p.next.kind ?? 'plain')) this.next.dataset.kind = p.next.kind ?? 'plain';
+    setText(this.previews, `COOKER ${kilo(p.previews.cooker)} · COMFORT +${kilo(p.previews.heal)} HP, ${kilo(p.previews.shield)} shield`);
+    const d = p.digest;
+    if (this.digest.hidden !== !d) this.digest.hidden = !d;
+    if (d) {
+      setText(this.digestName, `DIGESTING ${d.name}`);
+      setStyle(this.digestFill, 'width', `${(d.frac * 100).toFixed(1)}%`);
+      setText(this.digestTime, `${d.left.toFixed(1)}s`);
+    }
+    const feast = [p.banquet > 0 ? `BANQUET ${Math.ceil(p.banquet)}s` : '', p.mouth > 0 ? `MOUTH OPEN ${p.mouth.toFixed(1)}s` : ''].filter(Boolean).join(' · ');
+    setText(this.feast, feast);
+    if (this.feast.hidden !== !feast) this.feast.hidden = !feast;
+  }
+}
+
 export class MiscTitanHud {
   /** The captain's own titan panel; null for every other ship. */
   readonly panel: HTMLElement | null = null;
@@ -266,6 +330,7 @@ export class MiscTitanHud {
   private bannerN = -1;
   private judge: JudgeGauges | null = null;
   private hex: HexGauges | null = null;
+  private gourmand: GourmandGauges | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -283,6 +348,7 @@ export class MiscTitanHud {
       this.panel = panel;
       if (kind === 'judge') this.judge = new JudgeGauges(this.body);
       if (kind === 'hexweaver') this.hex = new HexGauges(this.body);
+      if (kind === 'gourmand') this.gourmand = new GourmandGauges(this.body);
     }
     this.banner = el('div', 'misc-banner', parent);
     this.banner.setAttribute('role', 'status');
@@ -298,6 +364,7 @@ export class MiscTitanHud {
     if (this.line) setText(this.line, miscTitanSummary(me, target));
     this.judge?.update(me, target);
     this.hex?.update(me, target);
+    this.gourmand?.update(me);
     const b = miscVictimBanner(me);
     if (this.banner.hidden !== !b) this.banner.hidden = !b;
     if (!b) {

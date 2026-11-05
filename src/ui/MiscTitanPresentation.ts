@@ -1,10 +1,61 @@
 import type { Ship } from '../ships/Ship';
+import { cookerDamage, FLAVOURS, GOURMAND, nextFlavour, pantryCapacity, pantryTotal, spend, type Flavour } from '../skills/misc/GourmandRuntime';
 import { burnRate, dollOf, HEX, pinCharges, type Doll } from '../skills/misc/HexweaverRuntime';
 import { brokeRecently, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAW_OFFENCES, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
 import type { MiscTitanEvent } from '../skills/misc/MiscEvents';
 
 // What the HUD shows for the four misc titans, as plain data the DOM layer only copies out. Pure
 // functions of the game state, so they are tested without a document.
+
+/** What the HUD calls each pantry jar and the salvo flavour it gives. */
+export const FLAVOUR_LABELS: Record<Flavour, string> = { shells: 'SHELL', explosives: 'EXPLOSIVE', wreckage: 'SCRAP' };
+
+/** What each flavour does to a salvo, for the next-flavour chip. */
+const FLAVOUR_EFFECTS: Record<Flavour, string> = {
+  shells: '+40% damage, pierces',
+  explosives: 'wider splash, sets fire',
+  wreckage: 'shrapnel ring, knockback',
+};
+
+/** The Gourmand's own panel. */
+export interface GourmandPanel {
+  jars: { kind: Flavour; label: string; n: number }[];
+  /** What the pantry holds at most now (more during Banquet). */
+  cap: number;
+  next: { kind: Flavour | null; label: string; effect: string };
+  /** What the Pressure Cooker would deal at its centre, and what Comfort Food would heal and shield. */
+  previews: { cooker: number; heal: number; shield: number };
+  /** The ship being digested, and the seconds it has left inside. */
+  digest: { name: string; left: number; frac: number } | null;
+  /** Seconds of Banquet and of Devour's open mouth left; 0 when off. */
+  banquet: number;
+  mouth: number;
+}
+
+export function gourmandPanel(me: Ship): GourmandPanel {
+  const a = me.gourmand!;
+  const now = me.game.time;
+  const p = a.pantry;
+  const next = nextFlavour(p);
+  const pot = spend({ ...p }, GOURMAND.cooker.max);
+  const n = pantryTotal(p);
+  const C = GOURMAND.comfort;
+  const w = a.swallow;
+  const victim = w ? me.game.ships.find((v) => v.id === w.target) : undefined;
+  return {
+    jars: FLAVOURS.map((kind) => ({ kind, label: FLAVOUR_LABELS[kind], n: p[kind] })),
+    cap: pantryCapacity(me),
+    next: { kind: next, label: next ? FLAVOUR_LABELS[next] : 'PLAIN', effect: next ? FLAVOUR_EFFECTS[next] : 'no flavour: stock the pantry' },
+    previews: {
+      cooker: (cookerDamage(pot) + pot.shells * GOURMAND.cooker.focus) * me.mods.damageMul,
+      heal: me.maxHp * C.heal + n * C.perHeal,
+      shield: C.shield + n * C.perShield,
+    },
+    digest: w && victim ? { name: victim.name, left: Math.max(0, w.until - now), frac: Math.max(0, Math.min(1, (w.until - now) / GOURMAND.swallow.time)) } : null,
+    banquet: Math.max(0, a.banquetUntil - now),
+    mouth: Math.max(0, a.mouthUntil - now),
+  };
+}
 
 /** Which misc titan `s` is, or null. */
 export type MiscTitanKind = 'judge' | 'hexweaver' | 'gourmand' | 'faultline';
@@ -199,9 +250,9 @@ export function miscTitanSummary(me: Ship, target: Ship | null): string {
   if (me.gourmand) {
     const a = me.gourmand;
     const p = a.pantry;
-    const meal = a.cooked ? ` · MEAL READY ${Math.ceil(a.cooked.until - now)}s` : '';
+    const next = nextFlavour(p);
     const digest = a.swallow ? ` · DIGESTING ${Math.ceil(a.swallow.until - now)}s` : '';
-    return `PANTRY · Shell ${p.shells} · Explosive ${p.explosives} · Scrap ${p.wreckage} / ${a.banquetUntil > now ? 30 : 18}${meal}${digest}`;
+    return `PANTRY · Shell ${p.shells} · Explosive ${p.explosives} · Scrap ${p.wreckage} / ${pantryCapacity(me)} · NEXT ${next ? FLAVOUR_LABELS[next] : 'PLAIN'}${digest}`;
   }
   if (me.faultline) {
     const a = me.faultline;
@@ -213,6 +264,8 @@ export function miscTitanSummary(me: Ship, target: Ship | null): string {
 /** The chip `viewer` sees on `s`'s marker; null when no misc titan holds it. */
 export function miscMarkerChip(viewer: Ship, s: Ship): MiscChip | null {
   if (s.team === viewer.team) return null;
+  const meal = gourmandHold(s, (g) => g.team === viewer.team);
+  if (meal) return { kind: 'gourmand', text: meal.hold === 'swallow' ? 'SWALLOWED' : meal.hold === 'bite' ? 'BITE' : 'SKEWERED', alert: meal.hold !== 'reel' };
   let cases = 0;
   for (const j of viewer.game.ships) if (j.judge && j.alive && j.team === viewer.team) cases = Math.max(cases, violationCount(j, s));
   if (cases > 0) return { kind: 'judge', text: `⚖ ${cases}`, alert: cases >= JUDGE.death };
@@ -228,7 +281,36 @@ export function miscMarkerChip(viewer: Ship, s: Ship): MiscChip | null {
 
 /** The banner `me` sees while an enemy misc titan holds it; null when none does. */
 export function miscVictimBanner(me: Ship): MiscBanner | null {
-  return judgeBanner(me) ?? hexBanner(me);
+  return gourmandBanner(me) ?? judgeBanner(me) ?? hexBanner(me);
+}
+
+/** A Gourmand on a side `side` accepts holding `s`: swallowed, under a bite warning, or skewered. */
+function gourmandHold(s: Ship, side: (g: Ship) => boolean): { gourmand: Ship; hold: 'swallow' | 'bite' | 'reel' } | null {
+  let found: { gourmand: Ship; hold: 'swallow' | 'bite' | 'reel' } | null = null;
+  for (const g of s.game.ships) {
+    const a = g.gourmand;
+    if (!a || !g.alive || !side(g)) continue;
+    if (a.swallow?.target === s.id) return { gourmand: g, hold: 'swallow' };
+    if (a.bite?.target === s.id) found = { gourmand: g, hold: 'bite' };
+    else if (a.reel?.target === s.id && !found) found = { gourmand: g, hold: 'reel' };
+  }
+  return found;
+}
+
+function gourmandBanner(me: Ship): MiscBanner | null {
+  const meal = gourmandHold(me, (g) => g.team !== me.team);
+  if (!meal) return null;
+  const a = meal.gourmand.gourmand!;
+  const now = me.game.time;
+  if (meal.hold === 'swallow') {
+    const left = Math.max(0, a.swallow!.until - now);
+    return { kind: 'gourmand', title: `Swallowed ${left.toFixed(1)} s`, detail: `Digesting ${GOURMAND.swallow.digest / 1000}k/s · defensive skills still work`, alert: true };
+  }
+  if (meal.hold === 'bite') {
+    const left = Math.max(0, a.bite!.at - now);
+    return { kind: 'gourmand', title: 'Bite incoming – move!', detail: `Leave the circle within ${left.toFixed(1)} s`, alert: true };
+  }
+  return { kind: 'gourmand', title: 'Skewered', detail: 'Being reeled into the mouth: land blocks the pull', alert: false };
 }
 
 /** The enemy Hexweaver with the most pins in `me`'s doll. */

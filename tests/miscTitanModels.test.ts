@@ -130,6 +130,27 @@ describe('misc titan models', () => {
     expect(pose({ struck: 8 })).toEqual(calm);
   });
 
+  it('gapes the Gourmand’s jaws while its mouth is open and snaps them on each chomp', () => {
+    const kitchen = (o: Record<string, unknown>) =>
+      ({ ...ship(), game: { time: 10 }, gourmand: { mouthUntil: 0, banquetUntil: 0, chompNext: 0, bite: null, swallow: null, ...o } }) as unknown as Ship;
+    const pose = (o: Record<string, unknown>) => {
+      const model = new MiscTitanModel(spec('gourmand'));
+      model.update(kitchen(o), 1, .25);
+      const t = transforms(model.group);
+      model.dispose();
+      return t;
+    };
+    const shut = pose({});
+    // The last chomp was a while ago: the jaws simply hang open.
+    const gaping = pose({ mouthUntil: 12, chompNext: 10.1 });
+    expect(gaping).not.toEqual(shut);
+    // A chomp this instant snaps them.
+    expect(pose({ mouthUntil: 12, chompNext: 10.25 })).not.toEqual(gaping);
+    expect(pose({ banquetUntil: 12 })).not.toEqual(shut);
+    expect(pose({ bite: { target: 7, at: 10.5, x: 0, z: 0 } })).not.toEqual(shut);
+    expect(pose({ swallow: { target: 7, until: 12, nextTick: 10.5, originX: 0, originZ: 0, heldX: 0, heldZ: 0 } })).not.toEqual(shut);
+  });
+
   it('animates instant ultimates when their meter is spent', () => {
     const model = new MiscTitanModel(spec('judge'));
     const ready = { ...ship(), skills: ship().skills.map((state, index) => ({ ...state, spec: { ...state.spec, ult: index === 6 }, meter: 1 })) } as Ship;

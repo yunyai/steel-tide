@@ -6,13 +6,14 @@ import { GOURMAND_SKILLS } from "../skills/misc/gourmand";
 import { FAULTLINE_SKILLS } from "../skills/misc/faultline";
 import { TITAN_REPAIR, search } from "./common";
 import { HEX } from "../skills/misc/HexweaverRuntime";
+import { GOURMAND } from "../skills/misc/GourmandRuntime";
 /** Each battery fires its own round: gavel bolts, needles, dishes and ember rocks. */
 const BATTERY_LOOK: Record<string, GunLook> = { judge: "gavel", hexweaver: "needle", gourmand: "dish", faultline: "magma" };
 /** Each battery's AP and HE damage per round, its reload in seconds and its muzzle velocity. */
 const BATTERY: Record<string, { ap: number; he: number; reload: number; velocity?: number }> = {
   judge: { ap: 34000, he: 20000, reload: 7 },
   hexweaver: { ap: HEX.battery.damage, he: HEX.battery.he, reload: HEX.battery.reload, velocity: HEX.battery.velocity },
-  gourmand: { ap: 14000, he: 8000, reload: 8 },
+  gourmand: { ap: GOURMAND.battery.damage, he: GOURMAND.battery.he, reload: GOURMAND.battery.reload, velocity: GOURMAND.battery.velocity },
   faultline: { ap: 14000, he: 8000, reload: 8 },
 };
 function titan(

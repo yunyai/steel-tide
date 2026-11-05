@@ -4,6 +4,7 @@ import {
 } from 'three';
 import type { ShipSpec } from '../core/types';
 import type { Ship } from '../ships/Ship';
+import { GOURMAND } from '../skills/misc/GourmandRuntime';
 import { deckHeight, hullHalfWidth } from '../ships/HullShape';
 import { Parts } from './Geometry';
 import { reducedMotion } from './ArchitectPose';
@@ -32,6 +33,27 @@ function effigyMirror(ship: Ship, reduce: boolean): Mirror {
   return { pins: d.pins, flinch: reduce ? 0 : fade(now - d.struck, 0.45), twist: reduce ? 0 : fade(now - d.twistedAt, 1) };
 }
 
+interface Jaw {
+  /** 1 while the mouth hangs open: Devour, Banquet or a bite about to land. */
+  gape: number;
+  /** 1 the instant a chomp lands, easing back open; a swallowed ship keeps it chewing. */
+  snap: number;
+}
+
+const SHUT: Jaw = { gape: 0, snap: 0 };
+
+/** How the Gourmand's jaws stand, read from its state: open while it eats, snapping on each chomp. */
+function gourmandJaw(ship: Ship, reduce: boolean): Jaw {
+  const a = ship.gourmand;
+  const now = ship.game?.time;
+  if (!a || now === undefined) return SHUT;
+  const gape = a.mouthUntil > now || a.banquetUntil > now || a.bite ? 1 : 0;
+  let snap = 0;
+  if (a.mouthUntil > now) snap = Math.max(0, 1 - (now - (a.chompNext - GOURMAND.devour.tick)) / 0.15);
+  if (a.swallow) snap = reduce ? 0.6 : 0.5 + 0.5 * Math.sin(now * 6);
+  return { gape, snap: reduce && !a.swallow ? 0 : Math.min(1, snap) };
+}
+
 export function isMiscTitan(id: string): boolean { return IDS.has(id); }
 
 /** Complete, read-only procedural replacement models. Local +X is bow, +Y up and +Z starboard. */
@@ -52,6 +74,7 @@ export class MiscTitanModel {
   private readonly impulses: number[] = [];
   private pinRecharge = 0;
   private mirror: Mirror = STILL;
+  private jaw: Jaw = SHUT;
   private activity = 0;
   private ultimate = 0;
   private disposed = false;
@@ -535,8 +558,9 @@ export class MiscTitanModel {
     const pistons = [-1, 1].map(side => ({ side, sleeve: this.line(2.8, this.metal, p.dark, `jaw-sleeve-${side}`), shaft: this.line(1.5, this.metal, p.edge, `jaw-piston-${side}`) }));
     this.pose = (t, active, ult) => {
       const chew = this.reduce ? 0 : (.5 + .5 * Math.sin(t * (active > .1 ? 5.7 : 1.3)));
-      upper.rotation.z = .065 + chew * .045 + active * .22 + ult * .08;
-      lower.rotation.z = -.035 - chew * .055 - active * .15 - ult * .08;
+      const { gape, snap } = this.jaw;
+      upper.rotation.z = .065 + chew * .045 + active * .22 + ult * .08 + gape * .3 - snap * .32;
+      lower.rotation.z = -.035 - chew * .055 - active * .15 - ult * .08 - gape * .22 + snap * .24;
       utensils.forEach((utensil, i) => { utensil.rotation.x = (i ? 1 : -1) * (.15 + active * .18) + Math.sin(t * .9 + i * 1.8) * .045; utensil.rotation.z = -.22 + Math.sin(t * (active > .1 ? 3 : .65) + i * 2) * (.05 + active * .22); });
       wheels.forEach((wheel, i) => { wheel.rotation.z = t * (i ? -.4 : .4) + active * Math.sin(t * 4); });
       for (const piston of pistons) {
@@ -665,6 +689,7 @@ export class MiscTitanModel {
     const pinCast = this.id === 'hexweaver' && pinRecharge > this.pinRecharge + .01;
     this.pinRecharge = pinRecharge;
     if (this.id === 'hexweaver') this.mirror = alive ? effigyMirror(ship, this.reduce) : STILL;
+    if (this.id === 'gourmand') this.jaw = alive ? gourmandJaw(ship, this.reduce) : SHUT;
     for (let i = 0; i < ship.skills.length; i++) {
       const skill = ship.skills[i], previous = this.cooldowns[i], meter = this.meters[i];
       const cast = (previous !== undefined && skill.cooldown > previous + .15)

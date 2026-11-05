@@ -21,7 +21,36 @@ export type JudgeFxKind = 'court' | 'cite' | 'gavelThrow' | 'gavelHit' | 'contem
  */
 export type HexFxKind = 'pin' | 'stitch' | 'twist' | 'fire' | 'ignite' | 'rip' | 'erupt' | 'substitute' | 'decoyBurst' | 'coven' | 'needle' | 'unmake' | 'tear';
 
-export type MiscFxKind = MiscGunKind | JudgeFxKind | HexFxKind;
+/**
+ * The Gourmand: a battery dish landing (`n` its flavour, 1 shells, 2 explosives, 3 scrap), the mouth
+ * opening, a round or wreck gulped down, a chomp (`n` 0: a bite that missed), Carve and each slice,
+ * the pressure cooker thrown and bursting, a skewer, a served dish, a Banquet side dish and a dish
+ * landing, Comfort Food and its burp, Banquet, the bite warning, a swallow, the spit, and Kitchen
+ * Catastrophe's fuse and blast.
+ */
+export type GourmandFxKind =
+  | 'dish'
+  | 'devour'
+  | 'gulp'
+  | 'chomp'
+  | 'carve'
+  | 'slice'
+  | 'cooker'
+  | 'cookerBurst'
+  | 'skewer'
+  | 'serve'
+  | 'side'
+  | 'plate'
+  | 'comfort'
+  | 'burp'
+  | 'banquet'
+  | 'bite'
+  | 'swallow'
+  | 'spit'
+  | 'fuse'
+  | 'catastrophe';
+
+export type MiscFxKind = MiscGunKind | JudgeFxKind | HexFxKind | GourmandFxKind;
 
 export interface MiscTitanEvent {
   ship: Ship;
@@ -46,6 +75,10 @@ export interface TitanRider {
   /** Every round that falls in the sea. */
   onLand?: (x: number, z: number) => void;
   hitMul?: (target: Ship) => number;
+  /** The salvo's rounds pierce hulls. */
+  pierce?: boolean;
+  /** The salvo's rounds always set what they hit on fire. */
+  fire?: boolean;
 }
 
 /** Emits one `miscTitan` event for `s`. */
