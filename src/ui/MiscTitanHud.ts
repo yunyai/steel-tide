@@ -1,7 +1,7 @@
 import type { PlayerController } from '../player/PlayerController';
 import type { Ship } from '../ships/Ship';
 import { reducedMotion } from '../render/ArchitectPose';
-import { gourmandPanel, hexPanel, judgePanel, miscMarkerChip, miscTitanKind, miscTitanSummary, miscVictimBanner, type LawView } from './MiscTitanPresentation';
+import { faultlinePanel, gourmandPanel, hexPanel, judgePanel, miscMarkerChip, miscTitanKind, miscTitanSummary, miscVictimBanner, type LawView } from './MiscTitanPresentation';
 
 // The misc titans' HUD: the captain's own titan panel beside the skill bar, the banner a captain
 // sees while an enemy misc titan holds them, and the chip on each marker. All three copy what
@@ -315,6 +315,84 @@ class GourmandGauges {
   }
 }
 
+/** A row of pips, one per slot, each draining with the life its fracture or ridge has left. */
+class Pips {
+  readonly root: HTMLElement;
+  private pips: HTMLElement[] = [];
+  private label: HTMLElement;
+
+  constructor(parent: HTMLElement, private name: string) {
+    this.root = el('span', 'fl-pips', parent);
+    this.root.setAttribute('role', 'meter');
+    this.root.setAttribute('aria-label', name);
+    this.label = el('b', '', this.root);
+  }
+
+  set(lives: number[], cap: number): void {
+    while (this.pips.length < cap) this.pips.push(el('i', 'fl-pip', this.root));
+    this.pips.forEach((pip, i) => {
+      const life = lives[i];
+      setFlag(pip, 'on', life !== undefined);
+      setStyle(pip, '--life', (life ?? 0).toFixed(2));
+      // A pip about to go out flickers.
+      setFlag(pip, 'low', life !== undefined && life < 0.2);
+    });
+    setText(this.label, `${this.name.split(' ')[0].toUpperCase()} ${lives.length}/${cap}`);
+    if (this.root.getAttribute('aria-valuenow') !== String(lives.length)) {
+      this.root.setAttribute('aria-valuenow', String(lives.length));
+      this.root.setAttribute('aria-valuemax', String(cap));
+    }
+  }
+}
+
+/** The Faultline's own gauges: a magma pressure gauge that runs hot from 80, the Caldera preview, and fracture and ridge pips. */
+class FaultlineGauges {
+  private gauge: HTMLElement;
+  private n: HTMLElement;
+  private caldera: HTMLElement;
+  private fractures: Pips;
+  private ridges: Pips;
+  private bedrock: HTMLElement;
+  private last = 0;
+
+  constructor(body: HTMLElement) {
+    const row = el('div', 'jp-row', body);
+    this.gauge = el('span', 'fl-gauge', row);
+    this.gauge.setAttribute('role', 'meter');
+    this.gauge.setAttribute('aria-label', 'Pressure');
+    this.gauge.setAttribute('aria-valuemin', '0');
+    el('i', 'fl-magma', el('span', 'fl-track', this.gauge));
+    this.n = el('span', 'fl-n', this.gauge);
+    this.caldera = el('span', 'fl-caldera', row);
+    const pips = el('div', 'fl-network', body);
+    this.fractures = new Pips(pips, 'Fractures open');
+    this.ridges = new Pips(pips, 'Ridges standing');
+    this.bedrock = el('div', 'fl-bedrock', body);
+  }
+
+  update(me: Ship): void {
+    const p = faultlinePanel(me);
+    const n = Math.round(p.pressure);
+    setStyle(this.gauge, '--fill', (p.pressure / p.max).toFixed(3));
+    setFlag(this.gauge, 'hot', p.hot);
+    setText(this.n, `PRESSURE ${n}`);
+    if (this.gauge.getAttribute('aria-valuenow') !== String(n)) {
+      this.gauge.setAttribute('aria-valuenow', String(n));
+      this.gauge.setAttribute('aria-valuemax', String(p.max));
+    }
+    // A jump in pressure (a hit, Slip, Bedrock) pulses the gauge.
+    if (n >= this.last + 5) flash(this.gauge, 'surge');
+    this.last = n;
+    setText(this.caldera, `CALDERA ${kilo(p.caldera)}`);
+    setFlag(this.caldera, 'hot', p.hot);
+    this.fractures.set(p.fractures, p.maxFractures);
+    this.ridges.set(p.ridges, p.maxRidges);
+    const brace = p.bedrock > 0 ? `BEDROCK ${p.bedrock.toFixed(1)}s · REBOUND READY` : '';
+    setText(this.bedrock, brace);
+    if (this.bedrock.hidden !== !brace) this.bedrock.hidden = !brace;
+  }
+}
+
 export class MiscTitanHud {
   /** The captain's own titan panel; null for every other ship. */
   readonly panel: HTMLElement | null = null;
@@ -331,6 +409,7 @@ export class MiscTitanHud {
   private judge: JudgeGauges | null = null;
   private hex: HexGauges | null = null;
   private gourmand: GourmandGauges | null = null;
+  private faultline: FaultlineGauges | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -349,6 +428,7 @@ export class MiscTitanHud {
       if (kind === 'judge') this.judge = new JudgeGauges(this.body);
       if (kind === 'hexweaver') this.hex = new HexGauges(this.body);
       if (kind === 'gourmand') this.gourmand = new GourmandGauges(this.body);
+      if (kind === 'faultline') this.faultline = new FaultlineGauges(this.body);
     }
     this.banner = el('div', 'misc-banner', parent);
     this.banner.setAttribute('role', 'status');
@@ -365,6 +445,7 @@ export class MiscTitanHud {
     this.judge?.update(me, target);
     this.hex?.update(me, target);
     this.gourmand?.update(me);
+    this.faultline?.update(me);
     const b = miscVictimBanner(me);
     if (this.banner.hidden !== !b) this.banner.hidden = !b;
     if (!b) {

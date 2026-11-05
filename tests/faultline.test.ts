@@ -4,6 +4,7 @@ import { GameMap, MAPS, type DynamicRidge } from "../src/world/GameMap";
 import { FAULTLINE_SKILLS } from "../src/skills/misc/faultline";
 import {
   applyFaultlinePassives,
+  FAULTLINE,
   clearFaultline,
   newFaultlineState,
   updateFaultline,
@@ -260,7 +261,7 @@ describe("Faultline", () => {
     tick(s, 0.7);
     expect(s.pos.x).toBeCloseTo(500);
     expect(s.faultline!.slip).toBe(null);
-    expect(hp - victim.hp).toBe(65000);
+    expect(hp - victim.hp).toBe(FAULTLINE.slip.damage);
   });
 
   it("bounds Aftershock damage even when every fracture overlaps one target", () => {
@@ -278,8 +279,8 @@ describe("Faultline", () => {
     s.faultline!.pressure = 99;
     cast(s, 4);
     tick(s, 4);
-    expect(hp - victim.hp).toBeGreaterThan(44000);
-    expect(hp - victim.hp).toBeLessThanOrEqual(44000 / 0.45);
+    expect(hp - victim.hp).toBeGreaterThan(FAULTLINE.aftershock.damage);
+    expect(hp - victim.hp).toBeLessThanOrEqual(FAULTLINE.aftershock.damage / (1 - FAULTLINE.repeat));
     expect(s.faultline!.pressure).toBe(100);
     expect(s.faultline!.hits).toHaveLength(0);
   });

@@ -1,4 +1,5 @@
 import type { Ship } from '../ships/Ship';
+import { FAULTLINE } from '../skills/misc/FaultlineRuntime';
 import { cookerDamage, FLAVOURS, GOURMAND, nextFlavour, pantryCapacity, pantryTotal, spend, type Flavour } from '../skills/misc/GourmandRuntime';
 import { burnRate, dollOf, HEX, pinCharges, type Doll } from '../skills/misc/HexweaverRuntime';
 import { brokeRecently, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAW_OFFENCES, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
@@ -54,6 +55,41 @@ export function gourmandPanel(me: Ship): GourmandPanel {
     digest: w && victim ? { name: victim.name, left: Math.max(0, w.until - now), frac: Math.max(0, Math.min(1, (w.until - now) / GOURMAND.swallow.time)) } : null,
     banquet: Math.max(0, a.banquetUntil - now),
     mouth: Math.max(0, a.mouthUntil - now),
+  };
+}
+
+/** The Faultline's own panel. */
+export interface FaultlinePanel {
+  /** Stored pressure, 0 to `max`; hot from 80, when the gauge glows and shakes. */
+  pressure: number;
+  max: number;
+  hot: boolean;
+  /** What Caldera would deal now, spending all of it. */
+  caldera: number;
+  /** One pip per living fracture and per own ridge: the share of its life left, oldest first. */
+  fractures: number[];
+  ridges: number[];
+  maxFractures: number;
+  maxRidges: number;
+  /** Seconds of Bedrock's brace left; 0 when off. */
+  bedrock: number;
+}
+
+export function faultlinePanel(me: Ship): FaultlinePanel {
+  const a = me.faultline!;
+  const now = me.game.time;
+  const life = (until: number, span: number) => Math.max(0, Math.min(1, (until - now) / span));
+  const C = FAULTLINE.caldera;
+  return {
+    pressure: a.pressure,
+    max: FAULTLINE.maxPressure,
+    hot: a.pressure >= 80,
+    caldera: (C.damage + a.pressure * C.perPressure) * me.mods.damageMul * me.mods.ultDamageMul,
+    fractures: a.fractures.map((f) => life(f.expiresAt, FAULTLINE.fractureLife)),
+    ridges: me.game.map.dynamicRidges.filter((r) => r.owner === me.id).map((r) => life(r.expiresAt, FAULTLINE.ridgeLife)),
+    maxFractures: FAULTLINE.maxFractures,
+    maxRidges: FAULTLINE.maxRidges,
+    bedrock: Math.max(0, a.bedrockUntil - now),
   };
 }
 
@@ -256,7 +292,8 @@ export function miscTitanSummary(me: Ship, target: Ship | null): string {
   }
   if (me.faultline) {
     const a = me.faultline;
-    return `PRESSURE ${Math.round(a.pressure)} · FRACTURES ${a.fractures.length} · RIDGES ${me.game.map.dynamicRidges.filter((r) => r.owner === me.id).length}/6`;
+    const bedrock = a.bedrockUntil > now ? ` · BEDROCK ${Math.ceil(a.bedrockUntil - now)}s` : '';
+    return `PRESSURE ${Math.round(a.pressure)}/${FAULTLINE.maxPressure} · FRACTURES ${a.fractures.length}/${FAULTLINE.maxFractures} · RIDGES ${me.game.map.dynamicRidges.filter((r) => r.owner === me.id).length}/${FAULTLINE.maxRidges}${bedrock}`;
   }
   return '';
 }

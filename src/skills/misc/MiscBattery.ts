@@ -1,4 +1,5 @@
 import type { Ship } from '../../ships/Ship';
+import { faultlineRider } from './FaultlineRuntime';
 import { gourmandRider } from './GourmandRuntime';
 import { hexRider } from './HexweaverRuntime';
 import { judgeRider } from './JudgeRuntime';
@@ -25,6 +26,7 @@ function titanRider(s: Ship): TitanRider {
   if (s.judge) return judgeRider(s);
   if (s.hexweaver) return hexRider(s);
   if (s.gourmand) return gourmandRider(s);
+  if (s.faultline) return faultlineRider(s);
   return {};
 }
 

@@ -50,7 +50,29 @@ export type GourmandFxKind =
   | 'fuse'
   | 'catastrophe';
 
-export type MiscFxKind = MiscGunKind | JudgeFxKind | HexFxKind | GourmandFxKind;
+/**
+ * The Faultline: a fracture opening (`n` 1 when a mortar round opened it), a rupture pulse (`n` 0
+ * Fault, 1 Aftershock, 2 Continental Divide, 3 Worldbreaker), a ridge rising (`n` its id), Subduction
+ * and its crush, Slip, boulders falling from a ridge, Bedrock and its Rebound (`n` the pressure),
+ * Caldera and its eruption, Worldbreaker, a ridge collapsing and a ridge crumbling away.
+ */
+export type FaultFxKind =
+  | 'fracture'
+  | 'rupture'
+  | 'uplift'
+  | 'subduct'
+  | 'crush'
+  | 'slip'
+  | 'boulder'
+  | 'bedrock'
+  | 'rebound'
+  | 'caldera'
+  | 'eruption'
+  | 'worldbreaker'
+  | 'collapse'
+  | 'crumble';
+
+export type MiscFxKind = MiscGunKind | JudgeFxKind | HexFxKind | GourmandFxKind | FaultFxKind;
 
 export interface MiscTitanEvent {
   ship: Ship;

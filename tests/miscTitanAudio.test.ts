@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { miscSound } from '../src/fx/MiscTitanAudio';
-import type { GourmandFxKind, HexFxKind, JudgeFxKind } from '../src/skills/misc/MiscEvents';
+import type { FaultFxKind, GourmandFxKind, HexFxKind, JudgeFxKind } from '../src/skills/misc/MiscEvents';
 
 // Every misc titan effect that should be heard maps to one of the packaged recordings.
 
@@ -48,6 +48,21 @@ describe('Misc titan sounds', () => {
     const loud = miscSound('catastrophe')!.gain;
     for (const k of GOURMAND_KINDS) if (k !== 'catastrophe') expect(miscSound(k)!.gain).toBeLessThan(loud);
     for (const k of ['gulp', 'chomp', 'slice', 'side'] as const) expect(miscSound(k)!.gap).toBeGreaterThan(0);
+  });
+
+  const FAULT_KINDS: FaultFxKind[] = ['fracture', 'rupture', 'uplift', 'subduct', 'crush', 'slip', 'boulder', 'bedrock', 'rebound', 'caldera', 'eruption', 'worldbreaker', 'collapse', 'crumble'];
+
+  it.each(FAULT_KINDS)('give the Faultline’s %s a packaged recording', (kind) => {
+    const s = miscSound(kind);
+    expect(s).not.toBeNull();
+    expect(existsSync(`public/audio/${s!.asset}.m4a`)).toBe(true);
+    expect(s!.gain).toBeGreaterThan(0);
+  });
+
+  it('make Worldbreaker the loudest Faultline moment and let rapid pulses and boulders share a voice', () => {
+    const loud = miscSound('worldbreaker')!.gain;
+    for (const k of FAULT_KINDS) if (k !== 'worldbreaker') expect(miscSound(k)!.gain).toBeLessThan(loud);
+    for (const k of ['fracture', 'rupture', 'boulder', 'collapse', 'crumble'] as const) expect(miscSound(k)!.gap).toBeGreaterThan(0);
   });
 
   it('leave the galley mortar’s dishes to the gun sounds', () => {

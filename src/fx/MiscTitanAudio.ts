@@ -62,6 +62,20 @@ const SOUNDS: Partial<Record<MiscFxKind, MiscSound>> = {
   spit: s('splash', 'sonniss-splash', 0.8, 0.7),
   fuse: s('charge', 'energy-heavy', 0.7, 0.8),
   catastrophe: s('nuke', 'blast-heavy', 1.2, 0.85),
+  fracture: s('hit', 'collapse', 0.35, 1.4, 0.3),
+  rupture: s('explosion', 'sonniss-explosion', 0.45, 0.8, 0.12),
+  uplift: s('collapse', 'collapse', 0.85, 0.7),
+  subduct: s('thunder', 'sonniss-depth', 0.7, 0.8),
+  crush: s('collapse', 'mechanical-hit', 0.95, 0.6),
+  slip: s('charge', 'energy-heavy', 0.55, 0.9),
+  boulder: s('hit', 'impact', 0.45, 0.8, 0.15),
+  bedrock: s('shield', 'ward-rise', 0.6, 0.6),
+  rebound: s('explosion', 'blast-shock', 0.85, 0.8),
+  caldera: s('thunder', 'sonniss-depth', 0.8, 0.6),
+  eruption: s('nuke', 'blast-heavy', 1.1, 0.75),
+  worldbreaker: s('nuke', 'nuke', 1.25, 0.8),
+  collapse: s('collapse', 'collapse', 0.9, 0.8, 0.15),
+  crumble: s('splash', 'sonniss-splash', 0.4, 0.7, 0.3),
 };
 
 /** The recording a misc titan event plays, or null when it is left to other sounds. */
