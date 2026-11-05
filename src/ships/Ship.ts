@@ -1,5 +1,5 @@
 import { miscBattery } from '../skills/misc/MiscBattery';
-import {newJudgeState,updateJudge,clearJudge, type JudgeState} from '../skills/misc/JudgeRuntime';
+import {newJudgeState,updateJudge,clearJudge,objects, type JudgeState} from '../skills/misc/JudgeRuntime';
 import {newHexweaverState,updateHexweaver,clearHexweaver,hexweaverAbsorb,pinCharges,type HexweaverState} from '../skills/misc/HexweaverRuntime';
 import {newGourmandState,updateGourmand,clearGourmand,swallowedBy,gourmandBlocksSkill,gourmandSwallowMods,type GourmandState} from '../skills/misc/GourmandRuntime';
 import {newFaultlineState,updateFaultline,clearFaultline,applyFaultlinePassives,type FaultlineState} from '../skills/misc/FaultlineRuntime';
@@ -91,8 +91,6 @@ export interface ControlState {
   slot: number | null;
   /** Skill to trigger this tick: 0 and 1 normal skills, 2 the ultimate, -1 none. */
   skill: number;
-  /** Selected Judge law, supplied with the E activation. */
-  judgeLaw?: number;
   consumable: number;
   architectHullDash:boolean;
   architectMobileBattery:boolean;
@@ -1135,7 +1133,6 @@ export class Ship {
     c.throttleUp = c.throttleDown = c.diveUp = c.diveDown = false;
     c.slot = null;
     c.skill = -1;
-    delete c.judgeLaw;
     c.consumable = -1;
     c.architectHullDash=c.architectMobileBattery=false;
   }
@@ -1207,7 +1204,6 @@ export class Ship {
       st.meter = 0;
       this.form?.used.add(i);
     } else st.cooldown = st.spec.cooldown * this.mods.cooldownMul;
-    if(this.judge&&i===1)delete this.control.judgeLaw;
     this.game.events.emit('skill', { ship: this, index: i });
     mirrorStep(this, i, origin);
     return true;
@@ -1727,7 +1723,7 @@ export class Ship {
     if (pierce && (this.mods.banished || this.effects.some((e) => e.id === 'spawn' || e.id === 'revived'))) return 0;
     if (this.mods.invulnerable && !pierce) return 0;
     if (incomingStep(this, attacker, reflected, pierce, periodic)) return 0;
-    if(this.judge&&this.judge.objectionUntil>this.game.time&&attacker&&attacker.team!==this.team&&!pierce&&this.game.rng()<.5)return 0;
+    if (this.judge && objects(this, attacker, amount, pierce, reflected)) return 0;
     const hostile = !!attacker && attacker.team !== this.team;
     const huntOwner=attacker?.architectPlatform?.owner??attacker?.architectDrone?.owner??attacker;
     if(!forwarded&&!reflected&&huntOwner?.architect&&huntOwner.architect.huntUntil>this.game.time&&huntOwner.architect.huntTarget===this.id)amount*=1.4;

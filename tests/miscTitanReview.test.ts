@@ -1,10 +1,10 @@
 import { it, expect } from "vitest";
 import { emptyGame, place } from "./helpers";
-import {
-  enactLaw,
-  updateJudge,
-  violationCount,
-} from "../src/skills/misc/JudgeRuntime";
+import { LAWS, updateJudge } from "../src/skills/misc/JudgeRuntime";
+import type { Ship } from "../src/ships/Ship";
+/** When `t` last broke Closed Borders in `j`'s court. */
+const crossed = (j: Ship, t: Ship) =>
+  j.judge!.cases.find((c) => c.target === t.id)?.last[LAWS.indexOf("closedBorders")] ?? -1e9;
 it("court relocation and fear do not manufacture Closed Borders violations", () => {
   const g = emptyGame(),
     j = place(g, "judge", 0, 0, 0),
@@ -12,13 +12,12 @@ it("court relocation and fear do not manufacture Closed Borders violations", () 
   j.control.aimX = 0;
   j.control.aimZ = 0;
   j.activateSkill(0);
-  enactLaw(j, "closedBorders");
   updateJudge(j, 1 / 60);
   t.mods.feared = true;
   t.pos.z = -2050;
   g.time += 1 / 60;
   updateJudge(j, 1 / 60);
-  expect(violationCount(j, t)).toBe(0);
+  expect(crossed(j, t)).toBe(-1e9);
   t.mods.feared = false;
   t.pos.z = 0;
   g.time += 1 / 60;
@@ -29,7 +28,7 @@ it("court relocation and fear do not manufacture Closed Borders violations", () 
   j.activateSkill(0);
   g.time += 1 / 60;
   updateJudge(j, 1 / 60);
-  expect(violationCount(j, t)).toBe(0);
+  expect(crossed(j, t)).toBe(-1e9);
 });
 it("a ridge intercepts a fast flat shell before a hull behind its rounded end", () => {
   const g = emptyGame(),
@@ -66,8 +65,3 @@ it("a ridge intercepts a fast flat shell before a hull behind its rounded end", 
   expect(t.hp).toBe(hp);
 });
 
-it('consumes a rejected law choice with its input edge',()=>{
- const g=emptyGame(),s=place(g,'judge',0,0,0);place(g,'stepper',1,500,0);
- s.control.skill=1;s.control.judgeLaw=3;g.step(1/60);
- expect(s.control.skill).toBe(-1);expect(s.control.judgeLaw).toBeUndefined();
-});

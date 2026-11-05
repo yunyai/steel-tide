@@ -45,8 +45,6 @@ export type Continuous = [number, number, number, number, number, number?];
 
 /** Edge orders, consumed by the tick they land on (see Ship.applyControl). */
 export interface Edge {
-  /** Judge law index, applied atomically with skill E. */
-  jl?:number;
   ar?:{index:number;pick:ArchitectSelection};
   /** Throttle up / down one step. */
   tu?: 1;

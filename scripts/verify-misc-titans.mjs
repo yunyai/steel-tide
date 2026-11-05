@@ -53,11 +53,10 @@ try {
       if (id === "judge") {
         s.control.aimX = 0;
         s.activateSkill(0);
-        s.control.judgeLaw = 0;
-        s.activateSkill(1);
         s.meter = 1;
         s.activateSkill(6);
-        b.pcs[0].lawSelection.open = true;
+        s.control.aimX = 700;
+        s.activateSkill(1);
       }
       if (id === "hexweaver") {
         for (const t of foes) {

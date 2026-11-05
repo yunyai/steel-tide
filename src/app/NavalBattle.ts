@@ -68,8 +68,6 @@ export class NavalBattle implements ActiveBattle {
   paused = false;
   /** performance.now() when the battle was last paused. */
   private pausedAt = 0;
-  /** Escape may release pointer lock before or after cancelling the law selector. */
-  private lawEscapeUntil=0;
   ended = false;
   /** Seconds left before the report appears (lets the last ship settle). */
   private reportIn = 0;
@@ -234,10 +232,7 @@ export class NavalBattle implements ActiveBattle {
     // The Sandbox F-keys work paused too (F6 closes the sheet it opened); the browser never gets them.
     if (this.sandboxHud) input.claimed = new Set(['F6', 'F7', 'F8']);
     input.onLockChange = (locked) => {
-      if (!locked && shell.battle === this && !this.ended && !this.paused && this.usesMouse){
-        if(this.pcs.some(p=>p.lawSelection.open)||performance.now()<this.lawEscapeUntil){this.lawEscapeUntil=performance.now()+250;for(const pc of this.pcs)pc.lawSelection.cancel();}
-        else this.setPaused(true);
-      }
+      if (!locked && shell.battle === this && !this.ended && !this.paused && this.usesMouse) this.setPaused(true);
     };
     if (this.usesMouse) input.requestLock();
   }
@@ -532,9 +527,7 @@ export class NavalBattle implements ActiveBattle {
       if (input.pressed('F8')) hud.reset();
     }
     const padPause = this.pcs.some((p) => p.padIndex >= 0 && input.padPressed(p.padIndex, PAD_START));
-    const lawCancel=!this.paused&&input.pressed('Escape')&&(this.pcs.some(p=>p.lawSelection.open)||performance.now()<this.lawEscapeUntil);
-    if(lawCancel){this.lawEscapeUntil=performance.now()+250;for(const pc of this.pcs)pc.lawSelection.cancel();}
-    if (!lawCancel && !this.ended && (input.pressed('Escape') || padPause)) {
+    if (!this.ended && (input.pressed('Escape') || padPause)) {
       // Esc also releases the pointer lock (which pauses); it must not then immediately resume.
       // Mouse captains resume with the button or a click, since the lock needs a click anyway.
       const canResume = !this.usesMouse || input.fallback;

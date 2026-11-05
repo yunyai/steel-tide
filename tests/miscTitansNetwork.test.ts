@@ -5,34 +5,14 @@ import { DEFAULT_SETTINGS, TURN_TICKS, type Turn } from "../src/net/protocol";
 import { navalRules } from "../server/rules";
 import { stateHash } from "../src/net/hash";
 import { emptyControl } from "../src/ships/Ship";
-import { JudgeLawSelection } from "../src/player/JudgeLawSelection";
 import { emptyGame, place } from "./helpers";
 
 describe("new Misc titan integration", () => {
-  it("confirms local law selection atomically and cancels without an order", () => {
-    const menu = new JudgeLawSelection();
-    menu.toggle();
-    menu.move(-1);
-    expect(menu.cursor).toBe(5);
-    menu.cancel();
-    expect(menu.confirm()).toBeNull();
-    menu.toggle();
-    expect(menu.confirm()).toBe(5);
+  it("sends the Judge's skills as plain skill edges", () => {
     const c = emptyControl();
     c.skill = 1;
-    c.judgeLaw = 5;
-    expect(draftOrders(c)[1]).toEqual({ sk: 1, jl: 5 });
-    expect(c.judgeLaw).toBeUndefined();
-  });
-  it("validates law commands without changing existing edge fields", () => {
-    expect(navalRules.cleanEdge({ sk: 1, jl: 5 }, DEFAULT_SETTINGS)).toEqual({
-      sk: 1,
-      jl: 5,
-    });
-    for (const jl of [-1, 6, NaN, 1.5, "0", null])
-      expect(navalRules.cleanEdge({ sk: 1, jl }, DEFAULT_SETTINGS)).toEqual({
-        sk: 1,
-      });
+    expect(draftOrders(c)[1]).toEqual({ sk: 1 });
+    expect(navalRules.cleanEdge({ sk: 1, jl: 5 }, DEFAULT_SETTINGS)).toEqual({ sk: 1 });
     expect(navalRules.cleanEdge({ jl: 2 }, DEFAULT_SETTINGS)).toBeNull();
   });
   for (const id of ["judge", "hexweaver", "gourmand", "faultline"]) {
@@ -77,7 +57,6 @@ describe("new Misc titan integration", () => {
                       0,
                       {
                         sk: Math.floor(k / 10) % 9,
-                        ...(k === 10 ? { jl: 0 } : {}),
                       },
                     ],
                   ]

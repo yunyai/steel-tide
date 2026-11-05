@@ -1,4 +1,3 @@
-import {LAWS,LAW_LABELS} from '../skills/misc/JudgeRuntime';
 import { MiscTitanHud } from './MiscTitanHud';
 import { architectSkillPresentation,architectModuleSkillPresentation,architectIncomingBattery } from './ArchitectSkillPresentation';
 import { architectDockingStatus } from '../skills/misc/ArchitectRuntime';
@@ -170,7 +169,6 @@ export class HUD {
   } | null = null;
   private skillEls: SkillEl[] = [];
   private miscHud: MiscTitanHud;
-  private lawMenu:HTMLElement|null=null;
   private consEls: SkillEl[] = [];
   private vectorEls: {root:HTMLElement;t:HTMLElement;count:HTMLElement;lastActive?:number;wasReady:boolean}[] = [];
   /** LAN Free play: the last "minutes left" warning given before the server's time limit. */
@@ -387,9 +385,6 @@ export class HUD {
 
     // Misc titans: the captain's own titan panel, and the banner any captain sees while one holds them.
     this.miscHud = new MiscTitanHud(ck, pc);
-    if(me.judge){this.lawMenu=el('div','judge-law-menu',ck);this.lawMenu.setAttribute('role','listbox');this.lawMenu.setAttribute('aria-label','Choose law');this.lawMenu.title='1–6: choose · Arrows: select · Enter/E: enact · Escape: cancel';this.lawMenu.dataset.help=pc.device==='mouse'?this.lawMenu.title:'D-pad: select · A: enact · B: cancel';
-        LAWS.forEach((law,i)=>{const b=el('button','',this.lawMenu!);b.textContent=`${i+1} · ${LAW_LABELS[law]}`;b.setAttribute('role','option');b.addEventListener('click',()=>{pc.lawSelection.cursor=i;const choice=pc.lawSelection.confirm();if(choice!==null){pc.out.judgeLaw=choice;pc.out.skill=1;}});});
-    }
     const sb = el('div', `skillbar${titan ? ' titan' : ''}`, ck);
     let normals = 0;
     let ults = 0;
@@ -669,7 +664,6 @@ export class HUD {
     this.updateSkills();
     this.updateTungsten();
     this.miscHud.update();
-    if(this.lawMenu){this.lawMenu.hidden=!pc.lawSelection.open;Array.from(this.lawMenu.children).forEach((b,i)=>{b.setAttribute('aria-selected',String(i===pc.lawSelection.cursor));b.classList.toggle('selected',i===pc.lawSelection.cursor);});}
 
     if(me.architect){
       // The docking summary rides on the turret strip instead of a bar of its own.

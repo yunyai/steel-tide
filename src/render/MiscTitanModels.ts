@@ -256,7 +256,8 @@ export class MiscTitanModel {
     this.add(frame); this.add(light, this.art, this.glow);
     this.battery(0); this.battery(1);
     this.pose = (t, active, ult, slots) => {
-      const strike = Math.max(slots[0] ?? 0, slots[6] ?? 0, active * .3);
+      // The gavel swings for the court, a thrown Gavel, Martial Law, the Verdict and the Death Penalty.
+      const strike = Math.max(slots[0] ?? 0, slots[1] ?? 0, slots[6] ?? 0, slots[7] ?? 0, slots[8] ?? 0, active * .3);
       // A deliberate raised backswing followed by a heavy seated strike.
       gavel.rotation.z = -.27 - strike * (1.02 + (this.reduce ? 0 : .1 * Math.sin(t * 7))) + Math.sin(t * .7) * .035;
       gavel.rotation.x = -.07 + Math.sin(t * .47) * .018;

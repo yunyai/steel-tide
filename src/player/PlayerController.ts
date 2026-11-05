@@ -1,4 +1,3 @@
-import {JudgeLawSelection} from './JudgeLawSelection';
 import { canTrack, concealmentReason, cubeLockable, cubeTargets, type CubeContact } from '../core/Targeting';
 import { PerspectiveCamera, Quaternion, Vector3 } from 'three';
 import type { InputDeviceId, KeyLayout } from '../config';
@@ -109,7 +108,6 @@ export class PlayerController {
   /** A tap of fire stays armed briefly so it still fires once a turret finishes loading or traversing. */
   private fireLatch = 0;
   /** Short message for the HUD (e.g. a lock with nothing to lock onto) and how long it stays up. */
-  readonly lawSelection=new JudgeLawSelection();
   notice = '';
   noticeTime = 0;
   private keys: { b: Bindings; spec: ShipSpec; layout: KeyLayout } | null = null;
@@ -395,29 +393,6 @@ export class PlayerController {
         this.shellCam.cancel();
       }
       c.fire = input.padDown(p, PAD.RT) || (pad.buttons[PAD.RT]?.value ?? 0) > 0.5;
-    }
-    if(s.judge){
-      const menu=this.lawSelection,wasOpen=menu.open;
-      if(!s.alive)menu.cancel();
-      else if(!wasOpen&&c.skill===1&&c.judgeLaw===undefined){c.skill=-1;if(s.skillReady(1)&&s.judge.court)menu.toggle();else {this.notice=s.judge.court?'Law is recovering':'Establish Jurisdiction first';this.noticeTime=2;}}
-      else if(wasOpen){
-        c.skill=-1;c.slot=null;c.fire=false;
-        let choice:number|null=null;
-        if(mouse){
-          for(let i=0;i<6;i++)if(input.pressed('Digit'+(i+1))){menu.cursor=i;choice=menu.confirm();}
-          if(input.pressed('ArrowLeft')||input.pressed('ArrowUp'))menu.move(-1);
-          if(input.pressed('ArrowRight')||input.pressed('ArrowDown'))menu.move(1);
-          if(input.pressed('Escape'))menu.cancel();
-          else if(input.pressed('Enter')||(L&&input.pressed(L.skills[1])))choice=menu.confirm();
-        }else if(p>=0){
-          if(input.padPressed(p,PAD.LEFT)||input.padPressed(p,PAD.UP))menu.move(-1);
-          if(input.padPressed(p,PAD.RIGHT)||input.padPressed(p,PAD.DOWN))menu.move(1);
-          if(input.padPressed(p,PAD.A))choice=menu.confirm();
-          if(input.padPressed(p,PAD.B))menu.cancel();
-          c.consumable=-1;
-        }
-        if(choice!==null){c.judgeLaw=choice;c.skill=1;}
-      }
     }
     // Boss Rush refit cards take 1-3 and the pad's face buttons while they are up.
     if (this.game.rush?.phase === 'offer') {

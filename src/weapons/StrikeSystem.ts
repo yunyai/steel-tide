@@ -8,7 +8,8 @@ import type { Ship } from '../ships/Ship';
 
 export type StrikeKind = 'rod' | 'nuke' | 'rocket' | 'mortar' | 'cluster' | 'mine' | 'shock';
 /** How the strike is drawn (the kind decides what it does). */
-export type StrikeLook = 'plain' | 'meteor' | 'anvil' | 'rune' | 'fireball' | 'quake';
+/** `bespoke`: a warning the AI steers clear of, drawn and sounded by the caster's own effects. */
+export type StrikeLook = 'plain' | 'meteor' | 'anvil' | 'rune' | 'fireball' | 'quake' | 'bespoke';
 
 export interface StrikeOptions {
   kind: StrikeKind;
@@ -120,8 +121,10 @@ export class StrikeSystem {
     s.alive = false;
     s.landed = true;
     const size = s.kind === 'nuke' ? 9 : s.kind === 'rod' ? 4 : s.kind === 'mine' ? 2 : s.radius / 40;
-    g.events.emit('explosion', { x: s.x, y: 3, z: s.z, size });
-    g.events.emit('strikeHit', { strike: s });
+    if (s.look !== 'bespoke') {
+      g.events.emit('explosion', { x: s.x, y: 3, z: s.z, size });
+      g.events.emit('strikeHit', { strike: s });
+    }
     for (const ship of g.ships) {
       if (!this.canHit(s, ship)) continue;
       const d = distToHull(ship, s.x, s.z);

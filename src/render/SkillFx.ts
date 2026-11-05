@@ -391,7 +391,7 @@ export class SkillFx {
     r.begin();
     for (const b of g.beams.beams) if (b.alive) this.beam(b, dt);
     this.updateBolts(dt);
-    for (const s of g.strikes.strikes) if (s.alive) this.strike(s, dt);
+    for (const s of g.strikes.strikes) if (s.alive && s.look !== 'bespoke') this.strike(s, dt);
     this.pickups();
     this.shields(dt);
     this.walls(dt);
