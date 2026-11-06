@@ -26,7 +26,7 @@ const SKILLS = [
     name: 'Contempt of Court',
     cooldown: 14,
     icon: 'strike',
-    description: `Warn the aimed enemy, then freeze it for ${JUDGE.contempt.freeze} s and hold it in contempt for ${JUDGE.contempt.time} s: every violation counts ×${JUDGE.contempt.mul} and zaps it for ${JUDGE.contempt.zap / 1000}k. Its weapons and defences stay usable.`,
+    description: `Warn the aimed enemy, then freeze it for ${JUDGE.contempt.freeze} s and hold it in contempt for ${JUDGE.contempt.time} s: every violation counts ×${JUDGE.contempt.mul} (×${JUDGE.contempt.mul * 2} under Martial Law) and zaps it for ${JUDGE.contempt.zap / 1000}k. Its weapons and defences stay usable.`,
   },
   {
     id: 'judgeArrest',

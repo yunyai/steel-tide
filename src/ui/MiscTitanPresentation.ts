@@ -2,7 +2,7 @@ import { contactVisible } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
 import { FAULTLINE } from '../skills/misc/FaultlineRuntime';
 import { cookerDamage, FLAVOURS, GOURMAND, nextFlavour, pantryCapacity, pantryTotal, spend, type Flavour } from '../skills/misc/GourmandRuntime';
-import { burnRate, dollOf, HEX, pinCharges, type Doll } from '../skills/misc/HexweaverRuntime';
+import { burnRate, dollOf, effigyLure, HEX, pinCharges, type Doll } from '../skills/misc/HexweaverRuntime';
 import { brokeRecently, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAW_OFFENCES, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
 import type { MiscTitanEvent } from '../skills/misc/MiscEvents';
 
@@ -250,7 +250,7 @@ export function hexPanel(me: Ship, target: Ship | null): HexPanel {
 
 function hexPreviews(me: Ship, d: Doll | undefined, now: number): HexPanel['previews'] {
   const n = d?.pins ?? 0;
-  const mul = me.mods.damageMul;
+  const mul = me.mods.damageMul * (1 + n * HEX.pinBonus);
   return {
     twist: (HEX.twist.damage + n * HEX.twist.perPin + (n > 0 ? HEX.twist.consume : 0)) * mul,
     rip: (HEX.rip.damage + (d ? Math.max(0, d.burnUntil - now) * burnRate(d) : 0) + n * HEX.rip.perPin) * mul,
@@ -328,7 +328,20 @@ export function miscMarkerChip(viewer: Ship, s: Ship): MiscChip | null {
 
 /** The banner `me` sees while an enemy misc titan holds it; null when none does. */
 export function miscVictimBanner(me: Ship): MiscBanner | null {
-  return gourmandBanner(me) ?? judgeBanner(me) ?? hexBanner(me);
+  return gourmandBanner(me) ?? tauntBanner(me) ?? judgeBanner(me) ?? hexBanner(me);
+}
+
+/** A hostile effigy within reach has taken `me`'s main guns. */
+function tauntBanner(me: Ship): MiscBanner | null {
+  const lure = effigyLure(me);
+  if (!lure) return null;
+  const left = Math.max(0, lure.until - me.game.time);
+  return {
+    kind: 'hexweaver',
+    title: `Taunted ${left.toFixed(1)} s`,
+    detail: `Your main guns are locked on the effigy · sail ${HEX.substitute.lure / 1000} km from it to break free`,
+    alert: true,
+  };
 }
 
 /** A Gourmand on a side `side` accepts holding `s`: swallowed, under a bite warning, or skewered. */
@@ -403,7 +416,7 @@ function judgeBanner(me: Ship): MiscBanner | null {
   return {
     kind: 'judge',
     title: inside ? 'Court of the Judge' : 'Case open',
-    detail: contempt ? 'IN CONTEMPT: violations count triple' : n >= JUDGE.death ? 'DEATH PENALTY ELIGIBLE' : inside ? 'Obey every law to stop your case growing' : 'Stay out of court for 5 s to let it fade',
+    detail: contempt ? `IN CONTEMPT: violations count ×${JUDGE.contempt.mul * (judge.judge!.martialUntil > me.game.time ? 2 : 1)}` : n >= JUDGE.death ? 'DEATH PENALTY ELIGIBLE' : inside ? 'Obey every law to stop your case growing' : 'Stay out of court for 5 s to let it fade',
     alert: contempt || n >= JUDGE.death,
     laws: lawViews(judge, me),
     meter: { n, cap: JUDGE.cap, mark: JUDGE.death },

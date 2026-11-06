@@ -48,7 +48,7 @@ const SKILLS = [
     name: 'Substitute',
     cooldown: 18,
     icon: 'shield',
-    description: `Dash up to ${HEX.substitute.dash} m toward the reticle, leaving a straw effigy that soaks ${k(HEX.substitute.hp)} of damage aimed at you and draws enemy fire within ${HEX.substitute.lure / 1000} km for ${HEX.substitute.time} s, then bursts for ${k(HEX.substitute.burst)} in ${HEX.substitute.burstRadius} m.`,
+    description: `Dash up to ${HEX.substitute.dash} m toward the reticle, leaving a straw effigy that soaks ${k(HEX.substitute.hp)} of damage aimed at you and taunts every enemy within ${HEX.substitute.lure / 1000} km for ${HEX.substitute.time} s, locking their main guns on it, then bursts for ${k(HEX.substitute.burst)} in ${HEX.substitute.burstRadius} m.`,
   },
   {
     id: 'hexCoven',

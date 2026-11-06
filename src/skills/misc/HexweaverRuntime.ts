@@ -133,20 +133,19 @@ export function hexRider(s: Ship): TitanRider {
 }
 
 interface HexHit {
-  /** Apply the +15% per pin (skills that scale with pins themselves leave it off). */
-  pinned?: boolean;
   /** Echo through stitches to the other stitched dolls. */
   echo?: boolean;
 }
 
 /**
- * The Hexweaver hurting `t` for `amount`: the doll flinches, and a stitched doll passes a capped
- * share on to every other stitched doll (once, never echoing on). Returns the damage dealt.
+ * The Hexweaver hurting `t` for `amount`, +15% per pin on its doll (on top of any per-pin scaling
+ * the skill has itself): the doll flinches, and a stitched doll passes a capped share on to every
+ * other stitched doll (once, never echoing on). Returns the damage dealt.
  */
 export function hexHurt(s: Ship, t: Ship, amount: number, skill: SkillSpec, o: HexHit = {}): number {
   const now = s.game.time;
   const d = dollOf(s, t);
-  const dealt = hurt(s, t, amount * (o.pinned ? hexMul(s, t) : 1), skill);
+  const dealt = hurt(s, t, amount * hexMul(s, t), skill);
   if (d) d.struck = now;
   if (!o.echo || !d || !stitched(d, now) || dealt <= 0) return dealt;
   const echo = Math.min(HEX.stitch.echoCap, dealt * HEX.stitch.echo);
@@ -190,7 +189,7 @@ export function stitch(s: Ship, x: number, z: number, skill: SkillSpec): void {
   const now = s.game.time;
   emitMisc(s, 'stitch', x, z, { radius: HEX.stitch.radius });
   for (const v of enemiesNear(s, x, z, HEX.stitch.radius)) {
-    hexHurt(s, v, HEX.stitch.damage, skill, { pinned: true });
+    hexHurt(s, v, HEX.stitch.damage, skill);
     buff(v, 'debuff:stitchSlow', HEX.stitch.slowTime, (m) => {
       m.speedMul *= 1 - HEX.stitch.slow;
     });
@@ -223,7 +222,7 @@ export function effigyFire(s: Ship, x: number, z: number, skill: SkillSpec): voi
   emitMisc(s, 'fire', x, z, { radius: HEX.fire.radius });
   const lit: Doll[] = [];
   for (const v of enemiesNear(s, x, z, HEX.fire.radius)) {
-    hexHurt(s, v, HEX.fire.damage, skill, { pinned: true });
+    hexHurt(s, v, HEX.fire.damage, skill);
     const d = dollOf(s, v);
     if (d) lit.push(d);
   }
@@ -261,13 +260,16 @@ export function substitute(s: Ship, x: number, z: number): boolean {
   return true;
 }
 
-/** Where a hostile Hexweaver's effigy draws `ship`'s fire, if one stands within reach. */
-export function effigyLure(ship: Ship): { x: number; z: number } | null {
+/**
+ * Where a hostile Hexweaver's effigy draws `ship`'s fire, and until when, if one stands within
+ * reach. AI captains aim there; every captain's main guns lock on and fire at it.
+ */
+export function effigyLure(ship: Ship): { x: number; z: number; until: number } | null {
   const now = ship.game.time;
   for (const h of ship.game.ships) {
     const d = h.hexweaver?.decoy;
     if (!d || !h.alive || h.team === ship.team || d.until <= now || d.hp <= 0) continue;
-    if (Math.hypot(ship.pos.x - d.x, ship.pos.z - d.z) < HEX.substitute.lure) return { x: d.x, z: d.z };
+    if (Math.hypot(ship.pos.x - d.x, ship.pos.z - d.z) < HEX.substitute.lure) return { x: d.x, z: d.z, until: d.until };
   }
   return null;
 }
@@ -289,15 +291,16 @@ export function unmake(s: Ship, skill: SkillSpec): boolean {
   if (!a.dolls.length) return s.failSkill('Bind at least one doll before Unmaking');
   const now = s.game.time;
   const dolls = a.dolls.slice();
-  a.dolls = [];
+  // The dolls stay on the shelf until every one has gone off, so each blast still counts its pins.
   for (const d of dolls) {
     const v = shipOf(s, d);
     if (!v) continue;
     const blast = stitched(d, now);
     emitMisc(s, 'unmake', v.pos.x, v.pos.z, { target: v, n: d.pins, radius: blast ? HEX.unmaking.blastRadius : undefined });
-    hurt(s, v, HEX.unmaking.damage + d.pins * HEX.unmaking.perPin, skill);
-    if (blast) for (const o of enemiesNear(s, v.pos.x, v.pos.z, HEX.unmaking.blastRadius)) hurt(s, o, HEX.unmaking.blast, skill);
+    hexHurt(s, v, HEX.unmaking.damage + d.pins * HEX.unmaking.perPin, skill);
+    if (blast) for (const o of enemiesNear(s, v.pos.x, v.pos.z, HEX.unmaking.blastRadius)) hexHurt(s, o, HEX.unmaking.blast, skill);
   }
+  a.dolls = [];
   return true;
 }
 
@@ -356,6 +359,6 @@ export function updateHexweaver(s: Ship, _dt: number): void {
   if (decoy && (decoy.until <= now || decoy.hp <= 0)) {
     a.decoy = null;
     emitMisc(s, 'decoyBurst', decoy.x, decoy.z, { radius: HEX.substitute.burstRadius });
-    for (const v of enemiesNear(s, decoy.x, decoy.z, HEX.substitute.burstRadius)) hexHurt(s, v, HEX.substitute.burst, s.skills[5].spec, { pinned: true });
+    for (const v of enemiesNear(s, decoy.x, decoy.z, HEX.substitute.burstRadius)) hexHurt(s, v, HEX.substitute.burst, s.skills[5].spec);
   }
 }

@@ -1,6 +1,6 @@
 import { miscBattery } from '../skills/misc/MiscBattery';
 import {newJudgeState,updateJudge,clearJudge,objects, type JudgeState} from '../skills/misc/JudgeRuntime';
-import {newHexweaverState,updateHexweaver,clearHexweaver,hexweaverAbsorb,pinCharges,type HexweaverState} from '../skills/misc/HexweaverRuntime';
+import {newHexweaverState,updateHexweaver,clearHexweaver,hexweaverAbsorb,pinCharges,effigyLure,type HexweaverState} from '../skills/misc/HexweaverRuntime';
 import {newGourmandState,updateGourmand,clearGourmand,swallowedBy,gourmandBlocksSkill,gourmandSwallowMods,type GourmandState} from '../skills/misc/GourmandRuntime';
 import {newFaultlineState,updateFaultline,clearFaultline,applyFaultlinePassives,type FaultlineState} from '../skills/misc/FaultlineRuntime';
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
@@ -1360,6 +1360,9 @@ export class Ship {
     const hunt=huntedTarget(this);
     if(hunt){const table=this.tableFor(this.ammo),d=Math.hypot(hunt.pos.x-this.pos.x,hunt.pos.z-this.pos.z),flight=table?solve(table,d).time:0;
       this.control={...this.control,aimX:hunt.pos.x+Math.sin(hunt.heading)*hunt.speed*flight,aimZ:hunt.pos.z-Math.cos(hunt.heading)*hunt.speed*flight,aimY:hunt.pos.y>20?hunt.pos.y+12:undefined,fire:true};}
+    // A Hexweaver's effigy taunts every captain near it: the main guns lock on and fire at it.
+    const lure = hunt ? null : effigyLure(this);
+    if (lure) this.control = { ...this.control, aimX: lure.x, aimZ: lure.z, aimY: undefined, fire: true };
     const c = this.control;
     const aimDist = dist2D(this.pos.x, this.pos.z, c.aimX, c.aimZ);
     this.aimRange = aimDist;
@@ -1383,7 +1386,7 @@ export class Ship {
     }
     const slot = this.currentSlot;
     const broadAuto = !!this.stepper && this.stepper.broadUntil > this.game.time && this.stepper.broadTarget !== 0;
-    if ((c.fire && slot?.kind === 'gun' || broadAuto || !!hunt) && canFireGuns) {
+    if ((c.fire && slot?.kind === 'gun' || broadAuto || !!hunt || !!lure) && canFireGuns) {
       for (let i = 0; i < this.turrets.length; i++) {
         const t = this.turrets[i];
         if (t.reload <= 0 && t.aligned && t.disabled <= 0) this.fireTurret(i, slot?.kind === 'gun' ? slot.ammo : this.ammo);

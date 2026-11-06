@@ -136,7 +136,7 @@ describe('Hexweaver skills', () => {
     expect(lost(b)).toBeCloseTo(Math.min(HEX.stitch.echoCap, dealt * HEX.stitch.echo), 0);
   });
 
-  it('twists for 160k + 45k per pin, spends a pin for 130k more, wrenches the heading 90° and slows', () => {
+  it('twists for 160k + 45k per pin, spends a pin for 130k more, all +15% per pin, wrenches the heading 90° and slows', () => {
     const g = emptyGame();
     const s = place(g, 'hexweaver', 0, 0, 0);
     const t = dummy(g, 0, -2000);
@@ -146,7 +146,7 @@ describe('Hexweaver skills', () => {
     const heading = t.heading;
     aim(s, 0, -2000);
     expect(s.activateSkill(2)).toBe(true);
-    expect(lost(t)).toBeCloseTo(HEX.twist.damage + 2 * HEX.twist.perPin + HEX.twist.consume, 0);
+    expect(lost(t)).toBeCloseTo((HEX.twist.damage + 2 * HEX.twist.perPin + HEX.twist.consume) * (1 + 2 * HEX.pinBonus), 0);
     expect(dollOf(s, t)!.pins).toBe(1);
     expect(Math.abs(Math.abs(t.heading - heading) - Math.PI / 2)).toBeLessThan(1e-6);
     run(g, 1 / 60);
@@ -172,7 +172,7 @@ describe('Hexweaver skills', () => {
     expect(t.heading).toBe(heading);
   });
 
-  it('burns dolls in the patch at 30k/s (+25% per pin) for 6 s, spreading through stitches', () => {
+  it('burns dolls in the patch at 30k/s (+25% per pin, then +15% per pin) for 6 s, spreading through stitches', () => {
     const g = emptyGame();
     const s = place(g, 'hexweaver', 0, 0, 0);
     const a = dummy(g, 0, -2000);
@@ -187,11 +187,11 @@ describe('Hexweaver skills', () => {
     expect(hit).toBe(0);
     run(g, HEX.fire.time + 0.5);
     const burn = HEX.fire.burn * HEX.fire.time;
-    expect(lost(b)).toBeCloseTo(burn * (1 + 2 * HEX.fire.perPin), -3);
+    expect(lost(b)).toBeCloseTo(burn * (1 + 2 * HEX.fire.perPin) * (1 + 2 * HEX.pinBonus), -3);
     expect(lost(a)).toBeGreaterThan(HEX.fire.damage + burn);
   });
 
-  it('rips for 150k, cashing out the burn left and 80k per pin, and erupts stitched dolls', () => {
+  it('rips for 150k, cashing out the burn left and 80k per pin, all +15% per pin, and erupts stitched dolls', () => {
     const g = emptyGame();
     const s = place(g, 'hexweaver', 0, 0, 0);
     const t = dummy(g, 0, -2000);
@@ -206,7 +206,8 @@ describe('Hexweaver skills', () => {
     const seen = events(g);
     expect(s.activateSkill(4)).toBe(true);
     const cash = 4 * HEX.fire.burn * (1 + 2 * HEX.fire.perPin) + 2 * HEX.rip.perPin;
-    expect(lost(t)).toBeCloseTo(HEX.rip.damage + cash + HEX.rip.erupt, 0);
+    // The pins are spent by the rip itself, so the eruption after it lands unboosted.
+    expect(lost(t)).toBeCloseTo((HEX.rip.damage + cash) * (1 + 2 * HEX.pinBonus) + HEX.rip.erupt, 0);
     expect(lost(near)).toBeCloseTo(HEX.rip.damage + HEX.rip.erupt, 0);
     expect(d.pins).toBe(0);
     expect(d.burnUntil).toBeLessThanOrEqual(g.time);
@@ -223,7 +224,7 @@ describe('Hexweaver skills', () => {
     expect(s.activateSkill(5)).toBe(true);
     expect(s.pos.z).toBeLessThan(-700);
     expect(s.hexweaver!.decoy).toMatchObject({ x: 0, z: 0, hp: HEX.substitute.hp });
-    expect(effigyLure(near)).toEqual({ x: 0, z: 0 });
+    expect(effigyLure(near)).toMatchObject({ x: 0, z: 0 });
     expect(effigyLure(far)).toBeNull();
     run(g, 0.5);
     expect(near.control.aimX).toBeCloseTo(0, 0);
@@ -232,6 +233,28 @@ describe('Hexweaver skills', () => {
     run(g, HEX.substitute.time);
     expect(s.hexweaver!.decoy).toBeNull();
     expect(lost(close) - before).toBeCloseTo(HEX.substitute.burst, 0);
+  });
+
+  it('locks a human captain’s main guns on the effigy within 2 km, firing them, until they sail out of reach', () => {
+    const g = emptyGame();
+    const s = place(g, 'hexweaver', 0, 0, 0);
+    // A human battleship 1.2 km astern of the effigy, bow toward it, aiming and holding fire astern.
+    const human = place(g, 'iowa', 1, 0, 1200);
+    human.throttle = 0;
+    human.control.aimX = 0;
+    human.control.aimZ = 5000;
+    human.control.fire = false;
+    aim(s, 0, -800);
+    expect(s.activateSkill(5)).toBe(true);
+    run(g, 1.5);
+    const shots = g.shells.shells.filter((x) => x.owner === human);
+    expect(shots.length).toBeGreaterThan(0);
+    for (const x of shots) expect(x.vz).toBeLessThan(0);
+    expect(Math.abs(human.aimBearing)).toBeLessThan(0.05);
+    // Out of the lure's reach, the guns answer to the captain again.
+    human.pos.set(0, 0, HEX.substitute.lure + 600);
+    run(g, 1 / 60);
+    expect(Math.abs(Math.abs(human.aimBearing) - Math.PI)).toBeLessThan(0.05);
   });
 
   it('opens a coven: a pin on every enemy within 1.8 km, all stitched 10 s, 50k/s for 6 s', () => {
@@ -253,7 +276,7 @@ describe('Hexweaver skills', () => {
     expect(out.hp).toBe(out.maxHp);
   });
 
-  it('rains 24 needles of 40k over 3 s on the aimed enemy, +30% per pin', () => {
+  it('rains 24 needles over 3 s on the aimed enemy, +25% per pin and +15% per pin on top', () => {
     const g = emptyGame();
     const s = place(g, 'hexweaver', 0, 0, 0);
     const t = dummy(g, 0, -2000);
@@ -262,10 +285,10 @@ describe('Hexweaver skills', () => {
     s.meter = 1;
     expect(s.activateSkill(7)).toBe(true);
     run(g, HEX.needles.time + 0.3);
-    expect(lost(t)).toBeCloseTo(HEX.needles.count * HEX.needles.damage * (1 + HEX.needles.perPin), -3);
+    expect(lost(t)).toBeCloseTo(HEX.needles.count * HEX.needles.damage * (1 + HEX.needles.perPin) * (1 + HEX.pinBonus), -3);
   });
 
-  it('unmakes every doll for 300k + 150k per pin; stitched dolls blast 150k in 650 m; empty Unmaking fails', () => {
+  it('unmakes every doll for 300k + 150k per pin; stitched dolls blast 150k in 650 m; pins add 15% each; empty Unmaking fails', () => {
     const g = emptyGame();
     const s = place(g, 'hexweaver', 0, 0, 0);
     const t = dummy(g, 0, -2000);
@@ -276,7 +299,7 @@ describe('Hexweaver skills', () => {
     s.meter = 1;
     expect(s.activateSkill(8)).toBe(true);
     run(g, 0.5);
-    expect(lost(t)).toBeCloseTo(HEX.unmaking.damage + 2 * HEX.unmaking.perPin + HEX.unmaking.blast, 0);
+    expect(lost(t)).toBeCloseTo((HEX.unmaking.damage + 2 * HEX.unmaking.perPin + HEX.unmaking.blast) * (1 + 2 * HEX.pinBonus), 0);
     expect(lost(near)).toBeCloseTo(HEX.unmaking.blast, 0);
     expect(s.hexweaver!.dolls).toHaveLength(0);
     s.meter = 1;

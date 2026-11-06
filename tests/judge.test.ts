@@ -280,7 +280,7 @@ describe('Judge skills', () => {
     expect(taxes.aiShouldUse(j, g, t, j.skills[4])).toBe(false);
   });
 
-  it('counts a breach in contempt ×3 under Martial Law too, rather than compounding to ×6', () => {
+  it('compounds contempt with Martial Law: a breach counts ×6', () => {
     const g = emptyGame();
     const j = court(g);
     const t = dummy(g, 500, 0);
@@ -292,7 +292,7 @@ describe('Judge skills', () => {
     const before = violationCount(j, t);
     g.time += 1.01;
     recordJudgeAction(t, 'fire');
-    expect(violationCount(j, t)).toBe(before + JUDGE.contempt.mul);
+    expect(violationCount(j, t)).toBe(before + JUDGE.contempt.mul * 2);
   });
 
   it('drags an arrested enemy to court, hurting it and citing it every second', () => {
@@ -473,6 +473,19 @@ describe('Judge HUD', () => {
     expect(b.meter).toEqual({ n: 3, cap: 50, mark: 30 });
     expect(miscVictimBanner(j)).toBeNull();
   });
+  it('tells a victim in contempt how much each breach counts, ×6 under Martial Law', () => {
+    const g = emptyGame();
+    const j = court(g);
+    const t = dummy(g, 500, 0);
+    aim(j, t);
+    expect(j.activateSkill(2)).toBe(true);
+    run(g, 1.8);
+    expect(miscVictimBanner(t)!.detail).toContain(`×${JUDGE.contempt.mul}`);
+    j.meter = 1;
+    expect(j.activateSkill(6)).toBe(true);
+    expect(miscVictimBanner(t)!.detail).toContain(`×${JUDGE.contempt.mul * 2}`);
+  });
+
   it('pops each citation over the cited ship for its victim and the Judge’s own captain only', () => {
     const g = emptyGame();
     const j = court(g);

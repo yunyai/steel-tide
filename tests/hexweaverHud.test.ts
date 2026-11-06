@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Game } from '../src/core/Game';
 import type { Ship } from '../src/ships/Ship';
-import { dollOf, HEX, pinDoll, prick } from '../src/skills/misc/HexweaverRuntime';
+import { dollOf, HEX, pinDoll, prick, substitute } from '../src/skills/misc/HexweaverRuntime';
 import { hexPanel, miscMarkerChip, miscVictimBanner } from '../src/ui/MiscTitanPresentation';
 import { emptyGame, place, run } from './helpers';
 
@@ -74,9 +74,10 @@ describe('Hexweaver panel', () => {
     pinDoll(s, t, true);
     dollOf(s, t)!.burnUntil = g.time + 2;
     const p = hexPanel(s, t).previews!;
-    expect(p.twist).toBe(HEX.twist.damage + 2 * HEX.twist.perPin + HEX.twist.consume);
-    expect(p.rip).toBeCloseTo(HEX.rip.damage + 2 * HEX.fire.burn * (1 + 2 * HEX.fire.perPin) + 2 * HEX.rip.perPin);
-    expect(p.unmaking).toBe(HEX.unmaking.damage + 2 * HEX.unmaking.perPin);
+    const pinned = 1 + 2 * HEX.pinBonus;
+    expect(p.twist).toBeCloseTo((HEX.twist.damage + 2 * HEX.twist.perPin + HEX.twist.consume) * pinned);
+    expect(p.rip).toBeCloseTo((HEX.rip.damage + 2 * HEX.fire.burn * (1 + 2 * HEX.fire.perPin) + 2 * HEX.rip.perPin) * pinned);
+    expect(p.unmaking).toBeCloseTo((HEX.unmaking.damage + 2 * HEX.unmaking.perPin) * pinned);
     expect(hexPanel(s, null).previews).toBeNull();
   });
 
@@ -131,5 +132,21 @@ describe('Hexweaver marks', () => {
     expect(hot.detail).toContain('STITCHED');
     expect(hot.detail).toContain('BURNING');
     expect(miscVictimBanner(s)).toBeNull();
+  });
+});
+
+describe('Hexweaver taunt banner', () => {
+  it('tells a captain near the effigy that their guns are locked on it, and for how long', () => {
+    const g = emptyGame();
+    const s = place(g, 'hexweaver', 0, 0, 0);
+    const near = place(g, 'iowa', 1, 0, 1200);
+    const far = place(g, 'iowa', 1, 0, 4000);
+    pinDoll(s, near, true);
+    expect(substitute(s, 0, -800)).toBe(true);
+    const b = miscVictimBanner(near)!;
+    expect(b.kind).toBe('hexweaver');
+    expect(b.title).toBe(`Taunted ${HEX.substitute.time.toFixed(1)} s`);
+    expect(b.alert).toBe(true);
+    expect(miscVictimBanner(far)).toBeNull();
   });
 });

@@ -132,8 +132,8 @@ export function inContempt(j: Ship, t: Ship): boolean {
 }
 
 /**
- * Adds `n` violations to `t`'s case, doubled under Martial Law or tripled in contempt (which also
- * zaps the offender). `law` names the law broken, or -1 for a citation. Returns the violations added.
+ * Adds `n` violations to `t`'s case, tripled in contempt (which also zaps the offender) and doubled
+ * again under Martial Law. `law` names the law broken, or -1 for a citation. Returns the violations added.
  */
 export function cite(j: Ship, t: Ship, n: number, law = -1): number {
   const a = j.judge;
@@ -142,8 +142,8 @@ export function cite(j: Ship, t: Ship, n: number, law = -1): number {
   const now = j.game.time;
   const contempt = c.contemptUntil > now;
   const before = c.stacks;
-  // Contempt and Martial Law don't compound: the larger multiplier counts.
-  c.stacks = Math.min(JUDGE.cap, c.stacks + n * (contempt ? JUDGE.contempt.mul : a.martialUntil > now ? 2 : 1));
+  // Contempt and Martial Law compound: a breach in contempt under Martial Law counts six times.
+  c.stacks = Math.min(JUDGE.cap, c.stacks + n * (contempt ? JUDGE.contempt.mul : 1) * (a.martialUntil > now ? 2 : 1));
   const added = c.stacks - before;
   if (added > 0 || contempt) emitMisc(j, 'cite', t.pos.x, t.pos.z, { target: t, n: added, law });
   if (contempt) hurt(j, t, JUDGE.contempt.zap, j.skills[JUDGE_SLOT.contempt].spec);
