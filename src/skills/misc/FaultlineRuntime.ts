@@ -226,11 +226,12 @@ function nearestFracture(s: Ship): Fracture | undefined {
 
 // ------------------------------------------------------------------ ridges
 
-function makeRidge(s: Ship, x: number, z: number, dx: number, dz: number, length: number): DynamicRidge {
+/** A ridge `length` long centred on `x, z` along `dx, dz`; `id` defaults to the next serial. */
+function makeRidge(s: Ship, x: number, z: number, dx: number, dz: number, length: number, id?: number): DynamicRidge {
   const n = Math.hypot(dx, dz) || 1;
   const half = length / 2;
   return {
-    id: ++state(s).serial,
+    id: id ?? ++state(s).serial,
     owner: s.id,
     x0: x - (dx / n) * half,
     z0: z - (dz / n) * half,
@@ -294,8 +295,8 @@ function displacements(s: Ship, r: DynamicRidge): { ship: Ship; x: number; z: nu
   return moves;
 }
 
-/** Queues `ridges` to rise after the warning; `damage` erupts under ships along each line as it does. */
-function queueRidges(s: Ship, spec: SkillSpec, ridges: DynamicRidge[], damage = 0, knockSpeed = 0): boolean {
+/** Whether `ridges` fit the sea now, ridges still queued to rise included. Changes nothing. */
+function ridgesFit(s: Ship, ridges: DynamicRidge[]): boolean {
   const map = s.game.map;
   // Include queued ridges during validation so two fast casts cannot reserve the same space.
   const original = map.dynamicRidges;
@@ -309,7 +310,12 @@ function queueRidges(s: Ship, spec: SkillSpec, ridges: DynamicRidge[], damage = 
     map.dynamicRidges.push(r);
   }
   map.dynamicRidges = original;
-  if (!valid) return s.failSkill('Uplift: ridge needs clear water, safe exits and space away from spawns');
+  return valid;
+}
+
+/** Queues `ridges` to rise after the warning; `damage` erupts under ships along each line as it does. */
+function queueRidges(s: Ship, spec: SkillSpec, ridges: DynamicRidge[], damage = 0, knockSpeed = 0): boolean {
+  if (!ridgesFit(s, ridges)) return s.failSkill('Uplift: ridge needs clear water, safe exits and space away from spawns');
   for (const r of ridges) {
     const x = (r.x0 + r.x1) / 2;
     const z = (r.z0 + r.z1) / 2;
@@ -418,15 +424,29 @@ function rebound(s: Ship): void {
   emitMisc(s, 'rebound', s.pos.x, s.pos.z, { radius: B.radius, n: Math.round(a.pressure) });
 }
 
+/** Continental Divide's two ridges for an aim at `p`; `probe` gives them throwaway ids. */
+function divideRidges(s: Ship, p: { x: number; z: number }, probe = false): DynamicRidge[] {
+  const D = FAULTLINE.divide;
+  const dx = p.x - s.pos.x;
+  const dz = p.z - s.pos.z;
+  const n = Math.hypot(dx, dz) || 1;
+  const nx = -dz / n;
+  const nz = dx / n;
+  return [-1, 1].map((side) => makeRidge(s, p.x + nx * D.offset * side, p.z + nz * D.offset * side, dx, dz, D.length, probe ? 0 : undefined));
+}
+
+/** Whether Continental Divide aimed at `x, z` would raise both ridges, for the AI. Changes nothing. */
+export function divideFits(s: Ship, x: number, z: number): boolean {
+  return ridgesFit(s, divideRidges(s, { x, z }, true));
+}
+
 export function castDivide(s: Ship, spec: SkillSpec): boolean {
   const D = FAULTLINE.divide;
   const p = aimPoint(s, FAULTLINE.range);
   const dx = p.x - s.pos.x;
   const dz = p.z - s.pos.z;
   const n = Math.hypot(dx, dz) || 1;
-  const nx = -dz / n;
-  const nz = dx / n;
-  const ridges = [-1, 1].map((side) => makeRidge(s, p.x + nx * D.offset * side, p.z + nz * D.offset * side, dx, dz, D.length));
+  const ridges = divideRidges(s, p);
   if (!queueRidges(s, spec, ridges)) return false;
   const half = D.length / 2;
   const f = fracture(s, p.x - (dx / n) * half, p.z - (dz / n) * half, p.x + (dx / n) * half, p.z + (dz / n) * half);

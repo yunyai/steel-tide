@@ -1,3 +1,4 @@
+import { contactVisible } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
 import { FAULTLINE } from '../skills/misc/FaultlineRuntime';
 import { cookerDamage, FLAVOURS, GOURMAND, nextFlavour, pantryCapacity, pantryTotal, spend, type Flavour } from '../skills/misc/GourmandRuntime';
@@ -141,7 +142,7 @@ export interface JudgePanel {
   /** What Gavel, Taxes and the Verdict would deal the target now. */
   previews: { gavel: number; taxes: number; verdict: number };
   deathReady: boolean;
-  /** The three biggest open cases. */
+  /** The three biggest open cases on ships the Judge can see. */
   top: { name: string; n: number }[];
 }
 
@@ -169,18 +170,21 @@ export function judgePanel(me: Ship, target: Ship | null): JudgePanel {
     },
     deathReady: !!t && n >= JUDGE.death,
     top: a.cases
-      .filter((c) => c.stacks > 0)
-      .sort((x, y) => y.stacks - x.stacks || x.target - y.target)
+      .map((c) => ({ c, ship: me.game.ships.find((s) => s.id === c.target) }))
+      .filter(({ c, ship }) => c.stacks > 0 && !!ship && contactVisible(ship, me.team))
+      .sort((x, y) => y.c.stacks - x.c.stacks || x.c.target - y.c.target)
       .slice(0, 3)
-      .map((c) => ({ name: me.game.ships.find((s) => s.id === c.target)?.name ?? '?', n: c.stacks })),
+      .map(({ c, ship }) => ({ name: ship!.name, n: c.stacks })),
   };
 }
 
 /** One doll on the Hexweaver's shelf. */
 export interface DollSlot {
   target: number;
+  /** Whether the Hexweaver can see the doll's ship; a hidden ship's name and health are withheld. */
+  seen: boolean;
   name: string;
-  /** Its ship's health, 0–1. */
+  /** Its ship's health, 0–1; 0 while it is hidden. */
   hp: number;
   pins: number;
   /** Needle hits toward the next free pin, of `HEX.pricks`. */
@@ -220,10 +224,12 @@ export function hexPanel(me: Ship, target: Ship | null): HexPanel {
   for (const d of a.dolls) {
     const t = me.game.ships.find((v) => v.id === d.target);
     if (!t) continue;
+    const seen = contactVisible(t, me.team);
     slots.push({
       target: d.target,
-      name: t.name,
-      hp: t.maxHp > 0 ? Math.max(0, t.hp / t.maxHp) : 0,
+      seen,
+      name: seen ? t.name : 'Lost contact',
+      hp: seen && t.maxHp > 0 ? Math.max(0, t.hp / t.maxHp) : 0,
       pins: d.pins,
       pricks: d.pricks,
       life: Math.max(0, Math.min(1, (d.until - now) / HEX.pin.life)),
@@ -260,10 +266,14 @@ export interface CitePopup {
   n: number;
 }
 
-/** The popup `viewer` sees for a Judge's `cite` event: only its victim and the Judge itself see one. */
+/**
+ * The popup `viewer` sees for a Judge's `cite` event: only its victim and the Judge itself see one,
+ * and the Judge only over a ship it can see.
+ */
 export function judgeCitePopup(viewer: Ship, e: MiscTitanEvent): CitePopup | null {
   if (e.kind !== 'cite' || !e.target || !e.n) return null;
   if (viewer !== e.target && viewer !== e.ship && viewer !== e.ship.summonOwner) return null;
+  if (viewer !== e.target && !contactVisible(e.target, viewer.team)) return null;
   const law = e.law !== undefined && e.law >= 0 ? LAWS[e.law] : null;
   return { target: e.target, key: `cite:${law ?? 'any'}`, label: law ? LAW_OFFENCES[law] : 'CITED', n: e.n };
 }

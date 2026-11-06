@@ -4,7 +4,7 @@ import type { GameEventMap } from '../src/core/Events';
 import { NEW_MISC } from '../src/data/miscTitans';
 import { stateHash } from '../src/net/hash';
 import type { Ship } from '../src/ships/Ship';
-import { hurt } from '../src/skills/kit';
+import { buff, hurt } from '../src/skills/kit';
 import { miscBattery } from '../src/skills/misc/MiscBattery';
 import { dollOf, effigyLure, HEX, hexMul, pinCharges, pinDoll } from '../src/skills/misc/HexweaverRuntime';
 import { emptyGame, place, run } from './helpers';
@@ -155,6 +155,21 @@ describe('Hexweaver skills', () => {
     aim(s, 0, 2000);
     expect(s.activateSkill(2)).toBe(true);
     expect(lost(bare)).toBeCloseTo(HEX.twist.damage, 0);
+  });
+
+  it('Twist cannot wrench the heading of an unstoppable ship, though it still hurts it', () => {
+    const g = emptyGame();
+    const s = place(g, 'hexweaver', 0, 0, 0);
+    const t = dummy(g, 0, -2000);
+    buff(t, 'test:unstoppable', 10, (m) => {
+      m.unstoppable = true;
+    });
+    run(g, 1 / 60);
+    const heading = t.heading;
+    aim(s, 0, -2000);
+    expect(s.activateSkill(2)).toBe(true);
+    expect(lost(t)).toBeCloseTo(HEX.twist.damage, 0);
+    expect(t.heading).toBe(heading);
   });
 
   it('burns dolls in the patch at 30k/s (+25% per pin) for 6 s, spreading through stitches', () => {

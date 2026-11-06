@@ -74,6 +74,8 @@ export interface FireOptions {
   cluster?: SkillSpec;
   /** Fly flat at this multiple of muzzle velocity (railgun mode is 3, with piercing). */
   flat?: number;
+  /** Hulls the round passes through before it stops, on its usual flight path (railguns pierce 3). */
+  pierce?: number;
   onHit?: (target: Ship, x: number, z: number) => void;
   onLand?: (x: number, z: number) => void;
   hitMul?: (target: Ship) => number;
@@ -118,7 +120,7 @@ export class ShellSystem {
       railgun: o.railgun,
       secondary: !!o.secondary,
       bomb: false,
-      pierce: o.railgun ? 3 : 0,
+      pierce: o.railgun ? 3 : (o.pierce ?? 0),
       hit: [],
       alive: true,
       maxDist: o.table.maxRange * 1.3,

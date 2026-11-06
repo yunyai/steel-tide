@@ -204,6 +204,7 @@ class DollView {
     setFlag(this.root, 'stitched', v.stitched);
     setFlag(this.root, 'aimed', v.aimed);
     setFlag(this.root, 'flinch', v.flinch > 0);
+    setFlag(this.root, 'unseen', !v.seen);
     // The doll jolts when its ship is hurt and wrings round when it is twisted.
     const turn = still ? 0 : v.flinch * -16 * (Math.round(v.flinch * 10) % 2 ? 1 : -1) + v.twist * 200;
     setStyle(this.doll, 'transform', turn ? `rotate(${turn.toFixed(1)}deg)` : '');

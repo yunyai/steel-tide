@@ -1,4 +1,5 @@
 import { def, type SkillDef } from '../types';
+import { canTrack } from '../../core/Targeting';
 import { aimPoint } from '../kit';
 import { miscTarget } from './MiscSupport';
 import { arrest, collectTaxes, declareMartialLaw, inCourt, JUDGE, judgeWarning, placeCourt, throwGavel, violationCount } from './JudgeRuntime';
@@ -130,14 +131,17 @@ export const JUDGE_SKILLS: SkillDef[] = SKILLS.map((k, i) =>
         const a = s.judge!;
         const d = Math.hypot(t.pos.x - s.pos.x, t.pos.z - s.pos.z);
         const v = violationCount(s, t);
-        if (i === 1) return v > 0 && d < 4800;
+        // Targeted casts fail without spending anything beyond 5 km or on a hidden ship, and a
+        // failed pick costs the AI its whole decision, so it only reaches for what it can land.
+        const reach = d < 4800 && canTrack(s, t);
+        if (i === 1) return v > 0 && reach;
         if (i === 0) return !a.court || Math.hypot(t.pos.x - a.court.x, t.pos.z - a.court.z) > JUDGE.court.radius * 0.9;
-        if (i === 3) return !!a.court && !inCourt(s, t) && d < 4800;
-        if (i === 4) return v >= 3 || s.hp < s.maxHp * 0.6;
+        if (i === 3) return !!a.court && !inCourt(s, t) && reach;
+        if (i === 4) return reach && (v >= 3 || s.hp < s.maxHp * 0.6);
         if (i === 5) return s.hp < s.maxHp * 0.8;
         if (i === 6) return !!a.court && inCourt(s, t);
-        if (i === 8) return v >= JUDGE.death;
-        return d < 4800;
+        if (i === 8) return reach && v >= JUDGE.death;
+        return reach;
       },
     },
   ),

@@ -19,6 +19,10 @@ export function miscTarget(s: Ship, range = 5000): Ship | null {
       )[0] ?? null
   );
 }
+/** A hull that forced moves leave alone: braced against knockback, unstoppable or CC-immune. */
+export function immovable(t: Ship): boolean {
+  return !!t.trait?.knockImmune || t.mods.knockImmune || t.mods.unstoppable || t.mods.ccImmune;
+}
 export function moveSafe(s: Ship, x: number, z: number): boolean {
   if (Math.abs(x) > MAP_HALF - 250 || Math.abs(z) > MAP_HALF - 250)
     return false;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAP_HALF } from "../src/config";
 import { SHIP_BY_ID } from "../src/data/ships";
 import { GameMap, MAPS, type DynamicRidge } from "../src/world/GameMap";
 import { FAULTLINE_SKILLS } from "../src/skills/misc/faultline";
@@ -310,6 +311,22 @@ describe("Faultline", () => {
     expect(s.faultline!.pending).toHaveLength(0);
     expect(s.faultline!.fractures).toHaveLength(0);
     expect(s.faultline!.pressure).toBe(0);
+  });
+
+  it("lets the AI raise Continental Divide only where both ridges fit", () => {
+    const { g, s } = arena();
+    const t = place(g, "yamato", 1, 2000, 2500);
+    const divide = FAULTLINE_SKILLS[6].impl;
+    const st = { spec: FAULTLINE_SKILLS[6].spec, index: 6, active: false, cooldown: 0, time: 0, meter: 1, data: {} } as SkillState;
+    expect(divide.aiShouldUse(s, g, t, st)).toBe(true);
+    const serial = s.faultline!.serial;
+    // Against the map's edge the ridges cannot rise: a cast would fail, cost nothing, and be retried
+    // every decision ahead of every other skill.
+    const edge = MAP_HALF * 0.76 - 400;
+    s.pos.x = edge - 2000;
+    t.pos.x = edge;
+    expect(divide.aiShouldUse(s, g, t, st)).toBe(false);
+    expect(s.faultline!.serial).toBe(serial);
   });
 
   it("Caldera spends pressure rather than letting an empty resource disable its base attack", () => {

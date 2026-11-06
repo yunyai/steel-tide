@@ -1440,7 +1440,8 @@ export class Ship {
         toY: c.aimY,
         dmgMul,
         guaranteedFire: this.mods.guaranteedFire || !!buff?.guaranteedFire || !!rider?.fire,
-        railgun: this.mods.railgun || !!buff?.railgun || !!rider?.pierce,
+        railgun: this.mods.railgun || !!buff?.railgun,
+        pierce: rider?.pierce ? 3 : undefined,
         cluster: buff?.cluster ? buff.skill : undefined,
         flat: (this.mods.flatShots || main.flat || 0) * shot.pace,
         onHit: buff?.onHit ?? rider?.onHit,
@@ -1723,7 +1724,7 @@ export class Ship {
     if (pierce && (this.mods.banished || this.effects.some((e) => e.id === 'spawn' || e.id === 'revived'))) return 0;
     if (this.mods.invulnerable && !pierce) return 0;
     if (incomingStep(this, attacker, reflected, pierce, periodic)) return 0;
-    if (this.judge && objects(this, attacker, amount, pierce, reflected)) return 0;
+    if (this.judge && objects(this, attacker, amount, pierce, reflected, periodic)) return 0;
     const hostile = !!attacker && attacker.team !== this.team;
     const huntOwner=attacker?.architectPlatform?.owner??attacker?.architectDrone?.owner??attacker;
     if(!forwarded&&!reflected&&huntOwner?.architect&&huntOwner.architect.huntUntil>this.game.time&&huntOwner.architect.huntTarget===this.id)amount*=1.4;

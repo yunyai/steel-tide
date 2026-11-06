@@ -266,11 +266,12 @@ export function declareMartialLaw(s: Ship): void {
 
 /**
  * V: whether Objection dismisses a hit of `amount` from `attacker` on the Judge `s`. A dismissed hit
- * cites its attacker and turns part of its damage back on it.
+ * cites its attacker and turns part of its damage back on it. Fire and flooding (`periodic`) tick
+ * every frame, so they burn through: dismissing each tick would cite their setter 30 times a second.
  */
-export function objects(s: Ship, attacker: Ship | null, amount: number, pierce: boolean, reflected: boolean): boolean {
+export function objects(s: Ship, attacker: Ship | null, amount: number, pierce: boolean, reflected: boolean, periodic = false): boolean {
   const a = s.judge;
-  if (!a || a.objectionUntil <= s.game.time || !attacker || attacker.team === s.team || pierce || reflected) return false;
+  if (!a || a.objectionUntil <= s.game.time || !attacker || attacker.team === s.team || pierce || reflected || periodic) return false;
   if (s.game.rng() >= JUDGE.objection.chance) return false;
   cite(s, attacker, 1);
   const back = amount * JUDGE.objection.reflect;

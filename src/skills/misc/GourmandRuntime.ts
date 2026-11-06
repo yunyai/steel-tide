@@ -1,10 +1,12 @@
 import { MAP_HALF, SHELL_TIME_SCALE } from '../../config';
 import type { Game } from '../../core/Game';
 import { forwardX, forwardZ } from '../../core/math';
+import { canTrack } from '../../core/Targeting';
 import type { SkillSpec } from '../../core/types';
 import type { Mods, Ship } from '../../ships/Ship';
 import { buff, clearWater, hurt, placeAt } from '../kit';
 import { emitMisc, type TitanRider } from './MiscEvents';
+import { immovable } from './MiscSupport';
 
 // The Gourmand eats the battle and cooks with it. Its pantry fills with what its mouth swallows
 // and what its hits knock loose; every salvo spends one ingredient for a flavour, and its skills
@@ -520,7 +522,7 @@ function chomp(s: Ship, dt: number): void {
   const fx = forwardX(s.heading);
   const fz = forwardZ(s.heading);
   for (const v of enemiesNear(s, m.x, m.z, D.pull)) {
-    if ((v.pos.x - s.pos.x) * fx + (v.pos.z - s.pos.z) * fz <= 0 || swallowedBy(g, v) || v.mods.banished) continue;
+    if ((v.pos.x - s.pos.x) * fx + (v.pos.z - s.pos.z) * fz <= 0 || swallowedBy(g, v) || v.mods.banished || immovable(v)) continue;
     // Drawn straight in, like a reeled skewer; land in the way holds it.
     const dx = m.x - v.pos.x;
     const dz = m.z - v.pos.z;
@@ -580,7 +582,9 @@ function updateBanquet(s: Ship, now: number): void {
   const B = GOURMAND.banquet;
   if (now >= a.banquetUntil || now < a.nextServing) return;
   a.nextServing = now + B.every;
+  // Side dishes are aimed by the sim, so they go only to enemies the Gourmand can see.
   const targets = enemiesNear(s, s.pos.x, s.pos.z, B.reach)
+    .filter((t) => canTrack(s, t))
     .sort((p, q) => Math.hypot(p.pos.x - s.pos.x, p.pos.z - s.pos.z) - Math.hypot(q.pos.x - s.pos.x, q.pos.z - s.pos.z) || p.id - q.id)
     .slice(0, B.targets);
   for (const t of targets) {
@@ -627,7 +631,8 @@ function updateReel(s: Ship, now: number, dt: number): void {
   const dz = s.pos.z - t.pos.z;
   const d = Math.hypot(dx, dz);
   const gap = Math.max(0, d - (s.spec.length + t.spec.length) * 0.5 - 40);
-  const step = Math.min(K.speed * dt, gap);
+  // A hull that cannot be moved holds the line where it is.
+  const step = immovable(t) ? 0 : Math.min(K.speed * dt, gap);
   if (step > 0) {
     const x = t.pos.x + (dx / d) * step;
     const z = t.pos.z + (dz / d) * step;

@@ -261,6 +261,25 @@ describe('Judge skills', () => {
     expect(gavel.aiShouldUse(j, g, t, j.skills[1])).toBe(false);
   });
 
+  it('keeps the AI from retrying Death Penalty or Taxes on a target they cannot reach or see', () => {
+    const g = emptyGame();
+    const j = court(g);
+    const t = dummy(g, 500, -3000);
+    const death = JUDGE_SKILLS[8].impl;
+    const taxes = JUDGE_SKILLS[4].impl;
+    cite(j, t, JUDGE.death);
+    expect(death.aiShouldUse(j, g, t, j.skills[8])).toBe(true);
+    expect(taxes.aiShouldUse(j, g, t, j.skills[4])).toBe(true);
+    // Out of reach: activation would fail and spend nothing, so the AI would try again every decision.
+    t.pos.z = -6000;
+    expect(death.aiShouldUse(j, g, t, j.skills[8])).toBe(false);
+    expect(taxes.aiShouldUse(j, g, t, j.skills[4])).toBe(false);
+    t.pos.z = -3000;
+    for (let i = 0; i < 4; i++) g.addSmoke(t.pos.x, t.pos.z, 1);
+    expect(death.aiShouldUse(j, g, t, j.skills[8])).toBe(false);
+    expect(taxes.aiShouldUse(j, g, t, j.skills[4])).toBe(false);
+  });
+
   it('counts a breach in contempt ×3 under Martial Law too, rather than compounding to ×6', () => {
     const g = emptyGame();
     const j = court(g);
@@ -314,6 +333,19 @@ describe('Judge skills', () => {
     expect(dismissed).toBeLessThan(17);
     expect(violationCount(j, t)).toBe(dismissed);
     expect(t.maxHp - t.hp).toBeCloseTo(dismissed * 10000 * JUDGE.objection.reflect, 0);
+  });
+
+  it('lets fire and flooding burn through Objection without citing whoever set them', () => {
+    const g = emptyGame();
+    const j = place(g, 'judge', 0, 0, 0);
+    const t = dummy(g, 0, -1500);
+    expect(j.activateSkill(5)).toBe(true);
+    const hp = j.hp;
+    // Two seconds of a fire set by `t`, ticking at 60 Hz the way updateDamageOverTime does.
+    for (let i = 0; i < 120; i++) j.takeDamage(1000, t, null, false, false, true);
+    expect(violationCount(j, t)).toBe(0);
+    expect(t.hp).toBe(t.maxHp);
+    expect(hp - j.hp).toBeGreaterThan(0);
   });
 
   it('opens Martial Law with a strike on every enemy in court and twice-as-fast guns', () => {
@@ -458,5 +490,24 @@ describe('Judge HUD', () => {
     cite(j, t, 2);
     expect(judgeCitePopup(t, seen.at(-1)!)).toEqual({ target: t, key: 'cite:any', label: 'CITED', n: 2 });
     expect(judgeCitePopup(t, { ship: j, kind: 'gavelHit', x: 0, z: 0, target: t, n: 0 })).toBeNull();
+  });
+
+  it('keeps a ship hidden from the Judge out of its citation popups and docket', () => {
+    const g = emptyGame();
+    const j = court(g);
+    const seen = place(g, 'stepper', 1, 900, 0);
+    const hidden = place(g, 'stepper', 1, -900, 0);
+    for (let i = 0; i < 4; i++) g.addSmoke(hidden.pos.x, hidden.pos.z, 1);
+    const events: GameEventMap['miscTitan'][] = [];
+    g.events.on('miscTitan', (e) => events.push(e));
+    cite(j, hidden, 3);
+    const quiet = events.at(-1)!;
+    expect(quiet.kind).toBe('cite');
+    // The victim still sees its own citation; the Judge sees nothing over a ship it cannot see.
+    expect(judgeCitePopup(hidden, quiet)).not.toBeNull();
+    expect(judgeCitePopup(j, quiet)).toBeNull();
+    cite(j, seen, 2);
+    expect(judgeCitePopup(j, events.at(-1)!)).not.toBeNull();
+    expect(judgePanel(j, seen).top).toEqual([{ name: seen.name, n: 2 }]);
   });
 });

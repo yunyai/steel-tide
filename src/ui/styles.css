@@ -4537,6 +4537,8 @@ select {
 .hx-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f4e6d0; font-weight:600; }
 .hx-hp { position:relative; height:4px; background:rgba(255,255,255,.1); }
 .hx-hp i { position:absolute; inset:0 auto 0 0; background:#e9667e; }
+.hx-slot.unseen .hx-hp { visibility:hidden; }
+.hx-slot.unseen .hx-name { color:#a99; font-style:italic; }
 .hx-pricks { display:flex; gap:3px; }
 .hx-pricks i { width:5px; height:5px; border-radius:50%; background:rgba(242,144,207,.2); }
 .hx-pricks i.on { background:var(--misc); }

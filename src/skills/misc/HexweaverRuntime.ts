@@ -2,7 +2,7 @@ import type { SkillSpec } from '../../core/types';
 import type { Ship } from '../../ships/Ship';
 import { buff, hurt } from '../kit';
 import { emitMisc, type TitanRider } from './MiscEvents';
-import { moveSafe } from './MiscSupport';
+import { immovable, moveSafe } from './MiscSupport';
 
 // The Hexweaver binds enemies to dolls. Pins on a doll make its ship take more from every
 // Hexweaver hit; needle volleys prick bound ships until their dolls take free pins; stitched dolls
@@ -206,9 +206,11 @@ export function twist(s: Ship, t: Ship, skill: SkillSpec): void {
   hexHurt(s, t, HEX.twist.damage + pins * HEX.twist.perPin + (consume ? HEX.twist.consume : 0), skill, { echo: true });
   if (d && consume) d.pins--;
   if (d) d.twistedAt = s.game.time;
-  // Wrench the hull a quarter turn, toward whichever side faces the Hexweaver.
-  const side = Math.sin(t.heading) * (s.pos.z - t.pos.z) - Math.cos(t.heading) * (s.pos.x - t.pos.x) >= 0 ? 1 : -1;
-  t.heading += (side * Math.PI) / 2;
+  // Wrench the hull a quarter turn, toward whichever side faces the Hexweaver, unless it cannot be moved.
+  if (!immovable(t)) {
+    const side = Math.sin(t.heading) * (s.pos.z - t.pos.z) - Math.cos(t.heading) * (s.pos.x - t.pos.x) >= 0 ? 1 : -1;
+    t.heading += (side * Math.PI) / 2;
+  }
   buff(t, 'debuff:twist', HEX.twist.slowTime, (m) => {
     m.speedMul *= 1 - HEX.twist.slow;
   });

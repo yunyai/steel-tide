@@ -4,6 +4,7 @@ import type { Ship } from '../src/ships/Ship';
 import { NEW_MISC } from '../src/data/miscTitans';
 import { SHIP_BY_ID } from '../src/data/ships';
 import { stateHash } from '../src/net/hash';
+import { buff } from '../src/skills/kit';
 import { GOURMAND_SKILLS } from '../src/skills/misc/gourmand';
 import { miscBattery } from '../src/skills/misc/MiscBattery';
 import {
@@ -71,6 +72,22 @@ describe('Gourmand battery', () => {
     expect(r.hitMul!(t)).toBeCloseTo(GOURMAND.flavour.shellMul);
     expect(r.pierce).toBe(true);
     expect(r.fire).toBeFalsy();
+  });
+
+  it('lobs a shell salvo on the mortar arc: it pierces hulls but never flies flat like a railgun', () => {
+    const { g, s } = kitchen();
+    dummy(g, 0, -3000);
+    s.gourmand!.pantry = { shells: 6, explosives: 0, wreckage: 0 };
+    aim(s, 0, -3000);
+    s.control.fire = true;
+    run(g, 0.2);
+    const dishes = g.shells.shells.filter((x) => x.owner === s);
+    expect(dishes.length).toBeGreaterThan(0);
+    for (const d of dishes) {
+      expect(d.straight).toBe(false);
+      expect(d.railgun).toBe(false);
+      expect(d.pierce).toBeGreaterThan(0);
+    }
   });
 
   it('splashes 250 m around every dish, and an explosive dish half as wide again and on fire', () => {
@@ -180,6 +197,33 @@ describe('Gourmand skills', () => {
     expect(s.gourmand!.pantry.wreckage).toBe(GOURMAND.skewer.scrap);
   });
 
+  it('Skewer cannot reel in a ship braced against knockback', () => {
+    const { g, s } = kitchen();
+    const t = dummy(g, 0, -1000);
+    buff(t, 'test:braced', 30, (m) => {
+      m.knockImmune = true;
+    });
+    run(g, 1 / 60);
+    aim(s, 0, -1000);
+    expect(s.activateSkill(3)).toBe(true);
+    expect(lost(t)).toBe(GOURMAND.skewer.damage);
+    run(g, GOURMAND.skewer.time + 0.5);
+    expect(t.pos.z).toBeCloseTo(-1000, 0);
+  });
+
+  it('Devour cannot pull in a CC-immune ship', () => {
+    const { g, s } = kitchen();
+    const ahead = dummy(g, 0, -s.spec.length / 2 - 900);
+    buff(ahead, 'test:immune', 30, (m) => {
+      m.ccImmune = true;
+    });
+    run(g, 1 / 60);
+    const from = ahead.pos.z;
+    expect(s.activateSkill(0)).toBe(true);
+    run(g, 1);
+    expect(ahead.pos.z).toBeCloseTo(from, 0);
+  });
+
   it('Serve lands a 150k dish and spends three of its flavour', () => {
     const { g, s } = kitchen();
     const t = dummy(g, 0, -2000);
@@ -207,7 +251,25 @@ describe('Gourmand skills', () => {
     expect(Math.hypot(t.pushX, t.pushZ)).toBeGreaterThan(0);
   });
 
-  it('Banquet serves 90k side dishes at two enemies each second, widens the pantry and shrinks it after', () => {
+  it('Banquet serves only enemies the Gourmand can see, never one hidden in smoke', () => {
+    const { g, s } = kitchen();
+    const hidden = dummy(g, 0, -1500);
+    const a = dummy(g, 0, -2500);
+    const b = dummy(g, 0, -3200);
+    // Keep the smoke over the hidden hull for the whole test.
+    for (let i = 0; i < 4; i++) g.addSmoke(hidden.pos.x, hidden.pos.z, 1);
+    s.meter = 1;
+    expect(s.activateSkill(6)).toBe(true);
+    const served: number[] = [];
+    g.events.on('miscTitan', (e) => e.kind === 'side' && served.push(e.target!.id));
+    run(g, 1.5);
+    expect(served).not.toContain(hidden.id);
+    expect(lost(hidden)).toBe(0);
+    expect(lost(a)).toBeGreaterThan(0);
+    expect(lost(b)).toBeGreaterThan(0);
+  });
+
+  it('Banquet serves side dishes at two enemies each second, widens the pantry and shrinks it after', () => {
     const { g, s } = kitchen();
     const a = dummy(g, 0, -2000);
     const b = dummy(g, 1500, -2000);

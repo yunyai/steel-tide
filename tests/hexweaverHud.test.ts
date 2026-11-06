@@ -17,6 +17,20 @@ function dummy(g: Game, x: number, z: number): Ship {
 }
 
 describe('Hexweaver panel', () => {
+  it('keeps a doll on the shelf but hides its ship’s name and health while that ship is out of sight', () => {
+    const g = emptyGame();
+    const s = place(g, 'hexweaver', 0, 0, 0);
+    const t = dummy(g, 0, -2000);
+    pinDoll(s, t);
+    expect(hexPanel(s, null).slots[0]).toMatchObject({ seen: true, name: t.name, hp: 1, pins: 1 });
+    for (let i = 0; i < 4; i++) g.addSmoke(t.pos.x, t.pos.z, 1);
+    const slot = hexPanel(s, null).slots[0];
+    expect(slot.seen).toBe(false);
+    expect(slot.name).not.toBe(t.name);
+    expect(slot.hp).toBe(0);
+    expect(slot.pins).toBe(1);
+  });
+
   it('fills a pip per Pin charge as each one recovers', () => {
     const g = emptyGame();
     const s = place(g, 'hexweaver', 0, 0, 0);
