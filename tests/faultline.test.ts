@@ -13,7 +13,8 @@ import {
 } from "../src/skills/misc/FaultlineRuntime";
 import type { Ship } from "../src/ships/Ship";
 import type { SkillState } from "../src/skills/types";
-import { emptyGame, place } from "./helpers";
+import { emptyGame, place, run } from "./helpers";
+import { bearingTo } from "../src/core/math";
 
 type FaultShip = Ship & { faultline: FaultlineState | null };
 function arena() {
@@ -106,20 +107,30 @@ describe("temporary geological terrain", () => {
     );
   });
 
-  it("rejects invalid geometry, protected spawns and joining ridges to static land", () => {
+  it("rejects invalid geometry and ridges outside the map", () => {
     const map = new GameMap(MAPS.find((m) => m.id === "open")!, 7);
     expect(map.addDynamicRidge(ridge({ x0: NaN }))).toBe(false);
-    expect(map.addDynamicRidge(ridge({ x0: 3800, x1: 4200 }))).toBe(false);
-    expect(
-      map.addDynamicRidge(ridge({ x0: 800, z0: 1000, x1: 1000, z1: 1000 })),
-    ).toBe(false);
+    expect(map.addDynamicRidge(ridge({ x0: 4400, x1: 4600 }))).toBe(false);
     expect(map.dynamicRidges).toHaveLength(0);
   });
 
-  it("keeps the entire clearance margin open around a ridge, including small islands inside it", () => {
+  it("lets a ridge rise near the spawn lines", () => {
+    const map = new GameMap(MAPS.find((m) => m.id === "open")!, 7);
+    expect(map.addDynamicRidge(ridge({ x0: 3600, x1: 4100 }))).toBe(true);
+  });
+
+  it("lets a ridge join static land", () => {
+    const map = new GameMap(MAPS.find((m) => m.id === "open")!, 7);
+    expect(map.staticHeightAt(900, 1000)).toBeGreaterThan(-20);
+    expect(
+      map.addDynamicRidge(ridge({ x0: 800, z0: 1000, x1: 1000, z1: 1000 })),
+    ).toBe(true);
+  });
+
+  it("lets a ridge stand next to a small island", () => {
     const map = new GameMap(MAPS.find((m) => m.id === "open")!, 7);
     map.islands.push({ x: 0, z: 2050, r: 35, h: 70, seed: 13, losR: 35 });
-    expect(map.addDynamicRidge(ridge())).toBe(false);
+    expect(map.addDynamicRidge(ridge())).toBe(true);
   });
 
   it("steers away from the nearest ridge regardless of creation order", () => {
@@ -131,13 +142,13 @@ describe("temporary geological terrain", () => {
     expect(map.awayFromLand(0, 1800).z).toBeGreaterThan(0.9);
   });
 
-  it("rejects intersecting ridges so casts cannot build a sealed enclosure", () => {
+  it("lets ridges cross", () => {
     const map = new GameMap(MAPS.find((m) => m.id === "open")!, 7);
     expect(map.addDynamicRidge(ridge())).toBe(true);
     expect(
       map.addDynamicRidge(ridge({ id: 2, x0: 0, z0: 1400, x1: 0, z1: 2300 })),
-    ).toBe(false);
-    expect(map.dynamicRidges).toHaveLength(1);
+    ).toBe(true);
+    expect(map.dynamicRidges).toHaveLength(2);
   });
 });
 
@@ -196,21 +207,44 @@ describe("Faultline", () => {
     );
   });
 
-  it("refuses land and spawn placements without queuing an obstacle", () => {
-    const { s } = arena();
+  it("raises a ridge even with the reticle on an island", () => {
+    const { g, s } = arena();
     s.control.aimX = 900;
     s.control.aimZ = 1000;
-    expect(cast(s, 1)).toBe(false);
-    expect(s.faultline!.pending).toHaveLength(0);
+    expect(g.map.staticHeightAt(900, 1000)).toBeGreaterThan(-20);
+    expect(cast(s, 1)).not.toBe(false);
+    tick(s, 1.1);
+    expect(g.map.dynamicRidges).toHaveLength(1);
   });
 
-  it("reserves warned ridge space so overlapping casts cannot stack obstacles", () => {
-    const { s } = arena();
+  it("lets a second Uplift cross a ridge still warning", () => {
+    const { g, s } = arena();
     expect(cast(s, 1)).not.toBe(false);
-    expect(cast(s, 1)).toBe(false);
+    s.control.aimX = 600;
+    s.control.aimZ = 2000;
+    expect(cast(s, 1)).not.toBe(false);
     expect(s.faultline!.pending.filter((p) => p.kind === "ridge")).toHaveLength(
-      1,
+      2,
     );
+    tick(s, 1.1);
+    expect(g.map.dynamicRidges).toHaveLength(2);
+  });
+
+  it("clips a ridge at the map edge instead of refusing it", () => {
+    const { g, s } = arena();
+    s.pos.x = 3800;
+    s.pos.z = 0;
+    s.control.aimX = 4100;
+    s.control.aimZ = -1500;
+    expect(cast(s, 1)).not.toBe(false);
+    tick(s, 1.1);
+    const [r] = g.map.dynamicRidges;
+    expect(r).toBeDefined();
+    const len = Math.hypot(r.x1 - r.x0, r.z1 - r.z0);
+    expect(len).toBeGreaterThan(100);
+    expect(len).toBeLessThan(FAULTLINE.ridgeLength - 50);
+    for (const v of [r.x0, r.x1, r.z0, r.z1])
+      expect(Math.abs(v) + r.width / 2).toBeLessThanOrEqual(MAP_HALF - 100 + 1e-6);
   });
 
   it("keeps six ridges per owner and leaves another Faultline’s terrain intact on cleanup", () => {
@@ -265,6 +299,55 @@ describe("Faultline", () => {
     expect(hp - victim.hp).toBe(FAULTLINE.slip.damage);
   });
 
+  it("Slip turns the ship to face along the slip", () => {
+    const { g, s } = arena();
+    s.faultline!.fractures.push({ id: 99, x0: 0, z0: 2500, x1: 0, z1: 1500, expiresAt: 100 });
+    s.control.aimX = 0;
+    s.control.aimZ = 1500;
+    expect(g.map.heightAt(0, 2000)).toBeLessThan(-20);
+    expect(s.heading).toBeCloseTo(Math.PI / 2);
+    expect(cast(s, 3)).not.toBe(false);
+    tick(s, 0.7);
+    expect(s.faultline!.slip).toBe(null);
+    expect(s.pos.z).toBeCloseTo(1500);
+    expect(s.heading).toBeCloseTo(bearingTo(0, 2500, 0, 1500));
+  });
+
+  it("swings the bow onto the slip over its first 0.15 s", () => {
+    const { s } = arena();
+    s.faultline!.fractures.push({ id: 99, x0: 0, z0: 2500, x1: 0, z1: 1500, expiresAt: 100 });
+    s.control.aimX = 0;
+    s.control.aimZ = 1500;
+    cast(s, 3);
+    tick(s, FAULTLINE.slip.turn / 2);
+    expect(s.heading).toBeGreaterThan(0.05);
+    expect(s.heading).toBeLessThan(Math.PI / 2 - 0.05);
+    tick(s, FAULTLINE.slip.turn / 2 + 0.02);
+    expect(s.heading).toBeCloseTo(0);
+  });
+
+  it("keeps the new heading once the slip ends", () => {
+    const { g, s } = arena();
+    s.faultline!.fractures.push({ id: 99, x0: 0, z0: 2500, x1: 0, z1: 1500, expiresAt: 100 });
+    s.control.aimX = 0;
+    s.control.aimZ = 1500;
+    cast(s, 3);
+    run(g, 1);
+    expect(s.faultline!.slip).toBe(null);
+    expect(s.heading).toBeCloseTo(0, 1);
+  });
+
+  it("names Continental Divide and the map edge when a ridge would lie off the map", () => {
+    const { s } = arena();
+    s.pos.x = 0;
+    s.pos.z = -(MAP_HALF - 250);
+    s.control.aimX = 2000;
+    s.control.aimZ = -(MAP_HALF - 250);
+    expect(cast(s, 6)).toBe(false);
+    expect(s.skillFailure).toBe("Continental Divide: ridge would lie off the map");
+    expect(s.faultline!.pending).toHaveLength(0);
+  });
+
   it("bounds Aftershock damage even when every fracture overlaps one target", () => {
     const { g, s } = arena(),
       victim = place(g, "yamato", 1, 500, 2500),
@@ -313,18 +396,23 @@ describe("Faultline", () => {
     expect(s.faultline!.pressure).toBe(0);
   });
 
-  it("lets the AI raise Continental Divide only where both ridges fit", () => {
+  it("lets the AI raise Continental Divide wherever both ridges fit inside the map", () => {
     const { g, s } = arena();
     const t = place(g, "yamato", 1, 2000, 2500);
     const divide = FAULTLINE_SKILLS[6].impl;
     const st = { spec: FAULTLINE_SKILLS[6].spec, index: 6, active: false, cooldown: 0, time: 0, meter: 1, data: {} } as SkillState;
     expect(divide.aiShouldUse(s, g, t, st)).toBe(true);
     const serial = s.faultline!.serial;
-    // Against the map's edge the ridges cannot rise: a cast would fail, cost nothing, and be retried
-    // every decision ahead of every other skill.
-    const edge = MAP_HALF * 0.76 - 400;
-    s.pos.x = edge - 2000;
-    t.pos.x = edge;
+    // Toward the east edge the ridges run along the aim and are clipped short, so they still rise.
+    s.pos.x = MAP_HALF - 2400;
+    t.pos.x = MAP_HALF - 400;
+    expect(divide.aiShouldUse(s, g, t, st)).toBe(true);
+    // Along the north edge one ridge would lie wholly off the map: a cast would fail, cost nothing,
+    // and be retried every decision ahead of every other skill.
+    s.pos.x = 0;
+    s.pos.z = -(MAP_HALF - 250);
+    t.pos.x = 2000;
+    t.pos.z = -(MAP_HALF - 250);
     expect(divide.aiShouldUse(s, g, t, st)).toBe(false);
     expect(s.faultline!.serial).toBe(serial);
   });

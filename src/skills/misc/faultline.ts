@@ -102,7 +102,7 @@ const SKILLS: Entry[] = [
     short: 'DIVIDE',
     cooldown: 100,
     icon: 'wall',
-    description: `Raise two ${F.divide.length / 1000} km ridges with open ends either side of the reticle. A warned rupture tears down the corridor between them for ${k(F.divide.damage)} per pulse. Ridges need clear sea.`,
+    description: `Raise two ${F.divide.length / 1000} km ridges with open ends either side of the reticle. A warned rupture tears down the corridor between them for ${k(F.divide.damage)} per pulse.`,
     activate: (s, spec) => castDivide(s, spec),
     // A Divide that cannot fit fails for free, and the AI would retry it ahead of every other skill.
     ai: (s, t) => !!t && range(s, t) < F.range - 300 && divideFits(s, t.pos.x, t.pos.z),

@@ -255,28 +255,13 @@ export class GameMap {
     return h;
   }
 
-  /** Require clear ends and a navigable margin so ridges cannot connect land or form cages. */
+  /** A ridge may rise anywhere inside the map: over land, beside islands, across other ridges. */
   canPlaceDynamicRidge(r: DynamicRidge): boolean {
     if (![r.id, r.owner, r.x0, r.z0, r.x1, r.z1, r.width, r.height, r.expiresAt].every(Number.isFinite)) return false;
     const len = Math.hypot(r.x1 - r.x0, r.z1 - r.z0);
     if (len < 100 || len > 1800 || r.width < 40 || r.width > 220 || r.height < 10 || r.height > 120) return false;
-    const margin = 350 + r.width / 2;
-    for (const [x, z] of [[r.x0, r.z0], [r.x1, r.z1]]) {
-      if (Math.abs(x) + margin > MAP_HALF * .76 || Math.abs(z) + margin > MAP_HALF - 300) return false;
-    }
-    // Bound each island's full lobed footprint rather than testing only the clearance ring.
-    // A tiny island between samples must not become a bridge that seals a channel.
-    if (this.islands.some(isl => ridgeDistance(r, isl.x, isl.z) < isl.r * 1.6 + margin)) return false;
-    const samples = Math.ceil(len / 100);
-    for (let i = 0; i <= samples; i++) {
-      const x = r.x0 + (r.x1 - r.x0) * i / samples, z = r.z0 + (r.z1 - r.z0) * i / samples;
-      for (let j = 0; j < 12; j++) {
-        const a = j * Math.PI / 6;
-        if (this.staticHeightAt(x + Math.cos(a) * margin, z + Math.sin(a) * margin) > -20) return false;
-      }
-      if (this.staticHeightAt(x, z) > -20) return false;
-    }
-    return !this.dynamicRidges.some(o => segmentDistance(o, r) < (o.width + r.width) / 2 + 350);
+    const bound = MAP_HALF - 100 - r.width / 2;
+    return [r.x0, r.z0, r.x1, r.z1].every((v) => Math.abs(v) <= bound + 1e-6);
   }
 
   addDynamicRidge(r: DynamicRidge): boolean {

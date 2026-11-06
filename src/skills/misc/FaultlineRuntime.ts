@@ -1,6 +1,6 @@
 import { MAP_HALF } from '../../config';
 import { distToHull } from '../../core/hull';
-import { forwardX, forwardZ } from '../../core/math';
+import { bearingTo, forwardX, forwardZ, wrapAngle } from '../../core/math';
 import type { SkillSpec } from '../../core/types';
 import type { Ship } from '../../ships/Ship';
 import { ridgeDistance, ridgeNearest, type DynamicRidge } from '../../world/GameMap';
@@ -31,7 +31,8 @@ export const FAULTLINE = {
   fault: { damage: 140000, knock: 100 },
   uplift: { damage: 120000, reach: 200, knock: 120 },
   subduction: { radius: 700, pull: 220, time: 2, crush: 750, damage: 260000, knock: 80 },
-  slip: { time: 0.65, damage: 160000, pressure: 15, wake: 25000, wakeTime: 4, tick: 0.5, reach: 120 },
+  /** `turn`: the seconds Slip takes to swing the bow onto its line. */
+  slip: { time: 0.65, damage: 160000, pressure: 15, wake: 25000, wakeTime: 4, tick: 0.5, reach: 120, turn: 0.15 },
   aftershock: { damage: 110000, knock: 30, boulder: 80000, reach: 450 },
   bedrock: { time: 6, reduction: 0.55, rebound: 60000, perPressure: 2000, radius: 600, knock: 140 },
   divide: { length: 1400, offset: 430, damage: 280000, knock: 160 },
@@ -97,6 +98,9 @@ export interface FaultlineState {
     startedAt: number;
     until: number;
     hit: number[];
+    /** The heading Slip swings from, and the bearing of its line it swings onto. */
+    from: number;
+    to: number;
   } | null;
 }
 
@@ -226,27 +230,56 @@ function nearestFracture(s: Ship): Fracture | undefined {
 
 // ------------------------------------------------------------------ ridges
 
-/** A ridge `length` long centred on `x, z` along `dx, dz`; `id` defaults to the next serial. */
+/**
+ * The part of the line through (x, z) along unit (ux, uz), from `-half` to `half`, that lies within
+ * `bound` of the centre on both axes. An empty range when the line misses that square entirely.
+ */
+function clipToMap(x: number, z: number, ux: number, uz: number, half: number, bound: number): [number, number] {
+  let lo = -half;
+  let hi = half;
+  for (const [p, u] of [
+    [x, ux],
+    [z, uz],
+  ]) {
+    if (Math.abs(u) < 1e-9) {
+      if (Math.abs(p) > bound) return [0, 0];
+      continue;
+    }
+    const a = (-bound - p) / u;
+    const b = (bound - p) / u;
+    lo = Math.max(lo, Math.min(a, b));
+    hi = Math.min(hi, Math.max(a, b));
+  }
+  return hi > lo ? [lo, hi] : [0, 0];
+}
+
+/**
+ * A ridge `length` long centred on `x, z` along `dx, dz`, trimmed back inside the map so a reticle
+ * near the edge still raises a shorter one; `id` defaults to the next serial.
+ */
 function makeRidge(s: Ship, x: number, z: number, dx: number, dz: number, length: number, id?: number): DynamicRidge {
   const n = Math.hypot(dx, dz) || 1;
-  const half = length / 2;
+  const ux = dx / n;
+  const uz = dz / n;
+  const [lo, hi] = clipToMap(x, z, ux, uz, length / 2, MAP_HALF - 100 - FAULTLINE.ridgeWidth / 2);
   return {
     id: id ?? ++state(s).serial,
     owner: s.id,
-    x0: x - (dx / n) * half,
-    z0: z - (dz / n) * half,
-    x1: x + (dx / n) * half,
-    z1: z + (dz / n) * half,
+    x0: x + ux * lo,
+    z0: z + uz * lo,
+    x1: x + ux * hi,
+    z1: z + uz * hi,
     width: FAULTLINE.ridgeWidth,
     height: FAULTLINE.ridgeHeight,
     expiresAt: s.game.time + FAULTLINE.warning + FAULTLINE.ridgeLife,
   };
 }
 
-function hullClear(s: Ship, x: number, z: number, ridge?: DynamicRidge): boolean {
+/** Whether `s`'s hull, centred on (x, z) and pointing along `heading`, sits in open water clear of `ridge`. */
+function hullClear(s: Ship, x: number, z: number, ridge?: DynamicRidge, heading = s.heading): boolean {
   const map = s.game.map;
-  const fx = forwardX(s.heading);
-  const fz = forwardZ(s.heading);
+  const fx = forwardX(heading);
+  const fz = forwardZ(heading);
   const half = s.spec.length / 2 + 30;
   const beam = s.spec.beam / 2 + 30;
   if (Math.abs(x) + half > MAP_HALF - 200 || Math.abs(z) + half > MAP_HALF - 200) return false;
@@ -295,27 +328,30 @@ function displacements(s: Ship, r: DynamicRidge): { ship: Ship; x: number; z: nu
   return moves;
 }
 
-/** Whether `ridges` fit the sea now, ridges still queued to rise included. Changes nothing. */
-function ridgesFit(s: Ship, ridges: DynamicRidge[]): boolean {
+/**
+ * Why `ridges` cannot rise now, ridges still queued to rise included, or null when they can: one
+ * would lie off the map, or a hull under one has no open water to be pushed to. Changes nothing.
+ */
+function ridgeProblem(s: Ship, ridges: DynamicRidge[]): string | null {
   const map = s.game.map;
-  // Include queued ridges during validation so two fast casts cannot reserve the same space.
+  // Include queued ridges so a hull is never pushed into one about to rise.
   const original = map.dynamicRidges;
   map.dynamicRidges = [...original, ...state(s).pending.flatMap((p) => (p.kind === 'ridge' && p.ridge ? [p.ridge] : []))];
-  let valid = true;
+  let problem: string | null = null;
   for (const r of ridges) {
-    if (!map.canPlaceDynamicRidge(r) || !displacements(s, r)) {
-      valid = false;
-      break;
-    }
+    if (!map.canPlaceDynamicRidge(r)) problem = 'ridge would lie off the map';
+    else if (!displacements(s, r)) problem = 'no open water to push ships clear';
+    if (problem) break;
     map.dynamicRidges.push(r);
   }
   map.dynamicRidges = original;
-  return valid;
+  return problem;
 }
 
 /** Queues `ridges` to rise after the warning; `damage` erupts under ships along each line as it does. */
 function queueRidges(s: Ship, spec: SkillSpec, ridges: DynamicRidge[], damage = 0, knockSpeed = 0): boolean {
-  if (!ridgesFit(s, ridges)) return s.failSkill('Uplift: ridge needs clear water, safe exits and space away from spawns');
+  const problem = ridgeProblem(s, ridges);
+  if (problem) return s.failSkill(`${spec.name}: ${problem}`);
   for (const r of ridges) {
     const x = (r.x0 + r.x1) / 2;
     const z = (r.z0 + r.z1) / 2;
@@ -378,11 +414,13 @@ export function castSlip(s: Ship): boolean {
   const p = aimPoint(s, FAULTLINE.range);
   const q = nearestOn(f.x0, f.z0, f.x1, f.z1, p.x, p.z);
   if (Math.hypot(q.x - s.pos.x, q.z - s.pos.z) < 100) return s.failSkill('Slip: aim farther along a fracture');
-  // Sweep the complete hull corridor. A dash never skips a ridge or island between its ends.
+  // The hull rides bow first, so sweep its whole corridor pointing along the line. A dash never
+  // skips a ridge or island between its ends.
+  const to = bearingTo(s.pos.x, s.pos.z, q.x, q.z);
   const steps = Math.ceil(Math.hypot(q.x - s.pos.x, q.z - s.pos.z) / 60);
   for (let i = 1; i <= steps; i++)
-    if (!hullClear(s, s.pos.x + ((q.x - s.pos.x) * i) / steps, s.pos.z + ((q.z - s.pos.z) * i) / steps)) return s.failSkill('Slip: fracture path blocked');
-  state(s).slip = { x0: s.pos.x, z0: s.pos.z, x1: q.x, z1: q.z, startedAt: s.game.time, until: s.game.time + FAULTLINE.slip.time, hit: [] };
+    if (!hullClear(s, s.pos.x + ((q.x - s.pos.x) * i) / steps, s.pos.z + ((q.z - s.pos.z) * i) / steps, undefined, to)) return s.failSkill('Slip: fracture path blocked');
+  state(s).slip = { x0: s.pos.x, z0: s.pos.z, x1: q.x, z1: q.z, startedAt: s.game.time, until: s.game.time + FAULTLINE.slip.time, hit: [], from: s.heading, to };
   addPressure(s, FAULTLINE.slip.pressure);
   emitMisc(s, 'slip', s.pos.x, s.pos.z, { tx: q.x, tz: q.z });
   return true;
@@ -437,7 +475,7 @@ function divideRidges(s: Ship, p: { x: number; z: number }, probe = false): Dyna
 
 /** Whether Continental Divide aimed at `x, z` would raise both ridges, for the AI. Changes nothing. */
 export function divideFits(s: Ship, x: number, z: number): boolean {
-  return ridgesFit(s, divideRidges(s, { x, z }, true));
+  return !ridgeProblem(s, divideRidges(s, { x, z }, true));
 }
 
 export function castDivide(s: Ship, spec: SkillSpec): boolean {
@@ -506,7 +544,7 @@ function raise(s: Ship, p: FaultPending): void {
   const r = p.ridge!;
   const moves = displacements(s, r);
   if (!moves || !s.game.map.addDynamicRidge(r)) {
-    s.failSkill('Uplift: water became obstructed before the ridge rose');
+    s.failSkill(`${skillOf(s, p.skillId)?.name ?? 'Uplift'}: no open water to push ships clear`);
     return;
   }
   if (p.damage > 0) erupt(s, r, p);
@@ -540,6 +578,9 @@ function updateSlip(s: Ship, now: number): void {
   if (!slip) return;
   const SL = FAULTLINE.slip;
   const f = Math.min(1, (now - slip.startedAt) / (slip.until - slip.startedAt));
+  // The bow swings onto the line first, eased, so the hull rides it bow first.
+  const k = Math.min(1, (now - slip.startedAt) / SL.turn);
+  s.heading = k >= 1 ? slip.to : wrapAngle(slip.from + wrapAngle(slip.to - slip.from) * k * k * (3 - 2 * k));
   const x = slip.x0 + (slip.x1 - slip.x0) * f;
   const z = slip.z0 + (slip.z1 - slip.z0) * f;
   const clear = hullClear(s, x, z);
