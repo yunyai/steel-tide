@@ -134,6 +134,35 @@ function setup(page, captain, enemy) {
           f.draw();
         }
       };
+      /**
+       * Where the panel and banner sit against the hull block: above the name bar, as wide as the
+       * hull bar, a full-length main row, a top row reaching across, and nothing spilling out.
+       */
+      f.layout = () => {
+        const hp = document.querySelector(".cockpit .hpbar")?.getBoundingClientRect();
+        const nb = document.querySelector(".cockpit .namebar")?.getBoundingClientRect();
+        const shown = (e) => !e.hidden && e.getBoundingClientRect().width > 0;
+        const one = (e) => {
+          if (!e || !shown(e)) return null;
+          const r = e.getBoundingClientRect();
+          const wide = [...e.querySelectorAll(".mp-wide")].find(shown);
+          const top = e.querySelector(".mp-top");
+          const last = top ? [...top.children].filter(shown).pop() : null;
+          const spill = [...e.querySelectorAll("*")].some((c) => {
+            if (!shown(c)) return false;
+            const q = c.getBoundingClientRect();
+            return q.right > r.right + 1 || q.left < r.left - 1;
+          });
+          return {
+            above: !!nb && r.bottom <= nb.top + 0.5,
+            width: hp ? +(r.width / hp.width).toFixed(3) : 0,
+            wide: wide ? +(wide.getBoundingClientRect().width / r.width).toFixed(3) : null,
+            reach: last ? +((last.getBoundingClientRect().right - r.left) / r.width).toFixed(3) : 0,
+            overflow: e.scrollWidth > e.clientWidth + 1 || spill,
+          };
+        };
+        return { panel: one(document.querySelector(".misc-panel")), banner: one(document.querySelector(".misc-banner")) };
+      };
       f.report = () => {
         const fx = b.scene.miscFx;
         return {
@@ -151,6 +180,7 @@ function setup(page, captain, enemy) {
           ships: g.ships.length,
           shelf: [...document.querySelectorAll(".hx-slot")].filter((e) => !e.hidden).length,
           panelHeight: Math.round(document.querySelector(".misc-panel")?.getBoundingClientRect().height ?? 0),
+          layout: f.layout(),
           dolls: f.titan.hexweaver?.dolls.map((d) => d.pins) ?? null,
           case: f.titan.judge ? f.judge.violationCount(f.titan, f.foes[0]) : null,
         };
@@ -415,6 +445,18 @@ const VICTIM = {
   },
 };
 
+/** What is wrong with a panel or banner's place and shape; `main` demands a full-length main row. */
+function layoutProblems(name, l, main) {
+  if (!l) return [`${name}: not shown`];
+  const p = [];
+  if (!l.above) p.push(`${name}: not above the hull bar`);
+  if (l.width < 0.98) p.push(`${name}: only ${l.width} of the hull bar's width`);
+  if ((main || l.wide !== null) && !(l.wide >= 0.55)) p.push(`${name}: main row spans ${l.wide} of the panel`);
+  if (l.reach < 0.85) p.push(`${name}: top row reaches ${l.reach} across`);
+  if (l.overflow) p.push(`${name}: content spills out`);
+  return p;
+}
+
 try {
   for (const [width, height] of sizes) {
     const context = await browser.newContext({ viewport: { width, height } });
@@ -471,9 +513,11 @@ try {
       if (!s.finite) problems.push(`${r.id}@${r.width} ${s.name}: non-finite state`);
       if (s.ribbons + s.particles === 0) problems.push(`${r.id}@${r.width} ${s.name}: nothing drawn`);
       if (!s.panel) problems.push(`${r.id}@${r.width} ${s.name}: no titan panel`);
+      problems.push(...layoutProblems(`${r.id}@${r.width} ${s.name} panel`, s.layout.panel, true));
     }
     if (r.id !== "faultline" && !r.stages.some((s) => s.chips.length)) problems.push(`${r.id}@${r.width}: no marker chip`);
     if (r.victim && !r.victim.banner) problems.push(`${r.id}@${r.width}: no victim banner`);
+    if (r.victim) problems.push(...layoutProblems(`${r.id}@${r.width} victim banner`, r.victim.layout.banner, false));
   }
   if (errors.length) problems.push(...errors);
   if (problems.length) throw Error(problems.join("\n"));

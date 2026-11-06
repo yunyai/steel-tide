@@ -446,6 +446,23 @@ describe('Judge HUD', () => {
     expect(p.top[0]).toEqual({ name: t.name, n: 10 });
   });
 
+  it('ticks the other open cases along the case meter, the aimed one left out', () => {
+    const g = emptyGame();
+    const j = court(g);
+    const t = place(g, 'stepper', 1, 300, 0);
+    const a = place(g, 'iowa', 1, -300, 200);
+    const b = place(g, 'iowa', 1, 200, -400);
+    cite(j, t, 12);
+    cite(j, a, 20);
+    cite(j, b, 5);
+    const p = judgePanel(j, t);
+    expect(p.docket).toEqual([
+      { name: a.name, n: 20, at: 20 / JUDGE.cap },
+      { name: b.name, n: 5, at: 5 / JUDGE.cap },
+    ]);
+    expect(judgePanel(j, null).docket.map((d) => d.n)).toEqual([20, 12, 5]);
+  });
+
   it('marks enemies with their case, red from 30', () => {
     const g = emptyGame();
     const j = place(g, 'judge', 0, 0, 0);

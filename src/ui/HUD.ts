@@ -353,6 +353,9 @@ export class HUD {
       const gauges = { cube: gauge('cube', 'Cube'), store: gauge('store', 'Store') };
       this.tungstenEls = { root, mode, where, glyph, minis, throws, gauges };
     }
+    // Misc titans, over the hull block like the Tungsten card: the captain's own titan panel, and the
+    // banner any captain sees while one holds them.
+    this.miscHud = new MiscTitanHud(ck, pc);
     const nb = el('div', 'namebar', ck);
     el('span', 'cls', nb).innerHTML = classIcon(me.spec.cls);
     el('span', 'nm', nb).textContent = me.spec.name;
@@ -383,8 +386,6 @@ export class HUD {
       e.formLeft = el('span', 'left num', fb);
     }
 
-    // Misc titans: the captain's own titan panel, and the banner any captain sees while one holds them.
-    this.miscHud = new MiscTitanHud(ck, pc);
     const sb = el('div', `skillbar${titan ? ' titan' : ''}`, ck);
     let normals = 0;
     let ults = 0;

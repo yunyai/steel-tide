@@ -4,8 +4,9 @@ import type { Game } from '../src/core/Game';
 import type { GameEventMap } from '../src/core/Events';
 import type { Ship } from '../src/ships/Ship';
 import { MiscTitanFx, MISC_FX_BURSTS } from '../src/render/MiscTitanFx';
-import { miscTitanSummary } from '../src/ui/MiscTitanPresentation';
-import { pinDoll } from '../src/skills/misc/HexweaverRuntime';
+import { miscPanelState } from '../src/ui/MiscTitanPresentation';
+import { JUDGE } from '../src/skills/misc/JudgeRuntime';
+import { HEX, pinDoll } from '../src/skills/misc/HexweaverRuntime';
 import { emptyGame, place, run } from './helpers';
 
 // The groundwork every misc titan builds on: a water-landing hook for shells, a battery rider that
@@ -129,16 +130,49 @@ describe('Misc titan event effects', () => {
   });
 });
 
-describe('Misc titan HUD summary', () => {
-  it('describes each titan’s own resources', () => {
+describe('Misc titan panel state line', () => {
+  it('names the Judge’s court, and Martial Law while it runs', () => {
+    const g = emptyGame();
+    const judge = place(g, 'judge', 0, 0, 500);
+    expect(miscPanelState(judge)).toBe('NO COURT');
+    judge.judge!.court = { x: 0, z: 0 };
+    expect(miscPanelState(judge)).toBe(`COURT ${JUDGE.court.radius / 1000} km`);
+    judge.judge!.martialUntil = g.time + 6.2;
+    expect(miscPanelState(judge)).toBe(`MARTIAL LAW 7s · ${JUDGE.court.martialRadius / 1000} km`);
+  });
+
+  it('counts the Hexweaver’s dolls and stitches', () => {
     const g = emptyGame();
     const hex = place(g, 'hexweaver', 0, 0, 0);
-    const enemy = place(g, 'iowa', 1, 2000, 0);
-    pinDoll(hex, enemy);
-    expect(miscTitanSummary(hex, null)).toMatch(/^PINS 3\/4 .*DOLLS 1\/4/);
-    const judge = place(g, 'judge', 0, 0, 500);
-    expect(miscTitanSummary(judge, null)).toMatch(/^COURT UNPLACED/);
-    const iowa = place(g, 'iowa', 0, 0, 900);
-    expect(miscTitanSummary(iowa, null)).toBe('');
+    expect(miscPanelState(hex)).toBe(`DOLLS 0/${HEX.dolls}`);
+    const a = place(g, 'iowa', 1, 2000, 0);
+    const b = place(g, 'iowa', 1, 2000, 600);
+    pinDoll(hex, a);
+    pinDoll(hex, b);
+    expect(miscPanelState(hex)).toBe(`DOLLS 2/${HEX.dolls}`);
+    for (const d of hex.hexweaver!.dolls) d.stitchedUntil = g.time + 3;
+    expect(miscPanelState(hex)).toBe(`DOLLS 2/${HEX.dolls} · 2 STITCHED`);
+  });
+
+  it('shows the Gourmand’s feast timers', () => {
+    const g = emptyGame();
+    const gm = place(g, 'gourmand', 0, 0, 0);
+    expect(miscPanelState(gm)).toBe('');
+    gm.gourmand!.banquetUntil = g.time + 8.4;
+    gm.gourmand!.mouthUntil = g.time + 1.23;
+    expect(miscPanelState(gm)).toBe('BANQUET 9s · MOUTH OPEN 1.2s');
+  });
+
+  it('shows the Faultline’s brace', () => {
+    const g = emptyGame();
+    const f = place(g, 'faultline', 0, 0, 0);
+    expect(miscPanelState(f)).toBe('');
+    f.faultline!.bedrockUntil = g.time + 3.46;
+    expect(miscPanelState(f)).toBe('BEDROCK 3.5s · REBOUND READY');
+  });
+
+  it('is empty for every other ship', () => {
+    const g = emptyGame();
+    expect(miscPanelState(place(g, 'iowa', 0, 0, 900))).toBe('');
   });
 });

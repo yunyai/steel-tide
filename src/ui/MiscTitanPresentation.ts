@@ -2,8 +2,8 @@ import { contactVisible } from '../core/Targeting';
 import type { Ship } from '../ships/Ship';
 import { FAULTLINE } from '../skills/misc/FaultlineRuntime';
 import { cookerDamage, FLAVOURS, GOURMAND, nextFlavour, pantryCapacity, pantryTotal, spend, type Flavour } from '../skills/misc/GourmandRuntime';
-import { burnRate, dollOf, effigyLure, HEX, pinCharges, type Doll } from '../skills/misc/HexweaverRuntime';
-import { brokeRecently, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAW_OFFENCES, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
+import { burnRate, dollOf, effigyLure, HEX, type Doll } from '../skills/misc/HexweaverRuntime';
+import { brokeRecently, courtRadius, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAW_OFFENCES, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
 import type { MiscTitanEvent } from '../skills/misc/MiscEvents';
 
 // What the HUD shows for the four misc titans, as plain data the DOM layer only copies out. Pure
@@ -144,6 +144,8 @@ export interface JudgePanel {
   deathReady: boolean;
   /** The three biggest open cases on ships the Judge can see. */
   top: { name: string; n: number }[];
+  /** Up to three other open cases, ticked along the case meter at `at` (n / cap). */
+  docket: { name: string; n: number; at: number }[];
 }
 
 function lawViews(j: Ship, t: Ship | null): LawView[] {
@@ -157,6 +159,11 @@ export function judgePanel(me: Ship, target: Ship | null): JudgePanel {
   const n = t ? violationCount(me, t) : 0;
   const mul = me.mods.damageMul;
   const c = t ? a.cases.find((c) => c.target === t.id) : undefined;
+  const open = a.cases
+    .map((c) => ({ c, ship: me.game.ships.find((s) => s.id === c.target) }))
+    .filter(({ c, ship }) => c.stacks > 0 && !!ship && contactVisible(ship, me.team))
+    .sort((x, y) => y.c.stacks - x.c.stacks || x.c.target - y.c.target)
+    .map(({ c, ship }) => ({ id: c.target, name: ship!.name, n: c.stacks }));
   return {
     court: a.court ? 'ACTIVE' : 'UNPLACED',
     martial: Math.max(0, a.martialUntil - now),
@@ -169,12 +176,11 @@ export function judgePanel(me: Ship, target: Ship | null): JudgePanel {
       verdict: (JUDGE.verdict.damage + JUDGE.verdict.perViolation * n) * mul,
     },
     deathReady: !!t && n >= JUDGE.death,
-    top: a.cases
-      .map((c) => ({ c, ship: me.game.ships.find((s) => s.id === c.target) }))
-      .filter(({ c, ship }) => c.stacks > 0 && !!ship && contactVisible(ship, me.team))
-      .sort((x, y) => y.c.stacks - x.c.stacks || x.c.target - y.c.target)
+    top: open.slice(0, 3).map(({ name, n }) => ({ name, n })),
+    docket: open
+      .filter((o) => o.id !== t?.id)
       .slice(0, 3)
-      .map(({ c, ship }) => ({ name: ship!.name, n: c.stacks })),
+      .map(({ name, n }) => ({ name, n, at: Math.min(n, JUDGE.cap) / JUDGE.cap })),
   };
 }
 
@@ -278,32 +284,30 @@ export function judgeCitePopup(viewer: Ship, e: MiscTitanEvent): CitePopup | nul
   return { target: e.target, key: `cite:${law ?? 'any'}`, label: law ? LAW_OFFENCES[law] : 'CITED', n: e.n };
 }
 
-/** One line naming a misc titan's own resources, aimed at `target`; '' for every other ship. */
-export function miscTitanSummary(me: Ship, target: Ship | null): string {
+/** The state a misc titan's panel names beside it: its court, dolls, feast or brace; '' when idle or not a misc titan. */
+export function miscPanelState(me: Ship): string {
   const now = me.game.time;
   if (me.judge) {
     const a = me.judge;
-    const martial = a.martialUntil > now ? ` · MARTIAL LAW ${Math.ceil(a.martialUntil - now)}s` : '';
-    const aimed = target && target.team !== me.team ? ` · ${target.name}: ${violationCount(me, target)}/${JUDGE.cap} violations` : '';
-    return `COURT ${a.court ? 'ACTIVE' : 'UNPLACED'}${martial}${aimed}`;
+    if (!a.court) return 'NO COURT';
+    const km = `${courtRadius(me) / 1000} km`;
+    return a.martialUntil > now ? `MARTIAL LAW ${Math.ceil(a.martialUntil - now)}s · ${km}` : `COURT ${km}`;
   }
   if (me.hexweaver) {
-    const a = me.hexweaver;
-    const next = a.recharge.length ? ` · next ${Math.max(0, Math.min(...a.recharge) - now).toFixed(1)}s` : '';
-    const pins = a.dolls.reduce((n, d) => n + d.pins, 0);
-    return `PINS ${pinCharges(me)}/${HEX.pin.charges}${next} · DOLLS ${a.dolls.length}/${HEX.dolls} · ${pins} pins bound`;
+    const dolls = me.hexweaver.dolls;
+    const stitched = dolls.filter((d) => d.stitchedUntil > now).length;
+    return `DOLLS ${dolls.length}/${HEX.dolls}${stitched ? ` · ${stitched} STITCHED` : ''}`;
   }
   if (me.gourmand) {
     const a = me.gourmand;
-    const p = a.pantry;
-    const next = nextFlavour(p);
-    const digest = a.swallow ? ` · DIGESTING ${Math.ceil(a.swallow.until - now)}s` : '';
-    return `PANTRY · Shell ${p.shells} · Explosive ${p.explosives} · Scrap ${p.wreckage} / ${pantryCapacity(me)} · NEXT ${next ? FLAVOUR_LABELS[next] : 'PLAIN'}${digest}`;
+    const parts = [];
+    if (a.banquetUntil > now) parts.push(`BANQUET ${Math.ceil(a.banquetUntil - now)}s`);
+    if (a.mouthUntil > now) parts.push(`MOUTH OPEN ${(a.mouthUntil - now).toFixed(1)}s`);
+    return parts.join(' · ');
   }
   if (me.faultline) {
-    const a = me.faultline;
-    const bedrock = a.bedrockUntil > now ? ` · BEDROCK ${Math.ceil(a.bedrockUntil - now)}s` : '';
-    return `PRESSURE ${Math.round(a.pressure)}/${FAULTLINE.maxPressure} · FRACTURES ${a.fractures.length}/${FAULTLINE.maxFractures} · RIDGES ${me.game.map.dynamicRidges.filter((r) => r.owner === me.id).length}/${FAULTLINE.maxRidges}${bedrock}`;
+    const left = me.faultline.bedrockUntil - now;
+    return left > 0 ? `BEDROCK ${left.toFixed(1)}s · REBOUND READY` : '';
   }
   return '';
 }

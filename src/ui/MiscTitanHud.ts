@@ -1,11 +1,13 @@
 import type { PlayerController } from '../player/PlayerController';
 import type { Ship } from '../ships/Ship';
 import { reducedMotion } from '../render/ArchitectPose';
-import { faultlinePanel, gourmandPanel, hexPanel, judgePanel, miscMarkerChip, miscTitanKind, miscTitanSummary, miscVictimBanner, type LawView } from './MiscTitanPresentation';
+import { faultlinePanel, gourmandPanel, hexPanel, judgePanel, miscMarkerChip, miscPanelState, miscTitanKind, miscVictimBanner, type DollSlot, type LawView } from './MiscTitanPresentation';
 
-// The misc titans' HUD: the captain's own titan panel beside the skill bar, the banner a captain
-// sees while an enemy misc titan holds them, and the chip on each marker. All three copy what
-// MiscTitanPresentation computes and touch the DOM only when it changes.
+// The misc titans' HUD, over the hull bar in the glass of the Tungsten card: the captain's own titan
+// panel, the banner a captain sees while an enemy misc titan holds them, and the chip on each marker.
+// Panel and banner share two rows: a top row of label-over-value columns spread across the width
+// (name and state, gauges, previews) and a main row whose meter runs the length of the hull bar.
+// All of it copies what MiscTitanPresentation computes and touches the DOM only when it changes.
 
 const NAMES = { judge: 'THE JUDGE', hexweaver: 'HEXWEAVER', gourmand: 'GOURMAND', faultline: 'FAULTLINE' } as const;
 
@@ -20,8 +22,12 @@ function setText(e: HTMLElement, t: string): void {
   if (e.textContent !== t) e.textContent = t;
 }
 
-function setFlag(e: HTMLElement, name: string, on: boolean): void {
+function setFlag(e: Element, name: string, on: boolean): void {
   if (e.classList.contains(name) !== on) e.classList.toggle(name, on);
+}
+
+function setHidden(e: HTMLElement, hidden: boolean): void {
+  if (e.hidden !== hidden) e.hidden = hidden;
 }
 
 /** Restarts the CSS animation bound to `cls`. */
@@ -31,113 +37,207 @@ function flash(e: HTMLElement, cls: string): void {
   e.classList.add(cls);
 }
 
-const kilo = (v: number): string => `${Math.round(v / 1000)}k`;
+function setStyle(e: HTMLElement | SVGElement, prop: string, v: string): void {
+  if (e.style.getPropertyValue(prop) !== v) e.style.setProperty(prop, v);
+}
 
-/** A filling bar with a notch: `n` of `cap`, alerting from `mark`. */
-class Meter {
-  private fill: HTMLElement;
-  private notch: HTMLElement;
-  private label: HTMLElement;
-  readonly root: HTMLElement;
-
-  constructor(parent: HTMLElement, name: string) {
-    this.root = el('div', 'misc-meter', parent);
-    this.root.setAttribute('role', 'meter');
-    this.root.setAttribute('aria-label', name);
-    const track = el('span', 'mm-track', this.root);
-    this.fill = el('i', 'mm-fill', track);
-    this.notch = el('i', 'mm-notch', track);
-    this.label = el('span', 'mm-n', this.root);
-  }
-
-  set(n: number, cap: number, mark: number): void {
-    const w = `${((Math.min(n, cap) / cap) * 100).toFixed(1)}%`;
-    if (this.fill.style.width !== w) this.fill.style.width = w;
-    const at = `${((mark / cap) * 100).toFixed(1)}%`;
-    if (this.notch.style.left !== at) this.notch.style.left = at;
-    setText(this.label, `${n}/${cap}`);
-    setFlag(this.root, 'urgent', n >= mark);
-    if (this.root.getAttribute('aria-valuenow') !== String(n)) {
-      this.root.setAttribute('aria-valuenow', String(n));
-      this.root.setAttribute('aria-valuemax', String(cap));
-    }
+function setMeterValue(e: HTMLElement, n: number, max: number): void {
+  if (e.getAttribute('aria-valuenow') !== String(n)) {
+    e.setAttribute('aria-valuenow', String(n));
+    e.setAttribute('aria-valuemax', String(max));
   }
 }
 
-/** What a victim banner's meter counts, for screen readers. */
-function meterName(kind: string): string {
-  return kind === 'hexweaver' ? 'Pins in your doll' : 'Your case';
+const kilo = (v: number): string => `${Math.round(v / 1000)}k`;
+
+/** The titan's name over its state: where every top row starts. */
+class Ident {
+  readonly name: HTMLElement;
+  readonly state: HTMLElement;
+
+  constructor(parent: HTMLElement, name: string) {
+    const root = el('span', 'mp-id', parent);
+    this.name = el('b', 'mp-name', root);
+    this.name.textContent = name;
+    this.state = el('span', 'mp-state', root);
+  }
+}
+
+/** A small uppercase label over a value: a gauge or a preview in the top row. */
+class Column {
+  readonly root: HTMLElement;
+  readonly label: HTMLElement;
+  readonly value: HTMLElement;
+
+  constructor(parent: HTMLElement, label: string, cls = '', valueCls = 'mp-value') {
+    this.root = el('span', `mp-col${cls ? ` ${cls}` : ''}`, parent);
+    this.label = el('span', 'mp-label', this.root);
+    this.label.textContent = label;
+    this.value = el('span', valueCls, this.root);
+  }
+}
+
+/** Damage and healing previews, each a label over its number, at the top row's end. */
+class Previews {
+  private cols: Column[];
+
+  constructor(parent: HTMLElement, names: string[]) {
+    const root = el('span', 'mp-prevs', parent);
+    this.cols = names.map((n) => new Column(root, n));
+  }
+
+  set(values: (string | null)[]): void {
+    this.cols.forEach((c, i) => setText(c.value, values[i] ?? '—'));
+  }
+}
+
+/**
+ * A meter in the hull bar's style: a name and a tag over a ticked, chamfered track, its value at
+ * the right. `wide` marks the one that runs the panel's length.
+ */
+class Meter {
+  readonly root: HTMLElement;
+  private name: HTMLElement;
+  private tag: HTMLElement;
+  private value: HTMLElement;
+  private track: HTMLElement;
+  private fill: HTMLElement;
+  private notch: HTMLElement;
+  private docks: HTMLElement[] = [];
+
+  constructor(parent: HTMLElement, aria: string, cls = '', wide = true) {
+    this.root = el('div', `mp-meter${cls ? ` ${cls}` : ''}`, parent);
+    this.root.setAttribute('role', 'meter');
+    this.root.setAttribute('aria-label', aria);
+    this.root.setAttribute('aria-valuemin', '0');
+    const head = el('div', 'mp-head', this.root);
+    this.name = el('span', 'mp-mname', head);
+    this.tag = el('span', 'mp-tag', head);
+    this.value = el('b', 'mp-mval', head);
+    this.track = el('span', `mp-track${wide ? ' mp-wide' : ''}`, this.root);
+    this.fill = el('i', 'mp-fill', this.track);
+    this.notch = el('i', 'mp-notch', this.track);
+    this.notch.hidden = true;
+  }
+
+  /** `frac` fills the track; `notch` (0–1) marks a threshold; `n` of `max` is what screen readers hear. */
+  set(o: { name: string; value: string; frac: number; n: number; max: number; tag?: string; notch?: number }): void {
+    setText(this.name, o.name);
+    setText(this.tag, o.tag ?? '');
+    setText(this.value, o.value);
+    setStyle(this.fill, 'width', `${(Math.max(0, Math.min(1, o.frac)) * 100).toFixed(1)}%`);
+    setHidden(this.notch, o.notch === undefined);
+    if (o.notch !== undefined) setStyle(this.notch, 'left', `${(o.notch * 100).toFixed(1)}%`);
+    setMeterValue(this.root, Math.round(o.n), o.max);
+  }
+
+  /** Thin ticks along the track for other values, such as other open cases. */
+  dock(ticks: { at: number; title: string }[]): void {
+    while (this.docks.length < ticks.length) this.docks.push(el('i', 'mp-dock', this.track));
+    this.docks.forEach((d, i) => {
+      const t = ticks[i];
+      setHidden(d, !t);
+      if (!t) return;
+      setStyle(d, 'left', `${(t.at * 100).toFixed(1)}%`);
+      if (d.title !== t.title) d.title = t.title;
+    });
+  }
+
+  aria(label: string): void {
+    if (this.root.getAttribute('aria-label') !== label) this.root.setAttribute('aria-label', label);
+  }
+}
+
+/** A column of skewed pips: each fills with its own share (a recharge, a life left), or sits empty. */
+class Pips {
+  readonly col: Column;
+  private pips: HTMLElement[] = [];
+
+  constructor(parent: HTMLElement, label: string, aria: string) {
+    this.col = new Column(parent, label, 'mp-pipcol', 'mp-pips');
+    this.col.root.setAttribute('role', 'meter');
+    this.col.root.setAttribute('aria-label', aria);
+    this.col.root.setAttribute('aria-valuemin', '0');
+  }
+
+  /** `fills[i]` is 0–1, or null for an empty slot; `lit` of the pips count. */
+  set(label: string, fills: (number | null)[], lit: number): void {
+    setText(this.col.label, label);
+    while (this.pips.length < fills.length) this.pips.push(el('i', '', this.col.value));
+    this.pips.forEach((p, i) => {
+      const f = fills[i] ?? null;
+      setFlag(p, 'on', f !== null);
+      setStyle(p, '--fill', (f ?? 0).toFixed(2));
+      setFlag(p, 'ready', f !== null && f >= 1);
+      // A pip about to go out flickers.
+      setFlag(p, 'low', f !== null && f < 0.2);
+    });
+    setMeterValue(this.col.root, lit, fills.length);
+  }
 }
 
 /** The six laws as chips: each names what it asks and lights while it is being broken. */
 class Laws {
+  readonly col: Column;
   private chips: HTMLElement[] = [];
-  readonly root: HTMLElement;
 
   constructor(parent: HTMLElement) {
-    this.root = el('div', 'misc-laws', parent);
+    this.col = new Column(parent, 'Laws in court', 'mp-lawcol', 'misc-laws');
   }
 
-  /** Copies `laws` in; returns whether a law just began to be broken. */
-  set(laws: LawView[]): boolean {
-    let fresh = false;
+  set(laws: LawView[]): void {
     laws.forEach((l, i) => {
       let c = this.chips[i];
       if (!c) {
-        c = this.chips[i] = el('span', 'law', this.root);
+        c = this.chips[i] = el('span', 'law', this.col.value);
         c.dataset.law = l.id;
         c.title = `${l.label}: ${l.limit}`;
         c.textContent = l.limit;
       }
-      if (l.broken && !c.classList.contains('broken')) {
-        fresh = true;
-        flash(c, 'hit');
-      }
+      if (l.broken && !c.classList.contains('broken')) flash(c, 'hit');
       setFlag(c, 'broken', l.broken);
     });
-    return fresh;
   }
 }
 
-/** The Judge's own gauges: the laws its aimed target is breaking, that target's case, previews and the docket. */
+/** A panel's two rows. */
+interface Rows {
+  top: HTMLElement;
+  main: HTMLElement;
+}
+
+/** The Judge: the laws its aimed target is breaking and previews up top, that target's case running the length below. */
 class JudgeGauges {
   private laws: Laws;
+  private previews: Previews;
   private meter: Meter;
-  private contempt: HTMLElement;
-  private previews: HTMLElement[];
-  private ready: HTMLElement;
-  private top: HTMLElement;
-  private aim: HTMLElement;
 
-  constructor(body: HTMLElement) {
-    const row = el('div', 'jp-row', body);
-    this.aim = el('span', 'jp-aim', row);
-    this.laws = new Laws(row);
-    const kase = el('div', 'jp-row', body);
-    this.meter = new Meter(kase, 'Case on the aimed target');
-    this.contempt = el('b', 'jp-contempt', kase);
-    this.ready = el('b', 'jp-ready', kase);
-    this.ready.textContent = 'DEATH PENALTY READY';
-    const prev = el('div', 'jp-row jp-prev', body);
-    this.previews = ['GAVEL', 'TAXES', 'VERDICT'].map((name) => {
-      const p = el('span', '', prev);
-      p.dataset.name = name;
-      return p;
-    });
-    this.top = el('span', 'jp-top', prev);
+  constructor(r: Rows) {
+    this.laws = new Laws(r.top);
+    this.previews = new Previews(r.top, ['Gavel', 'Taxes', 'Verdict']);
+    this.meter = new Meter(r.main, 'Case on the aimed target');
   }
 
   update(me: Ship, target: Ship | null): void {
     const p = judgePanel(me, target);
-    setText(this.aim, p.case && target ? target.name : 'NO TARGET');
+    const c = p.case;
     this.laws.set(p.laws);
-    setFlag(this.meter.root, 'idle', !p.case);
-    this.meter.set(p.case?.n ?? 0, p.case?.cap ?? 50, p.case?.death ?? 30);
-    setText(this.contempt, p.contempt > 0 ? `CONTEMPT ${Math.ceil(p.contempt)}s` : '');
-    if (this.ready.hidden !== !p.deathReady) this.ready.hidden = !p.deathReady;
-    const v = [p.previews.gavel, p.previews.taxes, p.previews.verdict];
-    this.previews.forEach((e, i) => setText(e, p.case ? `${e.dataset.name} ${kilo(v[i])}` : `${e.dataset.name} —`));
-    setText(this.top, p.top.length ? `DOCKET ${p.top.map((c) => `${c.name} ${c.n}`).join(' · ')}` : '');
+    setText(this.laws.col.label, c ? 'Laws it breaks' : 'Laws in court');
+    this.previews.set(c ? [kilo(p.previews.gavel), kilo(p.previews.taxes), kilo(p.previews.verdict)] : []);
+    const n = c?.n ?? 0;
+    const cap = c?.cap ?? 50;
+    this.meter.set({
+      name: c && target ? target.name : 'No target',
+      tag: p.contempt > 0 ? `IN CONTEMPT ${Math.ceil(p.contempt)}s` : '',
+      value: p.deathReady ? `DEATH PENALTY READY · ${n}/${cap}` : `${n}/${cap}`,
+      frac: n / cap,
+      n,
+      max: cap,
+      notch: (c?.death ?? 30) / cap,
+    });
+    setFlag(this.meter.root, 'idle', !c);
+    setFlag(this.meter.root, 'urgent', p.deathReady);
+    this.meter.dock(p.docket.map((d) => ({ at: d.at, title: `${d.name}: ${d.n}` })));
   }
 }
 
@@ -150,10 +250,6 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
   return e;
 }
 
-function setStyle(e: HTMLElement | SVGElement, prop: string, v: string): void {
-  if (e.style.getPropertyValue(prop) !== v) e.style.setProperty(prop, v);
-}
-
 /** One shelf slot: a little stitched doll, its pins and pricks, and its ship's name, health and life. */
 class DollView {
   readonly root: HTMLElement;
@@ -162,13 +258,12 @@ class DollView {
   private pricks: HTMLElement[] = [];
   private name: HTMLElement;
   private hp: HTMLElement;
-  private life: HTMLElement;
   private stab = 0;
 
   constructor(parent: HTMLElement) {
     this.root = el('div', 'hx-slot', parent);
-    this.life = el('span', 'hx-life', this.root);
-    this.doll = svg('svg', { viewBox: '-20 -26 40 52', class: 'hx-doll', 'aria-hidden': 'true' }, this.life) as SVGSVGElement;
+    const art = el('span', 'hx-art', this.root);
+    this.doll = svg('svg', { viewBox: '-20 -26 40 52', class: 'hx-doll', 'aria-hidden': 'true' }, art) as SVGSVGElement;
     // Head, body, arms and legs of a rag doll, with button eyes and a cross-stitched seam.
     svg('circle', { cx: 0, cy: -15, r: 8, class: 'cloth' }, this.doll);
     svg('path', { d: 'M-7 -7 Q-9 6 -6 12 L6 12 Q9 6 7 -7 Z', class: 'cloth' }, this.doll);
@@ -189,16 +284,28 @@ class DollView {
     for (let i = 0; i < 4; i++) this.pricks.push(el('i', '', ticks));
   }
 
-  set(v: ReturnType<typeof hexPanel>['slots'][number] | undefined, still: boolean): void {
-    if (this.root.hidden !== !v) this.root.hidden = !v;
-    if (!v) return;
+  /** Fills the slot from `v`, or shows it as an empty socket. */
+  set(v: DollSlot | undefined, still: boolean): void {
+    setFlag(this.root, 'idle', !v);
+    if (!v) {
+      setText(this.name, 'No doll');
+      setStyle(this.hp, 'width', '0%');
+      setStyle(this.root, '--life', '0');
+      this.pins.forEach((p) => setFlag(p, 'on', false));
+      this.pricks.forEach((p) => setFlag(p, 'on', false));
+      setFlag(this.root, 'burning', false);
+      setFlag(this.root, 'stitched', false);
+      setFlag(this.root, 'aimed', false);
+      setFlag(this.root, 'flinch', false);
+      setFlag(this.root, 'unseen', false);
+      setStyle(this.doll, 'transform', '');
+      this.stab = 0;
+      return;
+    }
     setText(this.name, v.name);
     setStyle(this.hp, 'width', `${(v.hp * 100).toFixed(1)}%`);
-    setStyle(this.life, '--life', `${(v.life * 360).toFixed(0)}deg`);
-    this.pins.forEach((p, i) => {
-      const on = i < v.pins;
-      if (p.classList.contains('on') !== on) p.classList.toggle('on', on);
-    });
+    setStyle(this.root, '--life', v.life.toFixed(3));
+    this.pins.forEach((p, i) => setFlag(p, 'on', i < v.pins));
     this.pricks.forEach((p, i) => setFlag(p, 'on', i < v.pricks));
     setFlag(this.root, 'burning', v.burning);
     setFlag(this.root, 'stitched', v.stitched);
@@ -213,33 +320,27 @@ class DollView {
   }
 }
 
-/** The Hexweaver's gauges: pin pips, the doll shelf with its threads, and previews on the aimed doll. */
+/** The Hexweaver: pin charges and previews on the aimed doll up top, the doll shelf running the length below. */
 class HexGauges {
-  private pips: HTMLElement[] = [];
+  private pips: Pips;
+  private previews: Previews;
   private slots: DollView[] = [];
-  private threads: SVGSVGElement;
   private paths: SVGPathElement[] = [];
-  private previews: HTMLElement;
   private still = reducedMotion();
 
-  constructor(body: HTMLElement) {
-    const row = el('div', 'jp-row', body);
-    const pips = el('span', 'hx-pips', row);
-    pips.setAttribute('aria-label', 'Pin charges');
-    for (let i = 0; i < 4; i++) this.pips.push(el('i', '', pips));
-    this.previews = el('span', 'hx-prev', row);
-    const shelf = el('div', 'hx-shelf', body);
-    this.threads = svg('svg', { viewBox: '0 0 400 24', preserveAspectRatio: 'none', class: 'hx-threads', 'aria-hidden': 'true' }, shelf) as SVGSVGElement;
-    for (let i = 0; i < 6; i++) this.paths.push(svg('path', { d: '' }, this.threads) as SVGPathElement);
+  constructor(r: Rows) {
+    this.pips = new Pips(r.top, 'Pins', 'Pin charges');
+    this.previews = new Previews(r.top, ['Twist', 'Rip', 'Unmaking']);
+    const shelf = el('div', 'hx-shelf mp-wide', r.main);
+    const threads = svg('svg', { viewBox: '0 0 400 24', preserveAspectRatio: 'none', class: 'hx-threads', 'aria-hidden': 'true' }, shelf);
+    for (let i = 0; i < 6; i++) this.paths.push(svg('path', { d: '' }, threads) as SVGPathElement);
     for (let i = 0; i < 4; i++) this.slots.push(new DollView(shelf));
   }
 
   update(me: Ship, target: Ship | null): void {
     const p = hexPanel(me, target);
-    this.pips.forEach((e, i) => {
-      setStyle(e, '--fill', p.pins[i].toFixed(2));
-      setFlag(e, 'ready', p.pins[i] >= 1);
-    });
+    const ready = p.pins.filter((f) => f >= 1).length;
+    this.pips.set(`Pins ${ready}/${p.pins.length}`, p.pins, ready);
     this.slots.forEach((v, i) => v.set(p.slots[i], this.still));
     // Threads arc over the shelf between stitched slots.
     this.paths.forEach((path, i) => {
@@ -248,169 +349,101 @@ class HexGauges {
       if (path.getAttribute('d') !== d) path.setAttribute('d', d);
     });
     const v = p.previews;
-    setText(this.previews, v ? `TWIST ${kilo(v.twist)} · RIP ${kilo(v.rip)} · UNMAKING ${kilo(v.unmaking)}` : 'TWIST — · RIP — · UNMAKING —');
+    this.previews.set(v ? [kilo(v.twist), kilo(v.rip), kilo(v.unmaking)] : []);
   }
 }
 
-/** The Gourmand's own gauges: three jars, the next salvo's flavour, previews, digestion and the feast timers. */
+/** The Gourmand: the next salvo's flavour and previews up top, the three-jar pantry (or the meal being digested) below. */
 class GourmandGauges {
-  private jars: { root: HTMLElement; n: HTMLElement; last: number }[] = [];
-  private next: HTMLElement;
-  private previews: HTMLElement;
-  private digest: HTMLElement;
-  private digestName: HTMLElement;
-  private digestFill: HTMLElement;
-  private digestTime: HTMLElement;
-  private feast: HTMLElement;
+  private next: Column;
+  private previews: Previews;
+  private pantry: HTMLElement;
+  private jars: { meter: Meter; last: number }[] = [];
+  private digest: Meter;
 
-  constructor(body: HTMLElement) {
-    const row = el('div', 'jp-row', body);
-    const jars = el('span', 'gm-jars', row);
-    for (const label of ['SHELL', 'EXPLOSIVE', 'SCRAP']) {
-      const root = el('span', 'gm-jar', jars);
-      root.setAttribute('role', 'meter');
-      root.setAttribute('aria-label', `${label} ingredients`);
-      el('i', 'gm-fill', root);
-      el('b', '', root).textContent = label[0];
-      this.jars.push({ root, n: el('span', 'gm-n', root), last: 0 });
-    }
-    this.next = el('span', 'gm-next', row);
-    this.previews = el('div', 'gm-prev', body);
-    this.digest = el('div', 'gm-digest', body);
-    this.digest.hidden = true;
-    this.digestName = el('span', 'gm-dname', this.digest);
-    this.digestFill = el('i', '', el('span', 'gm-dbar', this.digest));
-    this.digestTime = el('span', 'gm-dtime', this.digest);
-    this.feast = el('div', 'gm-feast', body);
+  constructor(r: Rows) {
+    this.next = new Column(r.top, 'Next salvo', 'gm-next');
+    this.previews = new Previews(r.top, ['Cooker', 'Comfort', 'Shield']);
+    this.pantry = el('div', 'gm-pantry mp-wide', r.main);
+    for (let i = 0; i < 3; i++) this.jars.push({ meter: new Meter(this.pantry, 'Ingredients', 'gm-jar', false), last: 0 });
+    this.digest = new Meter(r.main, 'Digesting', 'gm-digest');
+    this.digest.root.hidden = true;
   }
 
   update(me: Ship): void {
     const p = gourmandPanel(me);
     p.jars.forEach((j, i) => {
       const v = this.jars[i];
-      v.root.dataset.kind = j.kind;
-      setStyle(v.root, '--fill', (j.n / p.cap).toFixed(3));
-      setText(v.n, String(j.n));
-      setFlag(v.root, 'next', p.next.kind === j.kind);
-      if (v.root.getAttribute('aria-valuenow') !== String(j.n)) {
-        v.root.setAttribute('aria-valuenow', String(j.n));
-        v.root.setAttribute('aria-valuemax', String(p.cap));
-      }
+      if (v.meter.root.dataset.kind !== j.kind) v.meter.root.dataset.kind = j.kind;
+      v.meter.aria(`${j.label} ingredients`);
+      v.meter.set({ name: j.label, value: `${j.n}/${p.cap}`, frac: j.n / p.cap, n: j.n, max: p.cap });
+      setFlag(v.meter.root, 'next', p.next.kind === j.kind);
       // A jar that just filled up a little glints.
-      if (j.n > v.last) flash(v.root, 'gain');
+      if (j.n > v.last) flash(v.meter.root, 'gain');
       v.last = j.n;
     });
-    setText(this.next, `NEXT ${p.next.label} · ${p.next.effect}`);
-    if (this.next.dataset.kind !== (p.next.kind ?? 'plain')) this.next.dataset.kind = p.next.kind ?? 'plain';
-    setText(this.previews, `COOKER ${kilo(p.previews.cooker)} · COMFORT +${kilo(p.previews.heal)} HP, ${kilo(p.previews.shield)} shield`);
+    setText(this.next.value, `${p.next.label} · ${p.next.effect}`);
+    if (this.next.root.dataset.kind !== (p.next.kind ?? 'plain')) this.next.root.dataset.kind = p.next.kind ?? 'plain';
+    this.previews.set([kilo(p.previews.cooker), `+${kilo(p.previews.heal)}`, kilo(p.previews.shield)]);
+    // While a ship is being digested its meal takes the pantry's place.
     const d = p.digest;
-    if (this.digest.hidden !== !d) this.digest.hidden = !d;
-    if (d) {
-      setText(this.digestName, `DIGESTING ${d.name}`);
-      setStyle(this.digestFill, 'width', `${(d.frac * 100).toFixed(1)}%`);
-      setText(this.digestTime, `${d.left.toFixed(1)}s`);
-    }
-    const feast = [p.banquet > 0 ? `BANQUET ${Math.ceil(p.banquet)}s` : '', p.mouth > 0 ? `MOUTH OPEN ${p.mouth.toFixed(1)}s` : ''].filter(Boolean).join(' · ');
-    setText(this.feast, feast);
-    if (this.feast.hidden !== !feast) this.feast.hidden = !feast;
+    setHidden(this.pantry, !!d);
+    setHidden(this.digest.root, !d);
+    if (d) this.digest.set({ name: `Digesting ${d.name}`, value: `${d.left.toFixed(1)}s`, frac: d.frac, n: Math.round(d.left * 10) / 10, max: 3 });
   }
 }
 
-/** A row of pips, one per slot, each draining with the life its fracture or ridge has left. */
-class Pips {
-  readonly root: HTMLElement;
-  private pips: HTMLElement[] = [];
-  private label: HTMLElement;
-
-  constructor(parent: HTMLElement, private name: string) {
-    this.root = el('span', 'fl-pips', parent);
-    this.root.setAttribute('role', 'meter');
-    this.root.setAttribute('aria-label', name);
-    this.label = el('b', '', this.root);
-  }
-
-  set(lives: number[], cap: number): void {
-    while (this.pips.length < cap) this.pips.push(el('i', 'fl-pip', this.root));
-    this.pips.forEach((pip, i) => {
-      const life = lives[i];
-      setFlag(pip, 'on', life !== undefined);
-      setStyle(pip, '--life', (life ?? 0).toFixed(2));
-      // A pip about to go out flickers.
-      setFlag(pip, 'low', life !== undefined && life < 0.2);
-    });
-    setText(this.label, `${this.name.split(' ')[0].toUpperCase()} ${lives.length}/${cap}`);
-    if (this.root.getAttribute('aria-valuenow') !== String(lives.length)) {
-      this.root.setAttribute('aria-valuenow', String(lives.length));
-      this.root.setAttribute('aria-valuemax', String(cap));
-    }
-  }
-}
-
-/** The Faultline's own gauges: a magma pressure gauge that runs hot from 80, the Caldera preview, and fracture and ridge pips. */
+/** The Faultline: fracture and ridge pips and the Caldera preview up top, the magma pressure gauge running the length below. */
 class FaultlineGauges {
-  private gauge: HTMLElement;
-  private n: HTMLElement;
-  private caldera: HTMLElement;
   private fractures: Pips;
   private ridges: Pips;
-  private bedrock: HTMLElement;
+  private caldera: Previews;
+  private pressure: Meter;
   private last = 0;
 
-  constructor(body: HTMLElement) {
-    const row = el('div', 'jp-row', body);
-    this.gauge = el('span', 'fl-gauge', row);
-    this.gauge.setAttribute('role', 'meter');
-    this.gauge.setAttribute('aria-label', 'Pressure');
-    this.gauge.setAttribute('aria-valuemin', '0');
-    el('i', 'fl-magma', el('span', 'fl-track', this.gauge));
-    this.n = el('span', 'fl-n', this.gauge);
-    this.caldera = el('span', 'fl-caldera', row);
-    const pips = el('div', 'fl-network', body);
-    this.fractures = new Pips(pips, 'Fractures open');
-    this.ridges = new Pips(pips, 'Ridges standing');
-    this.bedrock = el('div', 'fl-bedrock', body);
+  constructor(r: Rows) {
+    this.fractures = new Pips(r.top, 'Fractures', 'Fractures open');
+    this.ridges = new Pips(r.top, 'Ridges', 'Ridges standing');
+    this.caldera = new Previews(r.top, ['Caldera']);
+    this.pressure = new Meter(r.main, 'Pressure', 'fl-pressure');
   }
 
   update(me: Ship): void {
     const p = faultlinePanel(me);
+    const pad = (lives: number[], cap: number) => Array.from({ length: cap }, (_, i) => lives[i] ?? null);
+    this.fractures.set(`Fractures ${p.fractures.length}/${p.maxFractures}`, pad(p.fractures, p.maxFractures), p.fractures.length);
+    this.ridges.set(`Ridges ${p.ridges.length}/${p.maxRidges}`, pad(p.ridges, p.maxRidges), p.ridges.length);
+    this.caldera.set([kilo(p.caldera)]);
     const n = Math.round(p.pressure);
-    setStyle(this.gauge, '--fill', (p.pressure / p.max).toFixed(3));
-    setFlag(this.gauge, 'hot', p.hot);
-    setText(this.n, `PRESSURE ${n}`);
-    if (this.gauge.getAttribute('aria-valuenow') !== String(n)) {
-      this.gauge.setAttribute('aria-valuenow', String(n));
-      this.gauge.setAttribute('aria-valuemax', String(p.max));
-    }
+    this.pressure.set({ name: 'Pressure', tag: p.hot ? 'ERUPTION READY' : '', value: `${n}/${p.max}`, frac: p.pressure / p.max, n, max: p.max, notch: 0.8 });
+    setFlag(this.pressure.root, 'hot', p.hot);
     // A jump in pressure (a hit, Slip, Bedrock) pulses the gauge.
-    if (n >= this.last + 5) flash(this.gauge, 'surge');
+    if (n >= this.last + 5) flash(this.pressure.root, 'surge');
     this.last = n;
-    setText(this.caldera, `CALDERA ${kilo(p.caldera)}`);
-    setFlag(this.caldera, 'hot', p.hot);
-    this.fractures.set(p.fractures, p.maxFractures);
-    this.ridges.set(p.ridges, p.maxRidges);
-    const brace = p.bedrock > 0 ? `BEDROCK ${p.bedrock.toFixed(1)}s · REBOUND READY` : '';
-    setText(this.bedrock, brace);
-    if (this.bedrock.hidden !== !brace) this.bedrock.hidden = !brace;
   }
+}
+
+/** What a victim banner's meter counts. */
+function meterName(kind: string): string {
+  return kind === 'hexweaver' ? 'Pins in your doll' : 'Your case';
 }
 
 export class MiscTitanHud {
   /** The captain's own titan panel; null for every other ship. */
   readonly panel: HTMLElement | null = null;
-  /** Where each titan's own gauges go. */
-  readonly body: HTMLElement | null = null;
-  private line: HTMLElement | null = null;
-  private banner: HTMLElement;
-  private bannerTitle: HTMLElement;
-  private bannerDetail: HTMLElement;
-  private bannerLaws: Laws | null = null;
-  private bannerMeter: Meter | null = null;
-  /** The banner meter's last value, to flash it on each new violation. */
-  private bannerN = -1;
+  private ident: Ident | null = null;
   private judge: JudgeGauges | null = null;
   private hex: HexGauges | null = null;
   private gourmand: GourmandGauges | null = null;
   private faultline: FaultlineGauges | null = null;
+  private banner: HTMLElement;
+  private bannerIdent: Ident;
+  private bannerTop: HTMLElement;
+  private bannerMain: HTMLElement;
+  private bannerLaws: Laws | null = null;
+  private bannerMeter: Meter | null = null;
+  /** The banner meter's last value, to flash it on each new violation. */
+  private bannerN = -1;
 
   constructor(
     parent: HTMLElement,
@@ -421,34 +454,39 @@ export class MiscTitanHud {
       const panel = el('div', `misc-panel ${kind}`, parent);
       panel.setAttribute('role', 'group');
       panel.setAttribute('aria-label', `${NAMES[kind]} status`);
-      el('b', 'mp-name', panel).textContent = NAMES[kind];
-      this.line = el('span', 'mp-line', panel);
-      this.line.setAttribute('aria-live', 'polite');
-      this.body = el('div', 'mp-body', panel);
+      const rows = { top: el('div', 'mp-top', panel), main: el('div', 'mp-main', panel) };
+      this.ident = new Ident(rows.top, NAMES[kind]);
+      this.ident.state.setAttribute('aria-live', 'polite');
       this.panel = panel;
-      if (kind === 'judge') this.judge = new JudgeGauges(this.body);
-      if (kind === 'hexweaver') this.hex = new HexGauges(this.body);
-      if (kind === 'gourmand') this.gourmand = new GourmandGauges(this.body);
-      if (kind === 'faultline') this.faultline = new FaultlineGauges(this.body);
+      if (kind === 'judge') this.judge = new JudgeGauges(rows);
+      if (kind === 'hexweaver') this.hex = new HexGauges(rows);
+      if (kind === 'gourmand') this.gourmand = new GourmandGauges(rows);
+      if (kind === 'faultline') this.faultline = new FaultlineGauges(rows);
     }
     this.banner = el('div', 'misc-banner', parent);
     this.banner.setAttribute('role', 'status');
     this.banner.setAttribute('aria-live', 'polite');
     this.banner.hidden = true;
-    this.bannerTitle = el('b', '', this.banner);
-    this.bannerDetail = el('span', '', this.banner);
+    this.bannerTop = el('div', 'mp-top', this.banner);
+    this.bannerIdent = new Ident(this.bannerTop, '');
+    this.bannerMain = el('div', 'mp-main', this.banner);
+    this.bannerMain.hidden = true;
   }
 
   update(): void {
     const me = this.pc.ship;
     const target = this.pc.lock ?? this.pc.assist;
-    if (this.line) setText(this.line, miscTitanSummary(me, target));
+    if (this.ident) setText(this.ident.state, miscPanelState(me));
     this.judge?.update(me, target);
     this.hex?.update(me, target);
     this.gourmand?.update(me);
     this.faultline?.update(me);
+    this.updateBanner(me);
+  }
+
+  private updateBanner(me: Ship): void {
     const b = miscVictimBanner(me);
-    if (this.banner.hidden !== !b) this.banner.hidden = !b;
+    setHidden(this.banner, !b);
     if (!b) {
       this.bannerN = -1;
       return;
@@ -457,24 +495,26 @@ export class MiscTitanHud {
       this.banner.dataset.kind = b.kind;
       // A different titan's meter counts something else; do not flash on the switch.
       this.bannerN = -1;
-      this.bannerMeter?.root.setAttribute('aria-label', meterName(b.kind));
     }
     setFlag(this.banner, 'urgent', b.alert);
-    setText(this.bannerTitle, b.title);
-    setText(this.bannerDetail, b.detail);
+    setText(this.bannerIdent.name, b.title);
+    setText(this.bannerIdent.state, b.detail);
     if (b.laws) {
-      this.bannerLaws ??= new Laws(this.banner);
+      this.bannerLaws ??= new Laws(this.bannerTop);
       this.bannerLaws.set(b.laws);
     }
-    if (this.bannerLaws && this.bannerLaws.root.hidden !== !b.laws) this.bannerLaws.root.hidden = !b.laws;
-    if (b.meter) {
-      this.bannerMeter ??= new Meter(this.banner, meterName(b.kind));
-      this.bannerMeter.set(b.meter.n, b.meter.cap, b.meter.mark);
-      // Every new violation or pin flashes the banner, so the victim sees the moment it lands.
-      if (this.bannerN >= 0 && b.meter.n > this.bannerN) flash(this.banner, 'cited');
-      this.bannerN = b.meter.n;
-    }
-    if (this.bannerMeter && this.bannerMeter.root.hidden !== !b.meter) this.bannerMeter.root.hidden = !b.meter;
+    if (this.bannerLaws) setHidden(this.bannerLaws.col.root, !b.laws);
+    setHidden(this.bannerMain, !b.meter);
+    if (!b.meter) return;
+    const m = b.meter;
+    const name = meterName(b.kind);
+    this.bannerMeter ??= new Meter(this.bannerMain, name);
+    this.bannerMeter.aria(name);
+    this.bannerMeter.set({ name, value: `${m.n}/${m.cap}`, frac: m.n / m.cap, n: m.n, max: m.cap, notch: m.mark < m.cap ? m.mark / m.cap : undefined });
+    setFlag(this.bannerMeter.root, 'urgent', m.n >= m.mark);
+    // Every new violation or pin flashes the banner, so the victim sees the moment it lands.
+    if (this.bannerN >= 0 && m.n > this.bannerN) flash(this.banner, 'cited');
+    this.bannerN = m.n;
   }
 
   /** Fills (or hides) the misc titan chip on `marker`, the marker of `s`. */
