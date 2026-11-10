@@ -4472,6 +4472,7 @@ select {
 .misc-panel.hexweaver, .misc-banner[data-kind=hexweaver], .misc-chip[data-kind=hexweaver] { --misc:#f290cf; }
 .misc-panel.gourmand, .misc-banner[data-kind=gourmand], .misc-chip[data-kind=gourmand] { --misc:#ffa040; }
 .misc-panel.faultline, .misc-banner[data-kind=faultline], .misc-chip[data-kind=faultline] { --misc:#ff6a2a; }
+.misc-panel.pharos, .misc-banner[data-kind=pharos], .misc-chip[data-kind=pharos] { --misc:#ffe08a; }
 .misc-panel, .misc-banner { display:flex; flex-direction:column; gap:7px; min-width:0; padding:6px 12px 7px 10px; pointer-events:none;
   font-family:var(--display); line-height:1; color:var(--ice);
   background:linear-gradient(180deg,color-mix(in srgb,var(--misc) 18%,transparent),var(--glass) 85%);
@@ -4593,6 +4594,23 @@ select {
 @keyframes fl-shake { 0% { transform:translate(0,0); } 25% { transform:translate(1px,-1px); } 50% { transform:translate(-1px,1px); } 75% { transform:translate(1px,1px); } 100% { transform:translate(0,0); } }
 @keyframes fl-surge { 0% { filter:brightness(1.8); } 100% { filter:none; } }
 
+/* The Pharos's dial: bow up, a wedge for each beam, a dot for each ship and buoy in reach; and the target's Exposure. */
+.ph-dialcol { align-items:center; }
+.ph-dial { width:40px; height:40px; }
+.ph-dial svg { display:block; width:100%; height:100%; overflow:visible; }
+.ph-dial .rim { fill:rgba(4,10,18,.62); stroke:color-mix(in srgb,var(--misc) 45%,transparent); stroke-width:1; }
+.ph-dial .bow { fill:var(--ice); stroke:var(--ice); stroke-width:1.2; stroke-linejoin:round; }
+.ph-dial .beam { fill:color-mix(in srgb,var(--misc) 72%,transparent); filter:drop-shadow(0 0 3px var(--misc)); }
+.ph-dial .blip { fill:#7f96a8; }
+.ph-dial .blip.ph-lit { fill:#fff6d0; filter:drop-shadow(0 0 2px var(--misc)); }
+.ph-dial .blip.ph-buoy { fill:none; stroke:var(--misc); stroke-width:1; }
+.ph-dial .blip.ph-aimed { stroke:#fff; stroke-width:1; }
+.ph-exposure .mp-fill { background:linear-gradient(90deg,#7a5c1c,#ffd060 60%,#fff6d0); box-shadow:0 0 10px #ffd060; }
+.ph-exposure.ph-glow .mp-tag { color:#fff6d0; text-shadow:0 0 6px var(--misc); }
+.ph-exposure.ph-full .mp-fill { background:linear-gradient(90deg,#ffd060,#fff6d0 50%,#fff); box-shadow:0 0 14px #fff6d0; }
+.ph-exposure.ph-gain .mp-track { animation:fl-surge .35s ease-out; }
+.misc-panel.pharos .mp-pips { --pip:#ffe08a; }
+
 /* The victim banner: the titan's hold on this ship, tinted red while it demands action. */
 .misc-banner .mp-id { flex:1; }
 .misc-banner .mp-name { font-size:12px; text-transform:uppercase; }
@@ -4608,7 +4626,7 @@ select {
 .misc-chip.urgent { color:#fff; background:#c0261c; box-shadow:inset 0 0 0 1px #ff7a6a; }
 
 @media (prefers-reduced-motion:reduce) {
-  .misc-banner.cited, .misc-laws .law.hit, .mp-meter.urgent .mp-fill, .mp-pips i.low, .hx-slot.stab, .gm-jar.gain .mp-fill, .fl-pressure.hot .mp-track, .fl-pressure.surge .mp-track { animation:none; }
+  .misc-banner.cited, .misc-laws .law.hit, .mp-meter.urgent .mp-fill, .mp-pips i.low, .hx-slot.stab, .gm-jar.gain .mp-fill, .fl-pressure.hot .mp-track, .fl-pressure.surge .mp-track, .ph-exposure.ph-gain .mp-track { animation:none; }
   .mp-fill, .hx-doll { transition:none; }
 }
 @media(max-width:1300px) { .mp-top { gap:6px 10px; } .mp-prevs { gap:10px; } .misc-laws .law { padding:2px 4px; font-size:9px; } }

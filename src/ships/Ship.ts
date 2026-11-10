@@ -3,6 +3,7 @@ import {newJudgeState,updateJudge,clearJudge,objects, type JudgeState} from '../
 import {newHexweaverState,updateHexweaver,clearHexweaver,hexweaverAbsorb,pinCharges,effigyLure,type HexweaverState} from '../skills/misc/HexweaverRuntime';
 import {newGourmandState,updateGourmand,clearGourmand,swallowedBy,gourmandBlocksSkill,gourmandSwallowMods,type GourmandState} from '../skills/misc/GourmandRuntime';
 import {newFaultlineState,updateFaultline,clearFaultline,applyFaultlinePassives,type FaultlineState} from '../skills/misc/FaultlineRuntime';
+import {newPharosState,updatePharos,clearPharos,applyPharosPassives,type PharosState} from '../skills/misc/PharosRuntime';
 import { copyLoadout, type ArchitectLoadout } from '../data/architectLoadout';
 import { ensureArchitectHealth, damageArchitectHealth, healArchitectHealth, architectPool } from '../skills/misc/ArchitectHealth';
 import { dockedShot, dockedType } from '../skills/misc/ArchitectDocked';
@@ -536,6 +537,7 @@ export class Ship {
   hexweaver:HexweaverState|null=null;
   gourmand:GourmandState|null=null;
   faultline:FaultlineState|null=null;
+  pharos:PharosState|null=null;
 
   pos = new Vector3();
   heading = 0;
@@ -683,6 +685,7 @@ export class Ship {
     if(spec.id==='hexweaver')this.hexweaver=newHexweaverState();
     if(spec.id==='gourmand')this.gourmand=newGourmandState();
     if(spec.id==='faultline')this.faultline=newFaultlineState();
+    if(spec.id==='pharos')this.pharos=newPharosState();
     this.colossus = spec.cls === 'TT';
     this.trait = traitOf(spec);
     this.build(spec);
@@ -981,6 +984,7 @@ export class Ship {
     updateHexweaver(this,dt);
     updateGourmand(this,dt);
     updateFaultline(this,dt);
+    updatePharos(this,dt);
     if(!swallowedBy(this.game,this)){
     this.updateMain(dt);
     this.updateSecondaries(dt);
@@ -1077,6 +1081,7 @@ export class Ship {
     if (this.architect) applyArsenalPassives(this, m);
     if (this.tungsten) applyTungstenPassives(this, m);
     applyFaultlinePassives(this,m);
+    applyPharosPassives(this,m);
     const { speedMul, traverseMul, turnMul } = m;
     for (const e of this.effects) if (e.id.startsWith('debuff:')) e.apply(m);
     if (m.unstoppable) {
@@ -2003,7 +2008,7 @@ export class Ship {
     clearArchitect(this);
     clearStepper(this);
     clearTungsten(this);
-    clearJudge(this);clearHexweaver(this);clearGourmand(this);clearFaultline(this);
+    clearJudge(this);clearHexweaver(this);clearGourmand(this);clearFaultline(this);clearPharos(this);
     this.withdrawn = false;
     this.detonated = false;
     this.hp = this.maxHp;
@@ -2081,7 +2086,7 @@ export class Ship {
     clearArchitect(this);
     clearStepper(this);
     clearTungsten(this);
-    clearJudge(this);clearHexweaver(this);clearGourmand(this);clearFaultline(this);
+    clearJudge(this);clearHexweaver(this);clearGourmand(this);clearFaultline(this);clearPharos(this);
     this.alive = false;
     this.withdrawn = true;
     this.hp = 0;

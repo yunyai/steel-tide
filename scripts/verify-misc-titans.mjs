@@ -1,7 +1,7 @@
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
 
-// The four misc titans, seen. Each casts all nine skills at three dummy battleships in three stages,
+// The misc titans that share a HUD and effects, seen. Each casts all nine skills at three dummy battleships in three stages,
 // and every stage is caught mid-effect with the captain's HUD up: panel, marker chips and all. Then
 // a battleship captain is held by each titan, for the banner a victim sees. Everything is captured
 // at 1280×720 and 1920×1080, and the run fails if a skill does not fire, the effects change the sim
@@ -13,13 +13,15 @@ const sizes = [
   [1280, 720],
   [1920, 1080],
 ];
-const titans = ["judge", "hexweaver", "gourmand", "faultline"];
+const titans = (process.env.MISC_TITANS ?? "judge,hexweaver,gourmand,faultline,pharos").split(",");
 mkdirSync(out, { recursive: true });
 
+// PLAYWRIGHT_EXECUTABLE names a browser binary outright, for systems with no Chrome channel installed,
+// and PLAYWRIGHT_ARGS adds launch flags (a headless browser may need telling to use the GPU).
 const browser = await chromium.launch({
-  channel: process.env.PLAYWRIGHT_CHANNEL ?? "chrome",
+  ...(process.env.PLAYWRIGHT_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE } : { channel: process.env.PLAYWRIGHT_CHANNEL ?? "chrome" }),
   headless: true,
-  args: ["--autoplay-policy=no-user-gesture-required"],
+  args: ["--autoplay-policy=no-user-gesture-required", ...(process.env.PLAYWRIGHT_ARGS?.split(" ").filter(Boolean) ?? [])],
 });
 const errors = [];
 const rows = [];
@@ -409,8 +411,69 @@ const STAGES = {
   ],
 };
 
+STAGES.pharos = [
+  {
+    name: "hold-buoy-lance",
+    run: () => {
+      const f = window.miscShot;
+      const ok = {};
+      // Start the lamp to port of the dummies, so its sweep crosses all three.
+      f.titan.pharos.bearing = -0.7;
+      f.run(1.3);
+      f.at(f.foes[0]);
+      ok.Q = f.cast(0);
+      f.run(0.9);
+      f.aim(260, -1150);
+      ok.C = f.cast(4);
+      f.at(f.foes[0]);
+      ok.E = f.cast(1);
+      f.run(0.78);
+      return ok;
+    },
+  },
+  {
+    name: "counter-dazzle-dark",
+    run: () => {
+      const f = window.miscShot;
+      const ok = {};
+      ok.Z = f.cast(2);
+      f.run(0.5);
+      ok.X = f.cast(3);
+      f.run(0.3);
+      ok.V = f.cast(5);
+      f.run(0.25);
+      return ok;
+    },
+    later: { name: "relight", seconds: 5.0 },
+  },
+  {
+    name: "twin-daybreak-false-light",
+    run: () => {
+      const f = window.miscShot;
+      const ok = {};
+      ok.R = f.cast(6);
+      f.aim(f.foes[1].pos.x + 200, f.foes[1].pos.z - 300);
+      ok.B = f.cast(8);
+      f.at(f.foes[0]);
+      ok.T = f.cast(7);
+      f.run(2.1);
+      return ok;
+    },
+    later: { name: "false-light-burst", seconds: 1.6 },
+  },
+];
+
 /** What each titan does to a battleship captain for the victim banner, and when to look. */
 const VICTIM = {
+  pharos: () => {
+    const f = window.miscShot;
+    f.titan.pharos.bearing = Math.PI;
+    f.at(f.s);
+    f.cast(0);
+    f.run(1.4);
+    f.cast(3);
+    f.run(0.3);
+  },
   judge: () => {
     const f = window.miscShot;
     f.at(f.s);

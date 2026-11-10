@@ -5,8 +5,10 @@ import { cookerDamage, FLAVOURS, GOURMAND, nextFlavour, pantryCapacity, pantryTo
 import { burnRate, dollOf, effigyLure, HEX, type Doll } from '../skills/misc/HexweaverRuntime';
 import { brokeRecently, courtRadius, inContempt, inCourt, JUDGE, LAW_LABELS, LAW_LIMITS, LAW_OFFENCES, LAWS, violationCount, type Law } from '../skills/misc/JudgeRuntime';
 import type { MiscTitanEvent } from '../skills/misc/MiscEvents';
+import { exposureOf, isLit, litRecord, nextPass, PHAROS, pharosBeams, pharosDamage, pharosHold } from '../skills/misc/PharosRuntime';
+import { bearingTo, wrapAngle } from '../core/math';
 
-// What the HUD shows for the four misc titans, as plain data the DOM layer only copies out. Pure
+// What the HUD shows for the misc titans, as plain data the DOM layer only copies out. Pure
 // functions of the game state, so they are tested without a document.
 
 /** What the HUD calls each pantry jar and the salvo flavour it gives. */
@@ -94,11 +96,82 @@ export function faultlinePanel(me: Ship): FaultlinePanel {
   };
 }
 
+/** A mark on the Pharos's dial: a bearing off the bow (radians, clockwise) and a distance as a share of the beam's range. */
+export interface DialBlip {
+  rel: number;
+  at: number;
+  kind: 'buoy' | 'lit' | 'dark';
+  /** The ship the captain is aiming at. */
+  aimed: boolean;
+}
+
+/** The Pharos's own panel, aimed at a target. */
+export interface PharosPanel {
+  /** Each beam: its bearing off the bow and its half-width, radians; none while the lamp is shuttered. */
+  beams: { rel: number; half: number }[];
+  dir: 1 | -1;
+  /** One pip per buoy afloat: the share of its life left, oldest first. */
+  buoys: number[];
+  maxBuoys: number;
+  /** Buoys, and the enemy ships in reach that the Pharos can see. */
+  blips: DialBlip[];
+  target: {
+    name: string;
+    stacks: number;
+    cap: number;
+    lit: boolean;
+    /** In reach of the beam at all. */
+    inReach: boolean;
+    /** Land stands between it and the lamp. */
+    shadowed: boolean;
+    /** Seconds until the sweep next reaches it; 0 while it is in the beam, null when no sweep will. */
+    pass: number | null;
+  } | null;
+  /** What Lance of Light, Daybreak and False Light would deal the target now. */
+  previews: { lance: number; daybreak: number; falseLight: number } | null;
+}
+
+export function pharosPanel(me: Ship, target: Ship | null): PharosPanel {
+  const a = me.pharos!;
+  const now = me.game.time;
+  const rel = (x: number, z: number) => wrapAngle(bearingTo(me.pos.x, me.pos.z, x, z) - me.heading);
+  const at = (x: number, z: number) => Math.hypot(x - me.pos.x, z - me.pos.z) / PHAROS.range;
+  const t = target && target.team !== me.team && target.alive ? target : null;
+  const blips: DialBlip[] = a.buoys.map((b) => ({ rel: rel(b.x, b.z), at: Math.min(1, at(b.x, b.z)), kind: 'buoy', aimed: false }));
+  for (const s of me.game.ships) {
+    if (s.team === me.team || !s.alive || s.withdrawn || !contactVisible(s, me.team)) continue;
+    const d = at(s.pos.x, s.pos.z);
+    if (d > 1.15) continue;
+    blips.push({ rel: rel(s.pos.x, s.pos.z), at: Math.min(1, d), kind: isLit(me, s) ? 'lit' : 'dark', aimed: s === t });
+  }
+  const n = t ? exposureOf(me, t) : 0;
+  const mul = me.mods.damageMul;
+  return {
+    beams: pharosBeams(me).map((b) => ({ rel: wrapAngle(b.bearing - me.heading), half: b.half })),
+    dir: a.dir,
+    buoys: a.buoys.map((b) => Math.max(0, Math.min(1, (b.expiresAt - now) / PHAROS.buoy.life))),
+    maxBuoys: PHAROS.buoy.max,
+    blips,
+    target: t
+      ? {
+          name: t.name,
+          stacks: n,
+          cap: PHAROS.maxExposure,
+          lit: isLit(me, t),
+          inReach: at(t.pos.x, t.pos.z) <= 1,
+          shadowed: me.game.map.losBlocked(me.pos.x, me.pos.z, t.pos.x, t.pos.z),
+          pass: nextPass(me, t),
+        }
+      : null,
+    previews: t ? { lance: pharosDamage.lance(n) * mul, daybreak: pharosDamage.daybreak(n) * mul * me.mods.ultDamageMul, falseLight: pharosDamage.falseLight(n) * mul * me.mods.ultDamageMul } : null,
+  };
+}
+
 /** Which misc titan `s` is, or null. */
-export type MiscTitanKind = 'judge' | 'hexweaver' | 'gourmand' | 'faultline';
+export type MiscTitanKind = 'judge' | 'hexweaver' | 'gourmand' | 'faultline' | 'pharos';
 
 export function miscTitanKind(s: Ship): MiscTitanKind | null {
-  return s.judge ? 'judge' : s.hexweaver ? 'hexweaver' : s.gourmand ? 'gourmand' : s.faultline ? 'faultline' : null;
+  return s.judge ? 'judge' : s.hexweaver ? 'hexweaver' : s.gourmand ? 'gourmand' : s.faultline ? 'faultline' : s.pharos ? 'pharos' : null;
 }
 
 /** A small badge on another ship's marker: a misc titan's hold on it. */
@@ -309,6 +382,16 @@ export function miscPanelState(me: Ship): string {
     const left = me.faultline.bedrockUntil - now;
     return left > 0 ? `BEDROCK ${left.toFixed(1)}s · REBOUND READY` : '';
   }
+  if (me.pharos) {
+    const a = me.pharos;
+    if (a.darkUntil > now) return `DARK ${(a.darkUntil - now).toFixed(1)}s · CLOAKED`;
+    if (a.daybreak) return a.daybreak.started ? `DAYBREAK ${Math.max(0, a.daybreak.until - now).toFixed(1)}s` : 'DAYBREAK RISING';
+    const parts = [a.holdUntil > now ? `HELD ${(a.holdUntil - now).toFixed(1)}s` : `SWEEP ${a.dir > 0 ? '↻' : '↺'}`];
+    if (a.twinUntil > now) parts.push(`TWIN ${Math.ceil(a.twinUntil - now)}s`);
+    if (a.scorchUntil > now) parts.push('SCORCHING');
+    if (a.wideUntil > now) parts.push('WIDE');
+    return parts.join(' · ');
+  }
   return '';
 }
 
@@ -327,12 +410,53 @@ export function miscMarkerChip(viewer: Ship, s: Ship): MiscChip | null {
     if (d && (!doll || d.pins > doll.pins)) doll = d;
   }
   if (doll) return { kind: 'hexweaver', text: `✂ ${doll.pins}`, alert: doll.pins >= HEX.pin.max || doll.burnUntil > viewer.game.time };
+  let exposure = -1;
+  for (const p of viewer.game.ships) {
+    if (!p.pharos || !p.alive || p.team !== viewer.team) continue;
+    const r = litRecord(p, s);
+    if (r && (r.stacks > 0 || r.until > viewer.game.time)) exposure = Math.max(exposure, r.stacks);
+  }
+  if (exposure >= 0) return { kind: 'pharos', text: `☀ ${exposure}`, alert: exposure >= PHAROS.maxExposure };
   return null;
 }
 
 /** The banner `me` sees while an enemy misc titan holds it; null when none does. */
 export function miscVictimBanner(me: Ship): MiscBanner | null {
-  return gourmandBanner(me) ?? tauntBanner(me) ?? judgeBanner(me) ?? hexBanner(me);
+  return gourmandBanner(me) ?? tauntBanner(me) ?? pharosBanner(me, true) ?? judgeBanner(me) ?? hexBanner(me) ?? pharosBanner(me, false);
+}
+
+/**
+ * An enemy Pharos's hold on `me`: lured by its false light, dazzled, or lit and exposed. `urgent`
+ * asks only for the holds that take the helm or the guns.
+ */
+function pharosBanner(me: Ship, urgent: boolean): MiscBanner | null {
+  const hold = pharosHold(me);
+  if (!hold) return null;
+  const now = me.game.time;
+  const r = hold.record;
+  const n = r?.stacks ?? 0;
+  const meter = { n, cap: PHAROS.maxExposure, mark: PHAROS.maxExposure };
+  if (hold.lured > 0)
+    return { kind: 'pharos', title: `Lured ${hold.lured.toFixed(1)} s`, detail: `Your helm follows the false light · it bursts over ${PHAROS.falseLight.radius} m`, alert: true, meter };
+  const dazzled = r ? r.dazzledUntil - now : 0;
+  if (dazzled > 0)
+    return {
+      kind: 'pharos',
+      title: `Dazzled ${dazzled.toFixed(1)} s`,
+      detail: `Guns scatter ×${PHAROS.dazzle.scatter} · aimed skills reach ${Math.round((1 - PHAROS.dazzle.reach) * 100)}% less far`,
+      alert: true,
+      meter,
+    };
+  if (urgent || !r) return null;
+  const lit = r.until > now;
+  const bonus = `${n} Exposure: +${Math.round(n * PHAROS.battery.perExposure * 100)}% from the Pharos’s battery`;
+  return {
+    kind: 'pharos',
+    title: lit ? 'In the light' : 'Exposed',
+    detail: lit ? `${bonus} · put land between you and the lamp` : `${bonus} · fades in the dark`,
+    alert: n >= PHAROS.maxExposure,
+    meter,
+  };
 }
 
 /** A hostile effigy within reach has taken `me`'s main guns. */

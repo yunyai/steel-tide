@@ -1,6 +1,6 @@
 import type { Ship } from '../../ships/Ship';
 
-// The `miscTitan` event: what the Judge, Hexweaver, Gourmand and Faultline tell their effects,
+// The `miscTitan` event: what the Judge, Hexweaver, Gourmand, Faultline and Pharos tell their effects,
 // model animation, audio and HUD. The simulation emits it; nothing in the simulation listens.
 
 /** Shared by all four titans: a battery round striking a hull or landing in the sea. */
@@ -72,7 +72,37 @@ export type FaultFxKind =
   | 'collapse'
   | 'crumble';
 
-export type MiscFxKind = MiscGunKind | JudgeFxKind | HexFxKind | GourmandFxKind | FaultFxKind;
+/**
+ * The Pharos: the sweep crossing a hull (`n` its Exposure), Hold the Light, a lance winding up along
+ * its line and firing, a hull the lance struck, Counter-sweep (`n` the new direction) and a hull it
+ * scorched, Dazzle (`n` the ships blinded) and each ship it blinded, a buoy thrown (`n` its id),
+ * flaring (`n` 2 when a lance or Daybreak drives it) and sinking, the shutters closing and their
+ * flare on reopening, Twin Lamps, Daybreak's wind-up, its turn and each hull it sears, and the false
+ * light rising and bursting.
+ */
+export type PharosFxKind =
+  | 'lit'
+  | 'hold'
+  | 'lanceAim'
+  | 'lance'
+  | 'lanceHit'
+  | 'counter'
+  | 'scorch'
+  | 'dazzle'
+  | 'dazzled'
+  | 'buoy'
+  | 'buoyFlare'
+  | 'buoyGone'
+  | 'douse'
+  | 'relight'
+  | 'twin'
+  | 'daybreakWarn'
+  | 'daybreak'
+  | 'sear'
+  | 'falseLight'
+  | 'wreck';
+
+export type MiscFxKind = MiscGunKind | JudgeFxKind | HexFxKind | GourmandFxKind | FaultFxKind | PharosFxKind;
 
 export interface MiscTitanEvent {
   ship: Ship;
@@ -108,7 +138,7 @@ export function emitMisc(s: Ship, kind: MiscFxKind, x: number, z: number, extra:
   s.game.events.emit('miscTitan', { ship: s, kind, x, z, ...extra });
 }
 
-/** Whether `s` is one of the four misc titans. */
+/** Whether `s` is one of the misc titans that share this event, battery rider and HUD. */
 export function isMiscTitanShip(s: Ship): boolean {
-  return !!(s.judge || s.hexweaver || s.gourmand || s.faultline);
+  return !!(s.judge || s.hexweaver || s.gourmand || s.faultline || s.pharos);
 }

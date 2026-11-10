@@ -1,7 +1,7 @@
 import type { PlayerController } from '../player/PlayerController';
 import type { Ship } from '../ships/Ship';
 import { reducedMotion } from '../render/ArchitectPose';
-import { faultlinePanel, gourmandPanel, hexPanel, judgePanel, miscMarkerChip, miscPanelState, miscTitanKind, miscVictimBanner, type DollSlot, type LawView } from './MiscTitanPresentation';
+import { faultlinePanel, gourmandPanel, hexPanel, judgePanel, miscMarkerChip, miscPanelState, miscTitanKind, miscVictimBanner, pharosPanel, type DollSlot, type LawView } from './MiscTitanPresentation';
 
 // The misc titans' HUD, over the hull bar in the glass of the Tungsten card: the captain's own titan
 // panel, the banner a captain sees while an enemy misc titan holds them, and the chip on each marker.
@@ -9,7 +9,7 @@ import { faultlinePanel, gourmandPanel, hexPanel, judgePanel, miscMarkerChip, mi
 // (name and state, gauges, previews) and a main row whose meter runs the length of the hull bar.
 // All of it copies what MiscTitanPresentation computes and touches the DOM only when it changes.
 
-const NAMES = { judge: 'THE JUDGE', hexweaver: 'HEXWEAVER', gourmand: 'GOURMAND', faultline: 'FAULTLINE' } as const;
+const NAMES = { judge: 'THE JUDGE', hexweaver: 'HEXWEAVER', gourmand: 'GOURMAND', faultline: 'FAULTLINE', pharos: 'PHAROS' } as const;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -423,9 +423,78 @@ class FaultlineGauges {
   }
 }
 
+const DIAL = 17;
+
+/**
+ * The Pharos: a bow-up dial of where its beams point, with the ships and buoys in reach; buoy pips;
+ * when the sweep next reaches the target and what the lamp would deal it; and the target's
+ * Exposure running the length below.
+ */
+class PharosGauges {
+  private dial: SVGSVGElement;
+  private wedges: SVGPathElement[] = [];
+  private blips: SVGCircleElement[] = [];
+  private buoys: Pips;
+  private previews: Previews;
+  private exposure: Meter;
+  private last = 0;
+
+  constructor(r: Rows) {
+    const col = new Column(r.top, 'Lamp', 'ph-dialcol', 'ph-dial');
+    this.dial = svg('svg', { viewBox: '-20 -20 40 40', 'aria-hidden': 'true' }, col.value) as SVGSVGElement;
+    svg('circle', { cx: 0, cy: 0, r: DIAL, class: 'rim' }, this.dial);
+    svg('path', { d: `M0 ${-DIAL} v-3 M0 -3 L2 2 L-2 2 Z`, class: 'bow' }, this.dial);
+    for (let i = 0; i < 2; i++) this.wedges.push(svg('path', { d: '', class: 'beam' }, this.dial) as SVGPathElement);
+    this.buoys = new Pips(r.top, 'Buoys', 'Lens buoys afloat');
+    this.previews = new Previews(r.top, ['Next pass', 'Lance', 'Daybreak']);
+    this.exposure = new Meter(r.main, 'Exposure on target', 'ph-exposure');
+  }
+
+  update(me: Ship, target: Ship | null): void {
+    const p = pharosPanel(me, target);
+    this.wedges.forEach((w, i) => {
+      const b = p.beams[i];
+      const show = b ? '' : 'none';
+      if (w.style.display !== show) w.style.display = show;
+      if (!b) return;
+      const x = (Math.sin(b.half) * DIAL).toFixed(2);
+      const y = (-Math.cos(b.half) * DIAL).toFixed(2);
+      const d = `M0 0 L-${x} ${y} A${DIAL} ${DIAL} 0 0 1 ${x} ${y} Z`;
+      if (w.getAttribute('d') !== d) w.setAttribute('d', d);
+      w.setAttribute('transform', `rotate(${((b.rel * 180) / Math.PI).toFixed(1)})`);
+    });
+    while (this.blips.length < p.blips.length) this.blips.push(svg('circle', { r: 1.6, class: 'blip' }, this.dial) as SVGCircleElement);
+    this.blips.forEach((c, i) => {
+      const b = p.blips[i];
+      const show = b ? '' : 'none';
+      if (c.style.display !== show) c.style.display = show;
+      if (!b) return;
+      c.setAttribute('cx', (Math.sin(b.rel) * b.at * DIAL).toFixed(1));
+      c.setAttribute('cy', (-Math.cos(b.rel) * b.at * DIAL).toFixed(1));
+      setFlag(c, 'ph-lit', b.kind === 'lit');
+      setFlag(c, 'ph-buoy', b.kind === 'buoy');
+      setFlag(c, 'ph-aimed', b.aimed);
+    });
+    const pad = Array.from({ length: p.maxBuoys }, (_, i) => p.buoys[i] ?? null);
+    this.buoys.set(`Buoys ${p.buoys.length}/${p.maxBuoys}`, pad, p.buoys.length);
+    const t = p.target;
+    const pass = !t ? null : !t.inReach ? 'out of reach' : t.pass === null ? '—' : t.pass <= 0 ? 'NOW' : `${t.pass.toFixed(1)}s`;
+    this.previews.set([pass, p.previews ? kilo(p.previews.lance) : null, p.previews ? kilo(p.previews.daybreak) : null]);
+    const n = t?.stacks ?? 0;
+    const cap = t?.cap ?? 8;
+    const tag = !t ? '' : t.lit ? 'LIT' : !t.inReach ? 'OUT OF REACH' : t.shadowed ? 'IN SHADOW' : 'DARK';
+    this.exposure.set({ name: t ? `Exposure · ${t.name}` : 'Exposure · no target', tag, value: `${n}/${cap}`, frac: n / cap, n, max: cap });
+    setFlag(this.exposure.root, 'idle', !t);
+    setFlag(this.exposure.root, 'ph-full', !!t && n >= cap);
+    setFlag(this.exposure.root, 'ph-glow', !!t && t.lit);
+    if (t && n > this.last) flash(this.exposure.root, 'ph-gain');
+    this.last = n;
+  }
+}
+
 /** What a victim banner's meter counts. */
 function meterName(kind: string): string {
-  return kind === 'hexweaver' ? 'Pins in your doll' : 'Your case';
+  return kind === 'hexweaver' ? 'Pins in your doll' : kind === 'pharos' ? 'Your Exposure' : 'Your case';
 }
 
 export class MiscTitanHud {
@@ -436,6 +505,7 @@ export class MiscTitanHud {
   private hex: HexGauges | null = null;
   private gourmand: GourmandGauges | null = null;
   private faultline: FaultlineGauges | null = null;
+  private pharos: PharosGauges | null = null;
   private banner: HTMLElement;
   private bannerIdent: Ident;
   private bannerTop: HTMLElement;
@@ -462,6 +532,7 @@ export class MiscTitanHud {
       if (kind === 'hexweaver') this.hex = new HexGauges(rows);
       if (kind === 'gourmand') this.gourmand = new GourmandGauges(rows);
       if (kind === 'faultline') this.faultline = new FaultlineGauges(rows);
+      if (kind === 'pharos') this.pharos = new PharosGauges(rows);
     }
     this.banner = el('div', 'misc-banner', parent);
     this.banner.setAttribute('role', 'status');
@@ -481,6 +552,7 @@ export class MiscTitanHud {
     this.hex?.update(me, target);
     this.gourmand?.update(me);
     this.faultline?.update(me);
+    this.pharos?.update(me, target);
     this.updateBanner(me);
   }
 

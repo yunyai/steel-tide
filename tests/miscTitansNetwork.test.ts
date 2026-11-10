@@ -15,7 +15,7 @@ describe("new Misc titan integration", () => {
     expect(navalRules.cleanEdge({ sk: 1, jl: 5 }, DEFAULT_SETTINGS)).toEqual({ sk: 1 });
     expect(navalRules.cleanEdge({ jl: 2 }, DEFAULT_SETTINGS)).toBeNull();
   });
-  for (const id of ["judge", "hexweaver", "gourmand", "faultline"]) {
+  for (const id of ["judge", "hexweaver", "gourmand", "faultline", "pharos"]) {
     it(
       id + " replays skill inputs identically and hashes runtime changes",
       () => {
@@ -79,6 +79,7 @@ describe("new Misc titan integration", () => {
         if (s.hexweaver) s.hexweaver.recharge.push(a.time + 5);
         if (s.gourmand) s.gourmand.pantry.shells++;
         if (s.faultline) s.faultline.pressure++;
+        if (s.pharos) s.pharos.dir = s.pharos.dir === 1 ? -1 : 1;
         expect(stateHash(a)).not.toBe(before);
       },
     );
@@ -98,6 +99,8 @@ describe("new Misc titan integration", () => {
       expect(s.hexweaver?.dolls.length ?? 0).toBe(0);
       expect(s.gourmand?.swallow ?? null).toBeNull();
       expect(s.faultline?.pressure ?? 0).toBe(0);
+      expect(s.pharos?.buoys.length ?? 0).toBe(0);
+      expect(s.pharos?.beacon ?? null).toBeNull();
     });
   }
 });

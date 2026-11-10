@@ -9,12 +9,13 @@ import { GourmandFx } from './misc/GourmandFx';
 import { HexweaverFx } from './misc/HexweaverFx';
 import { JudgeFx } from './misc/JudgeFx';
 import { MiscFxKit } from './misc/MiscFxKit';
+import { PharosFx } from './misc/PharosFx';
 import type { MiscShipFx } from './misc/MiscShipFx';
 
 export { MISC_FX_BURSTS } from './misc/MiscShipFx';
 
 /**
- * The four misc titans' effects behind one scene object: each `miscTitan` event goes to its titan's
+ * The misc titans' effects behind one scene object: each `miscTitan` event goes to its titan's
  * effects, and every viewport redraws them all from simulation state and event time.
  */
 export class MiscTitanFx {
@@ -23,6 +24,7 @@ export class MiscTitanFx {
   readonly hexweaver: HexweaverFx;
   readonly gourmand: GourmandFx;
   readonly faultline: FaultlineFx;
+  readonly pharos: PharosFx;
   private all: MiscShipFx[];
   /** The captains on this screen, whose titans' sounds play louder. */
   locals: Ship[] = [];
@@ -35,7 +37,8 @@ export class MiscTitanFx {
     this.hexweaver = new HexweaverFx(this.kit);
     this.gourmand = new GourmandFx(this.kit);
     this.faultline = new FaultlineFx(this.kit);
-    this.all = [this.judge, this.hexweaver, this.gourmand, this.faultline];
+    this.pharos = new PharosFx(this.kit);
+    this.all = [this.judge, this.hexweaver, this.gourmand, this.faultline, this.pharos];
     this.off.push(
       game.events.view('miscTitan', (e) => {
         if (game.over) return;
@@ -55,7 +58,7 @@ export class MiscTitanFx {
     return this.kit.light;
   }
 
-  /** Event bursts playing across all four titans. */
+  /** Event bursts playing across every titan. */
   get bursts(): number {
     return this.all.reduce((n, fx) => n + fx.bursts, 0);
   }

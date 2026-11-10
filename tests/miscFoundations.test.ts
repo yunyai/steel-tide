@@ -171,6 +171,20 @@ describe('Misc titan panel state line', () => {
     expect(miscPanelState(f)).toBe('BEDROCK 3.5s · REBOUND READY');
   });
 
+  it('shows what the Pharos’s lamp is doing', () => {
+    const g = emptyGame();
+    const p = place(g, 'pharos', 0, 0, 0);
+    expect(miscPanelState(p)).toBe('SWEEP ↻');
+    p.pharos!.dir = -1;
+    p.pharos!.twinUntil = g.time + 8.2;
+    p.pharos!.scorchUntil = g.time + 1;
+    expect(miscPanelState(p)).toBe('SWEEP ↺ · TWIN 9s · SCORCHING');
+    p.pharos!.holdUntil = g.time + 2.34;
+    expect(miscPanelState(p)).toMatch(/^HELD 2\.3s/);
+    p.pharos!.darkUntil = g.time + 4.04;
+    expect(miscPanelState(p)).toBe('DARK 4.0s · CLOAKED');
+  });
+
   it('is empty for every other ship', () => {
     const g = emptyGame();
     expect(miscPanelState(place(g, 'iowa', 0, 0, 900))).toBe('');

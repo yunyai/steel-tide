@@ -16,7 +16,8 @@ const out = "docs/verification/misc-titans";
 const SEEDS = Number(process.env.SEEDS ?? 8);
 mkdirSync(out, { recursive: true });
 const results = [];
-for (const id of ["judge", "hexweaver", "gourmand", "faultline"])
+const TITANS = (process.env.MISC_TITANS ?? "judge,hexweaver,gourmand,faultline,pharos").split(",");
+for (const id of TITANS)
   for (const foe of ["stepper", "tungsten", "architect"])
     for (let seed = 0; seed < SEEDS; seed++)
       for (const side of [0, 1]) {
@@ -79,7 +80,7 @@ for (const id of ["judge", "hexweaver", "gourmand", "faultline"])
           won: s.alive && !enemy.alive,
         });
       }
-const summary = ["judge", "hexweaver", "gourmand", "faultline"].map((id) => {
+const summary = TITANS.map((id) => {
   const r = results.filter((r) => r.id === id);
   return {
     id,

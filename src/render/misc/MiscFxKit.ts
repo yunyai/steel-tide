@@ -10,7 +10,7 @@ import { Ribbons } from '../Projectiles';
 import { quality } from '../Quality';
 import type { SpatialDistortion } from '../SpatialDistortion';
 
-// Drawing kit shared by the four misc titans' effects: one set of particles, a light and a dark
+// Drawing kit shared by the misc titans' effects: one set of particles, a light and a dark
 // ribbon batch, a pool of named scene groups and the line, ring, arc and helix helpers they draw
 // with. Every draw is rebuilt each viewport from simulation state and event time, never stored.
 

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { miscSound } from '../src/fx/MiscTitanAudio';
-import type { FaultFxKind, GourmandFxKind, HexFxKind, JudgeFxKind } from '../src/skills/misc/MiscEvents';
+import type { FaultFxKind, GourmandFxKind, HexFxKind, JudgeFxKind, PharosFxKind } from '../src/skills/misc/MiscEvents';
 
 // Every misc titan effect that should be heard maps to one of the packaged recordings.
 
@@ -63,6 +63,21 @@ describe('Misc titan sounds', () => {
     const loud = miscSound('worldbreaker')!.gain;
     for (const k of FAULT_KINDS) if (k !== 'worldbreaker') expect(miscSound(k)!.gain).toBeLessThan(loud);
     for (const k of ['fracture', 'rupture', 'boulder', 'collapse', 'crumble'] as const) expect(miscSound(k)!.gap).toBeGreaterThan(0);
+  });
+
+  const PHAROS_KINDS: PharosFxKind[] = ['lit', 'hold', 'lanceAim', 'lance', 'lanceHit', 'counter', 'scorch', 'dazzle', 'dazzled', 'buoy', 'buoyFlare', 'buoyGone', 'douse', 'relight', 'twin', 'daybreakWarn', 'daybreak', 'sear', 'falseLight', 'wreck'];
+
+  it.each(PHAROS_KINDS)('give the Pharos’s %s a packaged recording', (kind) => {
+    const s = miscSound(kind);
+    expect(s).not.toBeNull();
+    expect(existsSync(`public/audio/${s!.asset}.m4a`)).toBe(true);
+    expect(s!.gain).toBeGreaterThan(0);
+  });
+
+  it('make the false light’s burst the loudest Pharos moment and let the sweep’s pings share a voice', () => {
+    const loud = miscSound('wreck')!.gain;
+    for (const k of PHAROS_KINDS) if (k !== 'wreck') expect(miscSound(k)!.gain).toBeLessThan(loud);
+    for (const k of ['lit', 'scorch', 'lanceHit', 'buoyFlare', 'sear'] as const) expect(miscSound(k)!.gap).toBeGreaterThan(0);
   });
 
   it('leave the galley mortar’s dishes to the gun sounds', () => {
