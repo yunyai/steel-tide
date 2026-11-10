@@ -14,7 +14,12 @@ export const TITAN_PALETTES: Record<string, TitanPalette> = {
   hexweaver: { hull: 0x24252e, armor: 0x675744, edge: 0x94816b, dark: 0x13171f, trim: 0x984c51, light: 0xec7ba3, pale: 0xd9c7a1 },
   gourmand: { hull: 0x362b29, armor: 0x864739, edge: 0xa9b2ad, dark: 0x161c21, trim: 0xbd8a4a, light: 0xff9b36, pale: 0xe3d9b8 },
   faultline: { hull: 0x272b2b, armor: 0x505b59, edge: 0x82928b, dark: 0x151d21, trim: 0xb59a68, light: 0xff6b29, pale: 0xc3c8b7 },
+  // Whitewash and red bands over grey stone, with brass for `pale`.
+  pharos: { hull: 0x1f2c3c, armor: 0xe6dfcd, edge: 0x7c868b, dark: 0x141c26, trim: 0xb03a2b, light: 0xfff0b0, pale: 0xc7a252 },
 };
+
+/** The Pharos's lamp, metres above its deck: where its beams leave the lantern. */
+export const PHAROS_LAMP = 100;
 
 /** The actual simulation planform, with a chined keel and separate deck/boot colours. */
 export function titanHull(spec: ShipSpec, palette: TitanPalette): BufferGeometry {

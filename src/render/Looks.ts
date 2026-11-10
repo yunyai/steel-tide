@@ -35,11 +35,12 @@ export const GUN_STYLE: Record<GunLook, GunStyle> = {
   rail: style(0x60e8ff, 3, 2.5, 10, 0xd0f8ff, 0x40a0ff, 0.3),
   laser: style(0xff4a6a, 3.6, 1.5, 30, 0xffd0e0, 0xff2050, 0),
   plasma: style(0x70ffe0, 3, 2.2, 0.5, 0xe0fff8, 0x20d0b0, 0.2),
-  // The misc titans' batteries: a gold rail bolt, a long pink needle, a glowing dish and an ember rock.
+  // The misc titans' batteries: a gold rail bolt, a long pink needle, a glowing dish, an ember rock and a white flare.
   gavel: style(0xffc865, 3.4, 1.8, 6, 0xfff1c8, 0xffb43c, 0.15),
   needle: style(0xff7fd0, 3.2, 0.55, 9, 0xffd8f0, 0xe050b0, 0.05),
   dish: style(0xffa040, 2.6, 2.6, 0.45, 0xfff0c0, 0xff7020, 0.7),
   magma: style(0xff5a14, 3.2, 2.1, 0.8, 0xffb060, 0xff3000, 1.2),
+  lamp: style(0xfff3c4, 3.6, 1.5, 3, 0xffffff, 0xffd870, 0.25),
 };
 
 /** Missiles drawn as a glowing streak instead of a body, and their colour. */

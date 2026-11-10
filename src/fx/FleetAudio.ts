@@ -8,6 +8,10 @@ export interface FleetCue {assets:string[];kind:SoundKind;gain:number;rate:numbe
 export function fleetCue(ship:ShipSpec,skill:SkillSpec,event: 'activate'|'release'='activate'):FleetCue|undefined{
  if(ship.id==='stepper'||ship.nation==='foundry')return;
  // New Misc titans have signature material sounds, using packaged recordings.
+ if(ship.id==='pharos'){
+   const names=skill.icon==='cloak'?['mechanical-hit','ward-rise']:skill.ult?['ui-horn','energy-heavy']:['energy-charge','sensor-ping'];
+   return {assets:a(...names),kind:skill.ult?'thunder':'charge',gain:skill.ult?.8:.5,rate:skill.ult?.7:1.25};
+ }
  if(['judge','hexweaver','gourmand','faultline'].includes(ship.id)){
    const names=ship.id==='judge'?(skill.icon==='shield'?['ward-rise']:skill.ult?['mechanical-hit','blast-heavy']:['mechanical-hit','sensor-ping']):ship.id==='hexweaver'?(skill.ult?['collapse','cut-heavy']:['cut-light','arcane-charge']):ship.id==='gourmand'?(skill.ult?['blast-heavy','jet-release']:['mechanical-hit','jet-release']):(skill.ult?['thunder','collapse']:['blast-shock','mechanical-hit']);
    return {assets:a(...names),kind:skill.ult?'thunder':'charge',gain:skill.ult?.8:.55,rate:ship.id==='gourmand'?.7:ship.id==='judge'?.83:ship.id==='faultline'?.76:1.1};
@@ -42,5 +46,6 @@ export function fleetWeapon(ship:ShipSpec,look:string|undefined):string|undefine
  if(look==='needle')return `${import.meta.env.BASE_URL}audio/cut-light.m4a`;
  if(look==='dish')return `${import.meta.env.BASE_URL}audio/jet-release.m4a`;
  if(look==='magma')return `${import.meta.env.BASE_URL}audio/blast-shock.m4a`;
+ if(look==='lamp')return `${import.meta.env.BASE_URL}audio/energy-pulse.m4a`;
  return look==='rail'?`${import.meta.env.BASE_URL}audio/mechanical-hit.m4a`:look==='laser'||look==='plasma'?`${import.meta.env.BASE_URL}audio/plasma-shot.m4a`:look==='soulfire'?`${import.meta.env.BASE_URL}audio/phase-arrival.m4a`:look==='runefire'?`${import.meta.env.BASE_URL}audio/blast-shock.m4a`:`${import.meta.env.BASE_URL}audio/energy-pulse.m4a`;
 }

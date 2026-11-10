@@ -2,6 +2,7 @@ import { JUDGE_SKILLS } from './misc/judge';
 import { HEXWEAVER_SKILLS } from './misc/hexweaver';
 import { GOURMAND_SKILLS } from './misc/gourmand';
 import { FAULTLINE_SKILLS } from './misc/faultline';
+import { PHAROS_SKILLS } from './misc/pharos';
 import { ARCHITECT_SKILLS } from './misc/architect';
 import { STEPPER_SKILLS } from './misc/stepper';
 import { TUNGSTEN_SKILLS } from './misc/tungsten';
@@ -41,7 +42,7 @@ import type { SkillDef, SkillImpl } from './types';
 export type { SkillDef, SkillImpl, SkillState } from './types';
 
 /** Every titan's skill pool (none of them is carried by a line ship). */
-export const TITAN_POOLS: SkillDef[] = [...JUDGE_SKILLS, ...HEXWEAVER_SKILLS, ...GOURMAND_SKILLS, ...FAULTLINE_SKILLS, ...TITAN_SKILLS, ...FANTASY_TITAN_SKILLS, ...MODERN_TITAN_SKILLS, ...SCIFI_TITAN_SKILLS, ...HADAL_SKILLS, ...STEPPER_SKILLS, ...ARCHITECT_SKILLS, ...TUNGSTEN_SKILLS];
+export const TITAN_POOLS: SkillDef[] = [...JUDGE_SKILLS, ...HEXWEAVER_SKILLS, ...GOURMAND_SKILLS, ...FAULTLINE_SKILLS, ...PHAROS_SKILLS, ...TITAN_SKILLS, ...FANTASY_TITAN_SKILLS, ...MODERN_TITAN_SKILLS, ...SCIFI_TITAN_SKILLS, ...HADAL_SKILLS, ...STEPPER_SKILLS, ...ARCHITECT_SKILLS, ...TUNGSTEN_SKILLS];
 
 const ALL: SkillDef[] = [
   ...BATTLESHIP_SKILLS,

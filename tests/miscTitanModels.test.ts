@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Box3, Mesh, type BufferAttribute, type BufferGeometry, type Material, type Object3D } from 'three';
+import { Box3, Mesh, Vector3, type BufferAttribute, type BufferGeometry, type Material, type Object3D } from 'three';
 import { SHIP_BY_ID } from '../src/data/ships';
 import type { ShipSpec } from '../src/core/types';
 import type { Ship } from '../src/ships/Ship';
@@ -11,6 +11,7 @@ const dimensions = [
   ['hexweaver', 370, 64, 13, 13],
   ['gourmand', 440, 100, 16, 17],
   ['faultline', 420, 88, 16, 15],
+  ['pharos', 380, 70, 14, 15],
 ] as const;
 
 function spec(id: string, length = 400, beam = 80, draft = 15, freeboard = 14): ShipSpec {
@@ -45,7 +46,7 @@ describe('misc titan models', () => {
     geometry.dispose();
   });
 
-  it('selects only the four complete replacement hulls', () => {
+  it('selects only the complete replacement hulls', () => {
     for (const [id] of dimensions) expect(isMiscTitan(id)).toBe(true);
     for (const id of ['tungsten', 'stepper', 'hadal', 'yamato', 'judge-copy', '']) expect(isMiscTitan(id)).toBe(false);
   });
@@ -149,6 +150,29 @@ describe('misc titan models', () => {
     expect(pose({ banquetUntil: 12 })).not.toEqual(shut);
     expect(pose({ bite: { target: 7, at: 10.5, x: 0, z: 0 } })).not.toEqual(shut);
     expect(pose({ swallow: { target: 7, until: 12, nextTick: 10.5, originX: 0, originZ: 0, heldX: 0, heldZ: 0 } })).not.toEqual(shut);
+  });
+
+  it('points the Pharos’s lens down its beam, drops the shutters while dark and uncovers the rear lens for Twin Lamps', () => {
+    const lit = (o: Record<string, unknown>, heading = 0) =>
+      ({ ...ship(), renderHeading: heading, game: { time: 10, alpha: 1 }, pharos: { bearing: 0, dir: 1, holdUntil: 0, scorchUntil: 0, darkUntil: 0, twinUntil: 0, daybreak: null, ...o } }) as unknown as Ship;
+    const model = new MiscTitanModel(spec('pharos', 380, 70, 14, 15));
+    const lamp = model.group.getObjectByName('pharos-lamp')!;
+    const shutters = model.group.getObjectByName('pharos-shutters')!;
+    const rear = model.group.getObjectByName('pharos-rear-lens')!;
+    // The hull's bow is +x and starboard +z, so a beam 90° to starboard of the bow points along +z.
+    for (const [bearing, heading, x, z] of [[0, 0, 1, 0], [Math.PI / 2, 0, 0, 1], [Math.PI / 2, Math.PI / 2, 1, 0], [Math.PI, Math.PI / 2, 0, 1]] as const) {
+      model.update(lit({ bearing }, heading), 1, .25);
+      model.group.updateMatrixWorld(true);
+      const front = lamp.localToWorld(new Vector3(1, 0, 0)).sub(lamp.getWorldPosition(new Vector3()));
+      expect(front.x).toBeCloseTo(x, 5);
+      expect(front.z).toBeCloseTo(z, 5);
+    }
+    expect(rear.visible).toBe(false);
+    const open = shutters.scale.y;
+    model.update(lit({ darkUntil: 12, twinUntil: 12 }), 1, .25);
+    expect(shutters.scale.y).toBeGreaterThan(open);
+    expect(rear.visible).toBe(true);
+    model.dispose();
   });
 
   it('animates instant ultimates when their meter is spent', () => {

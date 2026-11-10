@@ -43,7 +43,7 @@ function runtimeHash(h:number,v:unknown):number {
 function shipHash(s: Game['ships'][number]): number {
   let h = SEED;
   h = mix(h, s.id);
-  h=runtimeHash(h,[s.judge,s.hexweaver,s.gourmand,s.faultline]);
+  h=runtimeHash(h,[s.judge,s.hexweaver,s.gourmand,s.faultline,s.pharos]);
   h = mix(h, s.pos.x);
   h = mix(h, s.pos.y);
   h = mix(h, s.pos.z);

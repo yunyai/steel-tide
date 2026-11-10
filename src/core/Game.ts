@@ -2,6 +2,7 @@ import {recordJudgeAction,clearJudge} from '../skills/misc/JudgeRuntime';
 import {clearHexweaver} from '../skills/misc/HexweaverRuntime';
 import {clearGourmand,swallowedBy} from '../skills/misc/GourmandRuntime';
 import {clearFaultline} from '../skills/misc/FaultlineRuntime';
+import {clearPharos} from '../skills/misc/PharosRuntime';
 import { setArchitectLoadout } from '../skills/misc/ArchitectRuntime';
 import { copyLoadout } from '../data/architectLoadout';
 import { clearArchitect, destroyPlatform } from '../skills/misc/ArchitectRuntime';
@@ -538,7 +539,7 @@ export class Game {
     const stepCopy = ship.stepper?.copy;
     clearStepper(ship);
     clearTungsten(ship);
-    clearJudge(ship);clearHexweaver(ship);clearGourmand(ship);clearFaultline(ship);
+    clearJudge(ship);clearHexweaver(ship);clearGourmand(ship);clearFaultline(ship);clearPharos(ship);
     this.events.emit('shipSunk', { ship, killer });
     if (stepCopy) return;
     this.events.emit('explosion', { x: ship.pos.x, y: 8, z: ship.pos.z, size: 3 + ship.spec.length / 120 });
@@ -613,7 +614,7 @@ export class Game {
     for (const s of this.ships) if (s.architect) clearArchitect(s);
     for (const s of this.ships) if (s.spec.id === 'stepper' && !s.isSummon) clearStepper(s);
     for (const s of this.ships) if (s.tungsten) clearTungsten(s);
-    for(const s of this.ships){clearJudge(s);clearHexweaver(s);clearGourmand(s);clearFaultline(s);}
+    for(const s of this.ships){clearJudge(s);clearHexweaver(s);clearGourmand(s);clearFaultline(s);clearPharos(s);}
     this.winner = winner;
     this.reason = reason;
     this.events.emit('gameOver', { winner, reason });

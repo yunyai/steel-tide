@@ -5,12 +5,13 @@ import {
 import type { ShipSpec } from '../core/types';
 import type { Ship } from '../ships/Ship';
 import { GOURMAND } from '../skills/misc/GourmandRuntime';
+import { lampBearing, PHAROS } from '../skills/misc/PharosRuntime';
 import { deckHeight, hullHalfWidth } from '../ships/HullShape';
 import { Parts } from './Geometry';
 import { reducedMotion } from './ArchitectPose';
-import { chain, inscription, pipe, rod, silhouette, slab, TITAN_PALETTES, titanHull, volume, type Point, type TitanPalette } from './MiscTitanGeometry';
+import { chain, inscription, PHAROS_LAMP, pipe, rod, silhouette, slab, TITAN_PALETTES, titanHull, volume, type Point, type TitanPalette } from './MiscTitanGeometry';
 
-const IDS = new Set(['judge', 'hexweaver', 'gourmand', 'faultline']);
+const IDS = new Set(['judge', 'hexweaver', 'gourmand', 'faultline', 'pharos']);
 const UP = new Vector3(0, 1, 0);
 const TAU = Math.PI * 2;
 
@@ -54,6 +55,26 @@ function gourmandJaw(ship: Ship, reduce: boolean): Jaw {
   return { gape, snap: reduce && !a.swallow ? 0 : Math.min(1, snap) };
 }
 
+interface Lamp {
+  /** The lens's turn from the bow; null in the hangar, where it idles round. */
+  angle: number | null;
+  /** 1 while the shutters are down. */
+  dark: number;
+  twin: boolean;
+  /** Daybreak: half while it winds up, 1 while it burns. */
+  white: number;
+}
+
+const IDLE_LAMP: Lamp = { angle: null, dark: 0, twin: false, white: 0 };
+
+/** How the Pharos's lantern stands, read from its state: the lens points down the beam. */
+function pharosLamp(ship: Ship): Lamp {
+  const a = ship.pharos;
+  const now = ship.game?.time;
+  if (!a || now === undefined) return IDLE_LAMP;
+  return { angle: ship.renderHeading - lampBearing(ship), dark: a.darkUntil > now ? 1 : 0, twin: a.twinUntil > now, white: a.daybreak ? (a.daybreak.started ? 1 : 0.5) : 0 };
+}
+
 export function isMiscTitan(id: string): boolean { return IDS.has(id); }
 
 /** Complete, read-only procedural replacement models. Local +X is bow, +Y up and +Z starboard. */
@@ -75,6 +96,10 @@ export class MiscTitanModel {
   private pinRecharge = 0;
   private mirror: Mirror = STILL;
   private jaw: Jaw = SHUT;
+  private lamp: Lamp = IDLE_LAMP;
+  /** How far the Pharos's shutters have dropped, 0 to 1, and whether its lamp burns at all. */
+  private shutter = 0;
+  private burning = 1;
   private activity = 0;
   private ultimate = 0;
   private disposed = false;
@@ -96,6 +121,7 @@ export class MiscTitanModel {
     if (this.id === 'judge') this.buildJudge();
     else if (this.id === 'hexweaver') this.buildHexweaver();
     else if (this.id === 'gourmand') this.buildGourmand();
+    else if (this.id === 'pharos') this.buildPharos(spec);
     else this.buildFaultline();
     this.pose(0, 0, 0, []);
   }
@@ -175,6 +201,11 @@ export class MiscTitanModel {
       base.box(8, 10, 19, -15, 8, 0, p.dark, { taper: .1 });
       for (let y = 10; y < 17; y += 3) lights.box(.5, 1, 13, -19.2, y, 0, p.light);
       for (const side of [-1, 1]) base.add(new TorusGeometry(3, .6, 5, 10), p.trim, -4, 10, side * 14);
+    } else if (this.id === 'pharos') {
+      // A small harbour light rides each turret.
+      base.cyl(6, 7.5, 4, -7, 16, 0, p.armor, { seg: 10 });
+      lights.cyl(3.6, 3.6, 3, -7, 20, 0, p.light, { seg: 10 });
+      base.cyl(.8, 5, 3, -7, 23, 0, p.trim, { seg: 10 });
     } else {
       base.add(slab([[-16, -14], [7, -12], [13, -5], [8, 1], [12, 12], [-12, 13], [-19, 4]], 4), p.edge, -1, 17, 0);
       for (const side of [-1, 1]) lights.box(19, 1.1, .8, -4, 18, side * 10, p.light, { ry: side * .12 });
@@ -676,6 +707,118 @@ export class MiscTitanModel {
     };
   }
 
+  private buildPharos(spec: ShipSpec): void {
+    const p = this.palette, stone = new Parts(), frame = new Parts(), lights = new Parts();
+    // The rock the tower never left: a breakwater of rough courses carried amidships.
+    stone.add(slab([[-60,-27],[-31,-31],[5,-29],[37,-31],[61,-22],[67,-4],[58,21],[30,30],[-7,28],[-39,31],[-63,18],[-69,-6]], 5, 1.2), p.edge);
+    stone.add(slab([[-42,-21],[-13,-24],[23,-22],[45,-15],[48,6],[31,22],[-5,24],[-37,20],[-49,2]], 5, 1), p.dark, 0, 5, 0);
+    for (const [x, z, r, turn] of [[-73,-20,8,.4],[-77,9,7,1.3],[71,-13,8,2.2],[74,13,6,.9],[18,-33,5,1.7],[-22,33,6,2.9],[46,30,5,.2],[-50,-31,5,2.4]] as const)
+      stone.add(slab([[-r,-r*.5],[-r*.2,-r],[r*.8,-r*.6],[r,r*.3],[r*.3,r],[-r*.7,r*.7]], r * .7, .8), p.edge, x, 0, z, { ry: turn });
+    this.add(stone, this.art, this.fabric, 'pharos-breakwater');
+    // The keeper's house, lit, with its red roof and chimney.
+    frame.box(36, 13, 26, -102, 0, 0, p.armor);
+    frame.add(silhouette([[-21, 0], [21, 0], [0, 11]], 29, .4), p.trim, -102, 13, 0);
+    frame.box(4, 13, 4, -112, 13, 7, p.edge);
+    frame.box(5, 1.2, 5, -112, 26, 7, p.dark);
+    for (const side of [-1, 1]) for (const x of [-112, -102, -92]) lights.box(4, 4, .5, x, 5, side * 13.2, p.light);
+    lights.box(.5, 7, 4, -83.8, 0, 0, p.light);
+    // Lens buoys wait in their cradles to starboard; the keeper's boat hangs on davits to port.
+    for (const x of [-27, 0, 27]) {
+      frame.box(8, 1.4, 8, x, 5, 27, p.dark);
+      frame.cyl(3.4, 2.4, 2.6, x, 6.4, 27, p.trim, { seg: 10 });
+      frame.cyl(1.1, 2.6, 5, x, 9, 27, p.pale, { seg: 8 });
+      lights.cyl(1.3, 1.3, 1.8, x, 14, 27, p.light, { seg: 8 });
+      frame.cyl(.3, 1.5, 1.2, x, 15.8, 27, p.dark, { seg: 8 });
+    }
+    frame.box(18, 3.2, 5.5, 0, 9, -27, p.armor, { taper: .28 });
+    frame.box(16, .6, 4.6, 0, 12.2, -27, p.pale);
+    for (const x of [-7, 7]) pipe(frame, [[x, 5, -22], [x, 16, -23], [x, 18, -27], [x, 12.4, -27]], .45, p.edge);
+    // A signal mast aft carries the running lights.
+    rod(frame, [-152, 0, 0], [-152, 48, 0], 1, p.edge, .5);
+    rod(frame, [-152, 35, -11], [-152, 35, 11], .45, p.edge);
+    for (const z of [-11, 11]) lights.sphere(1.1, -152, 36.5, z, p.light);
+    lights.sphere(1.3, -152, 49, 0, p.light);
+    this.add(frame); this.add(lights, this.art, this.glow);
+    // Two brass fog horns on the forecastle shake when the lamp works hard.
+    const horns = this.joint('fog-horns', 80, 0, 0), hornParts = new Parts();
+    hornParts.box(14, 8, 24, 0, 0, 0, p.dark, { taper: .12 });
+    for (const z of [-7, 7]) {
+      hornParts.barrel(1.6, 6.4, 23, 2, 13, z, p.pale, 12);
+      hornParts.barrel(6.4, 7, 1.3, 25, 13, z, p.trim, 12);
+      hornParts.cyl(1.2, 1.7, 6, 5, 7.5, z, p.edge);
+    }
+    this.add(hornParts, horns);
+    // The tower stands outside the deck machinery's stretch, so its lens turns true.
+    const tower = this.joint('tower', 0, spec.freeboard, 0, this.group), masonry = new Parts(), iron = new Parts(), panes = new Parts();
+    const top = PHAROS_LAMP - 12, r = (y: number) => 9 + 6.5 * ((top - y) / (top - 10)) ** 1.3;
+    masonry.cyl(r(10) + 2, 20, 10, 0, 0, 0, p.edge, { seg: 16 });
+    const bands = [10, 26, 40, 56, 70, top];
+    for (let i = 0; i < 5; i++) {
+      const y0 = bands[i], y1 = bands[i + 1], mid = (y0 + y1) / 2, paint = i % 2 ? p.trim : p.armor;
+      masonry.cyl(r(mid), r(y0), mid - y0, 0, y0, 0, paint, { seg: 20 });
+      masonry.cyl(r(y1), r(mid), y1 - mid, 0, mid, 0, paint, { seg: 20 });
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = 2.2 + i * 1.3, y = 18 + i * 11.5, d = r(y + 2);
+      iron.box(.8, 4.4, 2.6, Math.cos(a) * d, y, Math.sin(a) * d, p.dark, { ry: -a });
+      panes.box(.5, 2.8, 1.4, Math.cos(a) * (d + .3), y + .8, Math.sin(a) * (d + .3), p.light, { ry: -a });
+    }
+    iron.box(1.4, 8, 5, -19.4, 0, 0, p.dark);
+    // The gallery: a corbelled deck, a brass rail and the glazed lantern room under its red cupola.
+    for (let k = 0; k < 8; k++) { const a = k * TAU / 8 + .2; iron.box(5, 3, 1.5, Math.cos(a) * 11, top - 3, Math.sin(a) * 11, p.edge, { ry: -a }); }
+    iron.cyl(15, 12.5, 2, 0, top, 0, p.dark, { seg: 16 });
+    for (let k = 0; k < 16; k++) { const a = k * TAU / 16, x = Math.cos(a) * 14.4, z = Math.sin(a) * 14.4; rod(iron, [x, top + 2, z], [x, top + 6.5, z], .28, p.edge, undefined, 5); }
+    iron.add(new TorusGeometry(14.4, .32, 5, 32).rotateX(Math.PI / 2), p.pale, 0, top + 6.5, 0);
+    iron.add(new TorusGeometry(14.4, .2, 4, 32).rotateX(Math.PI / 2), p.edge, 0, top + 4.2, 0);
+    iron.cyl(9.4, 10.2, 3.2, 0, top + 2, 0, p.armor, { seg: 16 });
+    for (let k = 0; k < 12; k++) { const a = k * TAU / 12, x = Math.cos(a) * 9, z = Math.sin(a) * 9; rod(iron, [x, top + 5.2, z], [x, top + 19, z], .32, p.dark, undefined, 5); }
+    iron.cyl(9.8, 9.8, 1.4, 0, top + 19, 0, p.dark, { seg: 16 });
+    iron.cyl(1.4, 10.4, 7.5, 0, top + 20.4, 0, p.trim, { seg: 16 });
+    iron.sphere(1.9, 0, top + 29, 0, p.pale);
+    rod(iron, [0, top + 29, 0], [0, top + 39, 0], .28, p.edge);
+    this.add(masonry, tower, this.fabric, 'pharos-tower'); this.add(iron, tower); this.add(panes, tower, this.glow);
+    const vane = this.joint('weathervane', 0, top + 35, 0, tower), vaneParts = new Parts();
+    rod(vaneParts, [-5, 0, 0], [6, 0, 0], .3, p.pale, .12);
+    vaneParts.add(silhouette([[-6, -2], [-2.5, 0], [-6, 2]], .3, 0), p.pale);
+    this.add(vaneParts, vane);
+    // The lens: a turntable of brass prism rings round the burner, a bullseye fore and one aft.
+    // Only the fore one shines until Twin Lamps uncovers the other.
+    const lampGlow = new MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false });
+    const rearGlow = new MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false });
+    this.materials.add(lampGlow); this.materials.add(rearGlow);
+    const lamp = this.joint('lamp', 0, PHAROS_LAMP, 0, tower), carriage = new Parts(), lens = new Parts(), rear = new Parts(), cover = new Parts();
+    carriage.cyl(4.6, 5.2, 1.2, 0, -6.4, 0, p.pale, { seg: 12 });
+    carriage.cyl(4.6, 4.6, .9, 0, 5.6, 0, p.pale, { seg: 12 });
+    for (const y of [-4, -2, 0, 2, 4]) carriage.add(new TorusGeometry(4.3 - Math.abs(y) * .18, .22, 4, 20).rotateX(Math.PI / 2), p.pale, 0, y, 0);
+    lens.cyl(2.6, 2.6, 10, 0, -5, 0, p.light, { seg: 10 });
+    for (const [parts, side] of [[lens, 1], [rear, -1]] as const) {
+      parts.add(new CylinderGeometry(3.6, 3.6, .7, 16).rotateZ(Math.PI / 2), p.light, side * 5.1, 0, 0);
+      for (const ring of [1.5, 2.6, 3.7]) carriage.add(new TorusGeometry(ring, .2, 4, 16).rotateY(Math.PI / 2), p.pale, side * 5.6, 0, 0);
+    }
+    cover.add(new CylinderGeometry(3.8, 3.8, .5, 16).rotateZ(Math.PI / 2), p.dark, -5.9, 0, 0);
+    this.add(carriage, lamp, this.metal, 'pharos-lens-carriage'); this.add(lens, lamp, lampGlow, 'pharos-lens');
+    const rearLens = this.add(rear, lamp, rearGlow, 'pharos-rear-lens'), rearCover = this.add(cover, lamp, this.metal, 'pharos-rear-cover');
+    const blind = new Parts();
+    blind.add(new CylinderGeometry(9.5, 9.5, 13.6, 12, 1, true), p.dark);
+    const shutters = this.add(blind, tower, this.metal, 'pharos-shutters');
+    this.battery(0); this.battery(1);
+    this.pose = (t, active, ult) => {
+      const { angle, twin, white } = this.lamp, k = this.shutter;
+      // In battle the lens points down the beam; in the hangar it turns at the sweep's pace.
+      lamp.rotation.y = angle ?? -t * PHAROS.spin;
+      lamp.position.y = PHAROS_LAMP + Math.sin(t * 1.3) * .15 + active * .8;
+      shutters.scale.y = Math.max(.03, k);
+      shutters.position.y = top + 19 - 6.8 * Math.max(.03, k);
+      rearLens.visible = twin;
+      rearCover.visible = !twin;
+      vane.rotation.y = Math.sin(t * .31) * .6 + Math.sin(t * 1.7) * .08 + active * .5;
+      horns.scale.setScalar(1 + active * .04 + ult * .07 * (this.reduce ? 1 : .5 + .5 * Math.sin(t * 30)));
+      const power = this.burning * (1 - k) * (1.5 + white * 2.5 + active * .5) + .04;
+      lampGlow.color.setScalar(power);
+      rearGlow.color.setScalar(power);
+    };
+  }
+
   /** Read-only presentation; instant casts also get a brief response when their cooldown starts. */
   update(ship: Ship, time: number, dt: number): void {
     if (this.disposed) return;
@@ -705,6 +848,11 @@ export class MiscTitanModel {
     const mix = this.reduce ? 1 : 1 - Math.exp(-step * 9);
     this.activity += (activity - this.activity) * mix;
     this.ultimate += (ultimate - this.ultimate) * mix;
+    if (this.id === 'pharos') {
+      this.lamp = alive ? pharosLamp(ship) : IDLE_LAMP;
+      this.shutter += (this.lamp.dark - this.shutter) * mix;
+      this.burning = alive ? 1 : 0;
+    }
     const t = this.reduce || !Number.isFinite(time) ? 0 : time;
     this.pose(t, this.activity, this.ultimate, slots);
     const power = alive ? 1.05 + this.activity * .65 + this.ultimate * .65 + Math.sin(t * 2.1) * .055 : .08;

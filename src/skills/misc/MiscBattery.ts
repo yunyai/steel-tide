@@ -4,6 +4,7 @@ import { gourmandRider } from './GourmandRuntime';
 import { hexRider } from './HexweaverRuntime';
 import { judgeRider } from './JudgeRuntime';
 import { emitMisc, isMiscTitanShip, type TitanRider } from './MiscEvents';
+import { pharosRider } from './PharosRuntime';
 
 // The misc titans' bespoke batteries ride on ordinary turret fire: `Ship.fireTurret` asks for a
 // rider once per turret salvo and hands its hooks to every round of it.
@@ -27,6 +28,7 @@ function titanRider(s: Ship): TitanRider {
   if (s.hexweaver) return hexRider(s);
   if (s.gourmand) return gourmandRider(s);
   if (s.faultline) return faultlineRider(s);
+  if (s.pharos) return pharosRider(s);
   return {};
 }
 
